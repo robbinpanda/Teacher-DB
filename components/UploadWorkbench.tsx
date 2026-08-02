@@ -94,6 +94,7 @@ export function UploadWorkbench() {
   const [message, setMessage] = useState("支持 PDF、DOCX、PNG、JPG、WEBP");
   const [fileName, setFileName] = useState("");
   const [pageCount, setPageCount] = useState(0);
+  const [documentId, setDocumentId] = useState<string>();
   const working = ["rendering", "uploading", "extracting"].includes(stage);
 
   async function processFile(file: File) {
@@ -109,15 +110,21 @@ export function UploadWorkbench() {
       original.append("file", file);
       original.append("pageCount", String(pages.length));
       const documentResponse = await fetch("/api/documents", { method: "POST", body: original });
-      const documentResult = await documentResponse.json().catch(() => ({ id: "local-" + Date.now() })) as { id?: string };
-      const documentId = documentResult.id || "local-" + Date.now();
+      const documentResult = await documentResponse.json() as { id?: string; error?: string };
+      if (!documentResponse.ok || !documentResult.id) throw new Error(documentResult.error ?? "原卷保存失败");
+      const currentDocumentId = documentResult.id;
+      setDocumentId(currentDocumentId);
+      const pageIds: string[] = [];
       for (let index = 0; index < pages.length; index += 1) {
         const form = new FormData();
         form.append("page", pages[index].blob, "page-" + (index + 1) + ".jpg");
         form.append("pageNumber", String(index + 1));
         form.append("width", String(pages[index].width));
         form.append("height", String(pages[index].height));
-        await fetch("/api/documents/" + documentId + "/pages", { method: "POST", body: form }).catch(() => null);
+        const pageResponse = await fetch("/api/documents/" + currentDocumentId + "/pages", { method: "POST", body: form });
+        const pageResult = await pageResponse.json() as { id?: string; error?: string };
+        if (!pageResponse.ok || !pageResult.id) throw new Error(pageResult.error ?? `第 ${index + 1} 页保存失败`);
+        pageIds.push(pageResult.id);
       }
       setStage("extracting");
       let extractedCount = 0;
@@ -126,10 +133,17 @@ export function UploadWorkbench() {
         const extractionResponse = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ documentId, pageNumber: index + 1, image: pages[index].dataUrl, fileName: file.name }),
+          body: JSON.stringify({
+            documentId: currentDocumentId,
+            pageId: pageIds[index],
+            pageNumber: index + 1,
+            image: pages[index].dataUrl,
+            fileName: file.name,
+            idempotencyKey: `${currentDocumentId}:page:${index + 1}:extract-v1`,
+          }),
         });
-        if (!extractionResponse.ok) throw new Error("第 " + (index + 1) + " 页识题接口暂时不可用");
-        const result = await extractionResponse.json() as { questions?: unknown[] };
+        const result = await extractionResponse.json() as { questions?: unknown[]; error?: string };
+        if (!extractionResponse.ok) throw new Error(result.error ?? "第 " + (index + 1) + " 页识题失败");
         extractedCount += result.questions?.length ?? 0;
       }
       setStage("done");
@@ -164,7 +178,7 @@ export function UploadWorkbench() {
         <strong>{fileName || "拖入试卷，或点击选择文件"}</strong>
         <p>{message}</p>
         {stage === "done" ? (
-          <Link href="/review/demo" className="btn btn-primary btn-small" onClick={(event) => event.stopPropagation()}>开始人工审核</Link>
+          <Link href={"/review/" + documentId} className="btn btn-primary btn-small" onClick={(event) => event.stopPropagation()}>开始人工审核</Link>
         ) : (
           <div className="file-types"><span><FileText size={13} /> PDF / Word</span><span><FileImage size={13} /> 图片</span></div>
         )}

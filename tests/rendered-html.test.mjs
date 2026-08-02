@@ -18,15 +18,21 @@ test("ships the teacher question-bank workflow", async () => {
   assert.match(paper, /window\.print/);
 });
 
-test("ships persistence schema and no starter preview", async () => {
-  const [schema, extraction] = await Promise.all([
+test("ships Node SQLite persistence and disables model reasoning", async () => {
+  const [schema, extraction, vision, database, packageJson] = await Promise.all([
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/extract/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/vision-model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   assert.match(schema, /documents/);
   assert.match(schema, /question_assets/);
   assert.match(schema, /paper_items/);
-  assert.match(extraction, /reasoning_effort:\s*"none"/);
+  assert.match(extraction, /sqliteTransaction/);
+  assert.match(vision, /reasoning_effort:\s*"none"/);
+  assert.match(database, /better-sqlite3/);
+  assert.match(packageJson, /"dev":\s*"next dev"/);
   await access(new URL("../drizzle/0000_lean_songbird.sql", import.meta.url));
-  await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
+  await assert.rejects(access(new URL("../.openai/hosting.json", import.meta.url)));
 });

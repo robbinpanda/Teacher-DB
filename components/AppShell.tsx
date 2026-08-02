@@ -15,6 +15,7 @@ const navigation = [
   { href: "/", label: "处理中心", icon: LayoutDashboard },
   { href: "/bank", label: "我的题库", icon: Boxes },
   { href: "/papers/new", label: "智能组卷", icon: FilePlus2 },
+  { href: "/settings/models", label: "模型设置", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -42,10 +43,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Sparkles size={17} />
           <strong>视觉识题引擎</strong>
           <p>页面图像 → 题目 JSON<br />公式、插图与答案一并识别</p>
-          <span>演示模式</span>
+          <span>真实识题</span>
         </div>
         <div className="sidebar-foot">
-          <button type="button"><Settings size={17} /> 模型与存储设置</button>
+          <Link href="/settings/models" className="settings-link"><Settings size={17} /> 模型与存储设置</Link>
           <div className="user-row"><span className="avatar">林</span><span><strong>林老师</strong><small>数学教研组</small></span></div>
         </div>
       </aside>
@@ -53,4 +54,3 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-

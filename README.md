@@ -1,40 +1,59 @@
 # 拾题 · 教师题库助手
 
-一个基于“整页渲染 + 多模态视觉模型”的教师题库 MVP。上传 PDF、DOCX 或图片后，浏览器先把原卷转成高清页面图，再调用 OpenAI-compatible 视觉接口提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核与组卷。
+面向教师的本地优先题库工具。上传 PDF、DOCX 或图片后，浏览器把原卷渲染成高清页面，再调用 OpenAI-compatible 多模态模型提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核、题库检索和组卷流程。
 
-## 已实现
+## 技术架构
 
-- PDF、DOCX、PNG、JPG、WEBP 浏览器端页面化
-- OpenAI-compatible 多模态识题接口，未配置密钥时自动使用演示结果
-- 题目 JSON、页面坐标、题图坐标和识别置信度
-- 原页对照、题目框、可拖动/缩放题图裁剪框、坐标数值微调
-- 题干、选项、答案、解析、分值和标签人工审核
-- 题库搜索、题型和标签筛选、多选组卷
-- 试卷排序、答案预览、打印或另存为 PDF
-- Cloudflare D1 结构化数据模型与 R2 原卷/页面/裁图存储
+- Next.js 16 + React 19 + TypeScript，运行于标准 Node.js 22
+- `better-sqlite3` 本地 SQLite，启用 WAL、外键、5 秒忙等待和原子事务
+- `data/files` 保存原卷、逐页图和后续裁剪图；`SHITI_DATA_DIR` 可修改数据根目录
+- Drizzle schema 和 SQL 迁移描述数据结构，运行时会幂等建表和升级
+- OpenAI-compatible `/chat/completions` 多模态模型适配器
+- API Key 使用 AES-GCM 加密后存入 SQLite，接口只返回脱敏值
+
+项目不依赖 Cloudflare Sites、D1、R2、Vinext 或 Miniflare，可在 Windows、Linux、macOS、NAS 或普通 VPS 上运行。
+
+## 当前已实现
+
+- PDF、DOCX、PNG、JPG、WEBP 浏览器端逐页渲染
+- 原卷/页面本地落盘，SHA-256 去重和页面校验
+- SQLite 自动建库与兼容升级
+- 内置 OpenCode MiMo V2.5 Free 模型元数据（免费模型仍需用户自己的 OpenCode Zen API Key）
+- 自定义多模态 API Base URL、Model Name、API Key 和超时配置
+- AES-GCM 密钥加密、模型切换与真实图片连通性测试
+- 所有模型调用固定 `reasoning_effort: "none"`
+- 每页抽题幂等键、尝试次数、原始响应、失败原因和事务入库
+- 题目 JSON、LaTeX、页面/题图坐标、置信度、标签和人工审核界面
 
 ## 本地运行
 
-    npm install
-    npm run dev
+1. 安装并启动：
 
-打开终端输出的本地地址。首页可直接使用演示卷，也可以上传自己的 PDF、DOCX 或图片。
+       npm install
+       npm run dev
 
-## 接入真实视觉模型
+2. 打开 `http://localhost:3000`。
 
-在部署环境配置以下服务端变量：
+生产构建：
 
-- VISION_API_KEY：模型服务密钥
-- VISION_API_BASE_URL：OpenAI-compatible API 根地址，例如以 /v1 结尾
-- VISION_MODEL：支持图片输入的模型名称
+    npm run build
+    npm start
 
-识别适配器位于 app/api/extract/route.ts。密钥只在服务端使用，不会下发浏览器。
-所有模型请求固定使用 reasoning_effort: none，避免视觉抽题被推理阶段拖慢。
+首次访问数据接口时会创建 `data/teacher-question-bank.sqlite3`、`data/files` 和本机加密密钥。生产环境建议复制 `.env.example` 并设置固定的 `MODEL_KEY_ENCRYPTION_SECRET`。整个 `data` 目录都应纳入备份，但不能提交 Git。
 
-## 数据存储
+## 模型配置
 
-D1 迁移文件位于 drizzle/0000_lean_songbird.sql；原卷和页面图使用 FILES R2 binding。主要实体包括 documents、pages、extraction_runs、questions、question_assets、tags、papers 和 paper_items。
+进入“模型设置”：
 
-## 当前 MVP 边界
+- MiMo V2.5 Free 已预填 endpoint 和 model id，但按 OpenCode Zen 当前规则仍需绑定个人 API Key。
+- 也可添加任何支持图片输入、兼容 `/chat/completions` 的模型。
+- 自定义 Base URL 必须为 HTTPS；仅 `localhost`/`127.0.0.1`/`::1` 允许 HTTP。
+- 应用不会向浏览器回传 API Key 明文。
 
-旧版 .doc 无法在浏览器可靠还原，界面会提示先另存为 DOCX 或 PDF。生产部署建议增加 LibreOffice 页面化工作进程；DOCX 中极复杂的浮动对象仍需在审核台复核。
+## 数据与迁移
+
+数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_assets、tags、model_profiles、papers 和 paper_items。
+
+## 尚待完成
+
+目前题库、审核和组卷仍有部分演示数据。下一阶段会依次替换为真实查询，补齐裁剪图生成、来源全文筛选、JSON/Markdown/PDF 导出、后台任务恢复和自动化测试。旧版 `.doc` 将通过可选 LibreOffice 工作进程支持，而不是在浏览器中强行解析。

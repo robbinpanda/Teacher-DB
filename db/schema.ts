@@ -10,6 +10,12 @@ export const documents = sqliteTable("documents", {
   pageCount: integer("page_count").notNull().default(0),
   subject: text("subject"),
   grade: text("grade"),
+  sourceYear: integer("source_year"),
+  sourceExamType: text("source_exam_type"),
+  sourceRegion: text("source_region"),
+  sourceSchool: text("source_school"),
+  checksum: text("checksum"),
+  error: text("error"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [
@@ -24,6 +30,8 @@ export const pages = sqliteTable("pages", {
   storageKey: text("storage_key").notNull(),
   width: integer("width").notNull(),
   height: integer("height").notNull(),
+  status: text("status").notNull().default("ready"),
+  checksum: text("checksum"),
   createdAt: text("created_at").notNull(),
 }, (table) => [
   uniqueIndex("pages_document_number_idx").on(table.documentId, table.pageNumber),
@@ -32,13 +40,22 @@ export const pages = sqliteTable("pages", {
 export const extractionRuns = sqliteTable("extraction_runs", {
   id: text("id").primaryKey(),
   documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  pageId: text("page_id").references(() => pages.id, { onDelete: "set null" }),
+  pageNumber: integer("page_number"),
+  modelProfileId: text("model_profile_id"),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
   status: text("status").notNull(),
+  attempt: integer("attempt").notNull().default(1),
+  idempotencyKey: text("idempotency_key"),
   rawJson: text("raw_json"),
   error: text("error"),
   createdAt: text("created_at").notNull(),
-}, (table) => [index("runs_document_idx").on(table.documentId, table.createdAt)]);
+  finishedAt: text("finished_at"),
+}, (table) => [
+  index("runs_document_idx").on(table.documentId, table.createdAt),
+  uniqueIndex("runs_idempotency_idx").on(table.idempotencyKey),
+]);
 
 export const questions = sqliteTable("questions", {
   id: text("id").primaryKey(),
@@ -107,3 +124,32 @@ export const paperItems = sqliteTable("paper_items", {
   index("paper_items_position_idx").on(table.paperId, table.position),
 ]);
 
+export const modelProfiles = sqliteTable("model_profiles", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  displayName: text("display_name").notNull(),
+  provider: text("provider").notNull().default("openai-compatible"),
+  baseUrl: text("base_url").notNull(),
+  model: text("model").notNull(),
+  apiKeyCiphertext: text("api_key_ciphertext"),
+  apiKeyIv: text("api_key_iv"),
+  apiKeyMask: text("api_key_mask"),
+  isManaged: integer("is_managed", { mode: "boolean" }).notNull().default(false),
+  isMultimodal: integer("is_multimodal", { mode: "boolean" }).notNull().default(true),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  timeoutMs: integer("timeout_ms").notNull().default(90000),
+  lastTestStatus: text("last_test_status"),
+  lastTestMessage: text("last_test_message"),
+  lastTestedAt: text("last_tested_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("model_profiles_owner_idx").on(table.ownerId, table.enabled),
+  uniqueIndex("model_profiles_owner_name_idx").on(table.ownerId, table.displayName),
+]);
+
+export const appSettings = sqliteTable("app_settings", {
+  ownerId: text("owner_id").primaryKey(),
+  selectedModelProfileId: text("selected_model_profile_id"),
+  updatedAt: text("updated_at").notNull(),
+});

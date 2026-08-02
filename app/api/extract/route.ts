@@ -1,8 +1,13 @@
-import { getDb } from "../../../db";
+import { and, eq, inArray } from "drizzle-orm";
+import { getDb, getSqlite, sqliteTransaction } from "../../../db";
+import { ensureDatabase } from "../../../db/bootstrap";
 import { assets, extractionRuns, questions } from "../../../db/schema";
-import { demoQuestions } from "../../../lib/demo-data";
-import { now, runtimeEnv } from "../../../lib/server";
+import { resolveModelProfile } from "../../../lib/model-profiles";
+import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
+import { callVisionModel } from "../../../lib/vision-model";
+
+export const runtime = "nodejs";
 
 const systemPrompt = [
   "你是中文中学试卷结构化专家。请只根据给出的页面图像识别题目，不补写看不清的内容。",
@@ -73,79 +78,144 @@ function parseJsonContent(content: string) {
 }
 
 export async function POST(request: Request) {
-  const payload = await request.json() as { documentId?: string; pageNumber?: number; image?: string; fileName?: string };
+  const payload = await request.json() as {
+    documentId?: string; pageId?: string; pageNumber?: number; image?: string; fileName?: string;
+    profileId?: string; idempotencyKey?: string;
+  };
+  if (!payload.documentId || !payload.image) {
+    return Response.json({ error: "documentId 和页面图像均为必填项" }, { status: 400 });
+  }
+  const documentId = payload.documentId;
+  await ensureDatabase();
+  const ownerId = requestOwner(request);
   const pageNumber = Number(payload.pageNumber ?? 1);
-  const bindings = runtimeEnv();
+  const sqlite = getSqlite();
   const runId = crypto.randomUUID();
   const createdAt = now();
-  let extracted: Question[];
-  let provider = "demo";
-  let model = "built-in-demo";
-  let rawJson = "";
+  const idempotencyKey = payload.idempotencyKey ?? `${documentId}:page:${pageNumber}:extract-v1`;
+  const existingRun = await getDb().query.extractionRuns.findFirst({
+    where: and(eq(extractionRuns.idempotencyKey, idempotencyKey), eq(extractionRuns.status, "complete")),
+  });
+  if (existingRun) {
+    const existingQuestions = await loadPageQuestions(documentId, pageNumber);
+    return Response.json({
+      runId: existingRun.id, provider: existingRun.provider, model: existingRun.model,
+      mode: "live", idempotentReplay: true, questions: existingQuestions,
+    });
+  }
+
+  let profile;
+  try {
+    profile = await resolveModelProfile(ownerId, payload.profileId);
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "模型配置不可用" }, { status: 400 });
+  }
+
+  sqlite.prepare(
+    `INSERT INTO extraction_runs
+      (id, document_id, page_id, page_number, model_profile_id, provider, model, status, attempt, idempotency_key, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', 1, ?, ?)
+     ON CONFLICT(idempotency_key) DO UPDATE SET
+       id = excluded.id, model_profile_id = excluded.model_profile_id, provider = excluded.provider,
+       model = excluded.model, status = 'running', attempt = extraction_runs.attempt + 1,
+       raw_json = NULL, error = NULL, created_at = excluded.created_at, finished_at = NULL`,
+  ).run(
+    runId, documentId, payload.pageId ?? null, pageNumber, profile.id,
+    profile.provider, profile.model, idempotencyKey, createdAt,
+  );
 
   try {
-    if (bindings.VISION_API_KEY && bindings.VISION_API_BASE_URL && payload.image) {
-      provider = "openai-compatible";
-      model = bindings.VISION_MODEL ?? "gpt-4.1-mini";
-      const endpoint = bindings.VISION_API_BASE_URL.replace(/\/$/, "") + "/chat/completions";
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { authorization: "Bearer " + bindings.VISION_API_KEY, "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          reasoning_effort: "none",
-          temperature: 0,
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: [
-              { type: "text", text: "文件：" + (payload.fileName ?? "未命名试卷") + "，这是第 " + pageNumber + " 页。请提取本页所有完整题目。" },
-              { type: "image_url", image_url: { url: payload.image, detail: "high" } },
-            ] },
-          ],
-        }),
-      });
-      if (!response.ok) throw new Error("视觉模型返回 " + response.status + "：" + await response.text());
-      const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-      rawJson = result.choices?.[0]?.message?.content ?? "";
-      extracted = normalize(parseJsonContent(rawJson), pageNumber);
-    } else {
-      extracted = demoQuestions.slice(0, 4).map((question) => ({ ...question, id: crypto.randomUUID() }));
-      rawJson = JSON.stringify({ questions: extracted });
-    }
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "识别失败", runId }, { status: 502 });
-  }
-
-  if (payload.documentId) {
-    try {
-      const db = getDb();
-      await db.insert(extractionRuns).values({ id: runId, documentId: payload.documentId, provider, model, status: "complete", rawJson, createdAt });
+    const result = await callVisionModel({
+      ownerId,
+      profileId: profile.id,
+      system: systemPrompt,
+      text: "文件：" + (payload.fileName ?? "未命名试卷") + "，这是第 " + pageNumber + " 页。请提取本页所有完整题目。",
+      image: payload.image,
+      jsonMode: true,
+    });
+    const extracted = normalize(parseJsonContent(result.content), pageNumber);
+    const finishedAt = now();
+    sqliteTransaction((transaction) => {
+      transaction.prepare("DELETE FROM questions WHERE document_id = ? AND page_number = ?").run(documentId, pageNumber);
       for (const question of extracted) {
-        await db.insert(questions).values({
-          id: question.id,
-          documentId: payload.documentId,
-          number: question.number,
-          type: question.type,
-          stem: question.stem,
-          optionsJson: JSON.stringify(question.options ?? []),
-          answer: question.answer,
-          analysis: question.analysis,
-          pageNumber: question.page,
-          bboxJson: JSON.stringify(question.bbox),
-          status: question.status,
-          confidence: question.confidence,
-          score: question.score ?? 0,
-          createdAt,
-          updatedAt: createdAt,
-        });
+        transaction.prepare(
+          `INSERT INTO questions
+            (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json, status, confidence, score, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          question.id, documentId, question.number, question.type, question.stem,
+          JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
+          JSON.stringify(question.bbox), question.status, question.confidence, question.score ?? 0, createdAt, createdAt,
+        );
         for (const asset of question.assets) {
-          await db.insert(assets).values({ id: asset.id, questionId: question.id, kind: asset.kind, label: asset.label, bboxJson: JSON.stringify(asset.bbox), createdAt });
+          transaction.prepare(
+            `INSERT INTO question_assets (id, question_id, page_id, kind, label, source_key, bbox_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(asset.id, question.id, payload.pageId ?? null, asset.kind, asset.label, null, JSON.stringify(asset.bbox), createdAt);
+        }
+        for (const tagName of question.tags) {
+          transaction.prepare("INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?, ?, ?)").run(crypto.randomUUID(), tagName, createdAt);
+          transaction.prepare(
+            "INSERT OR IGNORE INTO question_tags (question_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
+          ).run(question.id, tagName);
         }
       }
-    } catch (error) {
-      console.warn("Extraction persistence is unavailable in preview.", error);
-    }
+      transaction.prepare(
+        "UPDATE extraction_runs SET status = 'complete', raw_json = ?, error = NULL, finished_at = ? WHERE idempotency_key = ?",
+      ).run(result.content, finishedAt, idempotencyKey);
+      transaction.prepare(
+        "UPDATE documents SET status = 'reviewing', error = NULL, updated_at = ? WHERE id = ?",
+      ).run(finishedAt, documentId);
+    });
+    return Response.json({
+      runId, provider: profile.provider, model: profile.model, modelProfileId: profile.id,
+      mode: "live", idempotentReplay: false, questions: extracted,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "识别失败";
+    const finishedAt = now();
+    sqliteTransaction((transaction) => {
+      transaction.prepare(
+        "UPDATE extraction_runs SET status = 'failed', error = ?, finished_at = ? WHERE idempotency_key = ?",
+      ).run(message.slice(0, 4000), finishedAt, idempotencyKey);
+      transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
+        .run(message.slice(0, 4000), finishedAt, documentId);
+    });
+    return Response.json({ error: message, runId }, { status: 502 });
   }
-  return Response.json({ runId, provider, model, mode: provider === "demo" ? "demo" : "live", questions: extracted });
+}
+
+async function loadPageQuestions(documentId: string, pageNumber: number): Promise<Question[]> {
+  const db = getDb();
+  const rows = await db.select().from(questions).where(and(eq(questions.documentId, documentId), eq(questions.pageNumber, pageNumber)));
+  const ids = rows.map((row) => row.id);
+  const assetRows = ids.length ? await db.select().from(assets).where(inArray(assets.questionId, ids)) : [];
+  const tagRows = ids.length
+    ? getSqlite().prepare(
+        `SELECT qt.question_id AS questionId, t.name AS name FROM question_tags qt JOIN tags t ON t.id = qt.tag_id
+         WHERE qt.question_id IN (${ids.map(() => "?").join(",")})`,
+      ).all(...ids) as Array<{ questionId: string; name: string }>
+    : [] as Array<{ questionId: string; name: string }>;
+  return rows.map((row) => ({
+    id: row.id,
+    number: row.number,
+    type: row.type as QuestionType,
+    stem: row.stem,
+    options: JSON.parse(row.optionsJson ?? "[]") as Question["options"],
+    answer: row.answer,
+    analysis: row.analysis,
+    page: row.pageNumber,
+    bbox: JSON.parse(row.bboxJson) as BoundingBox,
+    assets: assetRows.filter((asset) => asset.questionId === row.id).map((asset) => ({
+      id: asset.id,
+      kind: asset.kind as "figure" | "table" | "graph",
+      page: row.pageNumber,
+      bbox: JSON.parse(asset.bboxJson) as BoundingBox,
+      label: asset.label,
+    })),
+    tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
+    confidence: row.confidence,
+    status: row.status as Question["status"],
+    score: row.score,
+  }));
 }
