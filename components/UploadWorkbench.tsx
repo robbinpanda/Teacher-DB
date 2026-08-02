@@ -5,13 +5,13 @@ import { useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, FileImage, FileText, LoaderCircle, ScanLine, UploadCloud } from "lucide-react";
 
 type Stage = "idle" | "rendering" | "uploading" | "extracting" | "done" | "error";
-type RenderedPage = { blob: Blob; dataUrl: string; width: number; height: number };
+type RenderedPage = { blob: Blob; width: number; height: number };
 
 async function canvasToPage(canvas: HTMLCanvasElement): Promise<RenderedPage> {
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((value) => value ? resolve(value) : reject(new Error("页面截图失败")), "image/jpeg", 0.9);
   });
-  return { blob, dataUrl: canvas.toDataURL("image/jpeg", 0.9), width: canvas.width, height: canvas.height };
+  return { blob, width: canvas.width, height: canvas.height };
 }
 
 async function renderPdf(file: File): Promise<RenderedPage[]> {
@@ -139,7 +139,6 @@ export function UploadWorkbench() {
             documentId: currentDocumentId,
             pageId: pageIds[index],
             pageNumber: index + 1,
-            image: pages[index].dataUrl,
             fileName: file.name,
           }),
         });

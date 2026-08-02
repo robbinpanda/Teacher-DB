@@ -6,6 +6,7 @@ import { resolveModelProfile } from "../../../lib/model-profiles";
 import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
 import { callVisionModel } from "../../../lib/vision-model";
+import { contentTypeForKey, getFile } from "../../../lib/file-storage";
 
 export const runtime = "nodejs";
 
@@ -99,12 +100,7 @@ export async function POST(request: Request) {
     documentId?: string; pageId?: string; pageNumber?: number; image?: string; fileName?: string;
     profileId?: string;
   };
-  if (!payload.documentId || !payload.image) {
-    return Response.json({ error: "documentId 和页面图像均为必填项" }, { status: 400 });
-  }
-  if (!payload.image.startsWith("data:image/") || payload.image.length > 30 * 1024 * 1024) {
-    return Response.json({ error: "页面图像格式非法或超过 30 MB" }, { status: 413 });
-  }
+  if (!payload.documentId) return Response.json({ error: "documentId 为必填项" }, { status: 400 });
   const documentId = payload.documentId;
   await ensureDatabase();
   const ownerId = requestOwner(request);
@@ -114,11 +110,18 @@ export async function POST(request: Request) {
     where: and(eq(documents.id, documentId), eq(documents.ownerId, ownerId)),
   });
   if (!ownedDocument) return Response.json({ error: "文档不存在" }, { status: 404 });
-  if (payload.pageId) {
-    const ownedPage = await db.query.pages.findFirst({
-      where: and(eq(pages.id, payload.pageId), eq(pages.documentId, documentId)),
-    });
-    if (!ownedPage || ownedPage.pageNumber !== pageNumber) return Response.json({ error: "页面与文档不匹配" }, { status: 400 });
+  const ownedPage = payload.pageId
+    ? await db.query.pages.findFirst({ where: and(eq(pages.id, payload.pageId), eq(pages.documentId, documentId)) })
+    : await db.query.pages.findFirst({ where: and(eq(pages.documentId, documentId), eq(pages.pageNumber, pageNumber)) });
+  if (!ownedPage || ownedPage.pageNumber !== pageNumber) return Response.json({ error: "页面与文档不匹配" }, { status: 400 });
+  let pageImage = payload.image;
+  if (!pageImage) {
+    const bytes = await getFile(ownedPage.storageKey);
+    if (bytes.byteLength > 20 * 1024 * 1024) return Response.json({ error: "落盘页面超过 20 MB" }, { status: 413 });
+    pageImage = `data:${contentTypeForKey(ownedPage.storageKey)};base64,${bytes.toString("base64")}`;
+  }
+  if (!pageImage.startsWith("data:image/") || pageImage.length > 30 * 1024 * 1024) {
+    return Response.json({ error: "页面图像格式非法或超过 30 MB" }, { status: 413 });
   }
   const sqlite = getSqlite();
   const runId = crypto.randomUUID();
@@ -161,7 +164,7 @@ export async function POST(request: Request) {
       profileId: profile.id,
       system: systemPrompt,
       text: "文件：" + (payload.fileName ?? "未命名试卷") + "，这是第 " + pageNumber + " 页。请提取本页所有完整题目。",
-      image: payload.image,
+      image: pageImage,
       jsonMode: true,
     });
     const normalized = normalize(parseJsonContent(result.content), pageNumber);

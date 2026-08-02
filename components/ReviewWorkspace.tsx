@@ -66,6 +66,7 @@ export function ReviewWorkspace({
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [finishing, setFinishing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [newTag, setNewTag] = useState("");
   const pageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<null | { mode: "move" | "resize"; x: number; y: number; box: BoundingBox }>(null);
@@ -94,6 +95,31 @@ export function ReviewWorkspace({
     setCurrentPage(result.question.page);
   }
 
+  async function retryExtraction() {
+    setRetrying(true);
+    setSaveError("");
+    try {
+      for (const page of pages) {
+        const response = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            documentId: sourceDocument.id,
+            pageId: page.id,
+            pageNumber: page.pageNumber,
+            fileName: sourceDocument.name,
+          }),
+        });
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        if (!response.ok) throw new Error(result.error ?? `第 ${page.pageNumber} 页重新识别失败`);
+      }
+      window.location.reload();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "重新识别失败");
+      setRetrying(false);
+    }
+  }
+
   if (!active || !editableBox || !currentPageInfo) {
     return (
       <div className="page-shell">
@@ -101,7 +127,11 @@ export function ReviewWorkspace({
         <section className="card empty-state">
           <h1>{sourceDocument.name}</h1>
           <p>当前文档已有原始页面，但还没有提取到可审核题目。可以手动补题，或回到上传流程重新提取。</p>
-          {currentPageInfo && <button type="button" className="btn btn-primary" onClick={() => void addManualQuestion(currentPageInfo.pageNumber)}><Plus size={15} /> 手动补一道题</button>}
+          <div className="header-actions">
+            <button type="button" className="btn btn-primary" disabled={retrying} onClick={() => void retryExtraction()}><Sparkles size={15} /> {retrying ? "正在重新识别…" : "重新运行 AI 识别"}</button>
+            {currentPageInfo && <button type="button" className="btn" onClick={() => void addManualQuestion(currentPageInfo.pageNumber)}><Plus size={15} /> 手动补一道题</button>}
+          </div>
+          {saveError && <p className="form-error">{saveError}</p>}
         </section>
       </div>
     );
