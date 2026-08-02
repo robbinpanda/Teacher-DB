@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import NextImage from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -161,7 +161,7 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
               onPointerUp={() => { dragRef.current = null; }}
               onPointerCancel={() => { dragRef.current = null; }}
             >
-              <Image src={pageImage} alt="原试卷第 1 页" width={900} height={1273} draggable={false} priority />
+              <NextImage src={pageImage} alt="原试卷第 1 页" width={900} height={1273} draggable={false} priority />
               {questions.map((question) => (
                 <button
                   type="button"

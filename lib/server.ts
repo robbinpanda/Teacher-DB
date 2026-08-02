@@ -1,13 +1,21 @@
-import { env } from "cloudflare:workers";
+export type RuntimeBindings = {
+  DB?: D1Database;
+  FILES?: R2Bucket;
+  VISION_API_KEY?: string;
+  VISION_API_BASE_URL?: string;
+  VISION_MODEL?: string;
+};
 
-export function runtimeEnv() {
-  return env as unknown as {
-    DB?: D1Database;
-    FILES?: R2Bucket;
-    VISION_API_KEY?: string;
-    VISION_API_BASE_URL?: string;
-    VISION_MODEL?: string;
-  };
+declare global {
+  var __SHITI_RUNTIME_ENV__: RuntimeBindings | undefined;
+}
+
+export function setRuntimeEnv(bindings: RuntimeBindings) {
+  globalThis.__SHITI_RUNTIME_ENV__ = bindings;
+}
+
+export function runtimeEnv(): RuntimeBindings {
+  return globalThis.__SHITI_RUNTIME_ENV__ ?? {};
 }
 
 export function requestOwner(request: Request) {
@@ -17,4 +25,3 @@ export function requestOwner(request: Request) {
 export function now() {
   return new Date().toISOString();
 }
-
