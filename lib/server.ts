@@ -15,7 +15,15 @@ export function setRuntimeEnv(bindings: RuntimeBindings) {
 }
 
 export function runtimeEnv(): RuntimeBindings {
-  return globalThis.__SHITI_RUNTIME_ENV__ ?? {};
+  if (globalThis.__SHITI_RUNTIME_ENV__) return globalThis.__SHITI_RUNTIME_ENV__;
+  if (typeof process !== "undefined") {
+    return {
+      VISION_API_KEY: process.env.VISION_API_KEY,
+      VISION_API_BASE_URL: process.env.VISION_API_BASE_URL,
+      VISION_MODEL: process.env.VISION_MODEL,
+    };
+  }
+  return {};
 }
 
 export function requestOwner(request: Request) {
