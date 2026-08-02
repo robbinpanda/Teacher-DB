@@ -19,10 +19,14 @@ test("ships the teacher question-bank workflow", async () => {
 });
 
 test("ships persistence schema and no starter preview", async () => {
-  const schema = await readFile(new URL("../db/schema.ts", import.meta.url), "utf8");
+  const [schema, extraction] = await Promise.all([
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/extract/route.ts", import.meta.url), "utf8"),
+  ]);
   assert.match(schema, /documents/);
   assert.match(schema, /question_assets/);
   assert.match(schema, /paper_items/);
+  assert.match(extraction, /reasoning_effort:\s*"none"/);
   await access(new URL("../drizzle/0000_lean_songbird.sql", import.meta.url));
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
 });

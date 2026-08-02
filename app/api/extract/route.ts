@@ -93,6 +93,7 @@ export async function POST(request: Request) {
         headers: { authorization: "Bearer " + bindings.VISION_API_KEY, "content-type": "application/json" },
         body: JSON.stringify({
           model,
+          reasoning_effort: "none",
           temperature: 0,
           response_format: { type: "json_object" },
           messages: [

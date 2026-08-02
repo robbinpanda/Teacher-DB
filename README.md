@@ -29,6 +29,7 @@
 - VISION_MODEL：支持图片输入的模型名称
 
 识别适配器位于 app/api/extract/route.ts。密钥只在服务端使用，不会下发浏览器。
+所有模型请求固定使用 reasoning_effort: none，避免视觉抽题被推理阶段拖慢。
 
 ## 数据存储
 
