@@ -95,6 +95,7 @@ export function UploadWorkbench() {
   const [fileName, setFileName] = useState("");
   const [pageCount, setPageCount] = useState(0);
   const [documentId, setDocumentId] = useState<string>();
+  const [sourceMeta, setSourceMeta] = useState({ subject: "数学", grade: "九年级", sourceYear: String(new Date().getFullYear()), sourceExamType: "", sourceRegion: "", sourceSchool: "" });
   const working = ["rendering", "uploading", "extracting"].includes(stage);
 
   async function processFile(file: File) {
@@ -109,6 +110,7 @@ export function UploadWorkbench() {
       const original = new FormData();
       original.append("file", file);
       original.append("pageCount", String(pages.length));
+      Object.entries(sourceMeta).forEach(([key, value]) => original.append(key, value));
       const documentResponse = await fetch("/api/documents", { method: "POST", body: original });
       const documentResult = await documentResponse.json() as { id?: string; error?: string };
       if (!documentResponse.ok || !documentResult.id) throw new Error(documentResult.error ?? "原卷保存失败");
@@ -139,7 +141,6 @@ export function UploadWorkbench() {
             pageNumber: index + 1,
             image: pages[index].dataUrl,
             fileName: file.name,
-            idempotencyKey: `${currentDocumentId}:page:${index + 1}:extract-v1`,
           }),
         });
         const result = await extractionResponse.json() as { questions?: unknown[]; error?: string };
@@ -163,6 +164,14 @@ export function UploadWorkbench() {
   return (
     <div className="upload-card card">
       <div className="section-title"><div><h2>上传一份新试卷</h2><p>文件只在你的题库空间内保存</p></div><span className="pill dark"><ScanLine size={12} /> AI 自动抽题</span></div>
+      <div className="upload-source-grid">
+        <label><span>学科</span><input value={sourceMeta.subject} onChange={(event) => setSourceMeta({ ...sourceMeta, subject: event.target.value })} /></label>
+        <label><span>年级</span><input value={sourceMeta.grade} onChange={(event) => setSourceMeta({ ...sourceMeta, grade: event.target.value })} /></label>
+        <label><span>年份</span><input type="number" value={sourceMeta.sourceYear} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceYear: event.target.value })} /></label>
+        <label><span>考试类型</span><input placeholder="如：二模 / 中考" value={sourceMeta.sourceExamType} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceExamType: event.target.value })} /></label>
+        <label><span>地区</span><input placeholder="如：上海市" value={sourceMeta.sourceRegion} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceRegion: event.target.value })} /></label>
+        <label><span>学校</span><input placeholder="可选" value={sourceMeta.sourceSchool} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceSchool: event.target.value })} /></label>
+      </div>
       <input ref={inputRef} hidden type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,application/pdf,image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void processFile(file); }} />
       <div
         className={"drop-zone " + (working ? "working " : "") + (stage === "done" ? "success " : "") + (stage === "error" ? "failed" : "")}

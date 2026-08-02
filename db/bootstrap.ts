@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 const upgrades: Record<string, Record<string, string>> = {
   documents: {
+    owner_id: "TEXT NOT NULL DEFAULT 'local-demo'",
+    original_key: "TEXT",
+    page_count: "INTEGER NOT NULL DEFAULT 0",
+    subject: "TEXT",
+    grade: "TEXT",
     source_year: "INTEGER",
     source_exam_type: "TEXT",
     source_region: "TEXT",
@@ -89,6 +94,20 @@ const upgrades: Record<string, Record<string, string>> = {
     attempt: "INTEGER NOT NULL DEFAULT 1",
     idempotency_key: "TEXT",
     finished_at: "TEXT",
+  },
+  questions: {
+    confidence: "REAL NOT NULL DEFAULT 0",
+    score: "INTEGER NOT NULL DEFAULT 0",
+  },
+  question_assets: {
+    page_id: "TEXT",
+    source_key: "TEXT",
+    crop_key: "TEXT",
+  },
+  papers: {
+    owner_id: "TEXT NOT NULL DEFAULT 'local-demo'",
+    subtitle: "TEXT",
+    settings_json: "TEXT NOT NULL DEFAULT '{}'",
   },
 };
 

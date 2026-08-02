@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb, getSqlite, sqliteTransaction } from "../../../db";
 import { ensureDatabase } from "../../../db/bootstrap";
-import { assets, extractionRuns, questions } from "../../../db/schema";
+import { assets, documents, extractionRuns, pages, questions } from "../../../db/schema";
 import { resolveModelProfile } from "../../../lib/model-profiles";
 import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
@@ -16,9 +16,10 @@ const systemPrompt = [
   "3. bbox 坐标使用页面宽高百分比，范围 0-100，分别为 x,y,width,height。",
   "4. question bbox 覆盖完整题目。assets 只框真正需要随题保存的图、表、函数图象，不要把题干文字放进题图。",
   "5. type 只能是 single、multiple、fill、answer。",
-  "6. 不要输出 Markdown，只输出严格 JSON。",
+  "6. 如果本页是答案页或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按题号关联前文题目。",
+  "7. 不要输出 Markdown，只输出严格 JSON。",
   "JSON 格式：",
-  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"page\":1,\"bbox\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0},\"assets\":[{\"kind\":\"figure\",\"label\":\"图的说明\",\"page\":1,\"bbox\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}]}",
+  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"page\":1,\"bbox\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0},\"assets\":[{\"kind\":\"figure\",\"label\":\"图的说明\",\"page\":1,\"bbox\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95}]}",
 ].join("\n");
 
 function safeBox(value: unknown): BoundingBox {
@@ -31,10 +32,16 @@ function safeBox(value: unknown): BoundingBox {
   };
 }
 
-function normalize(raw: unknown, pageNumber: number): Question[] {
-  const items = (raw as { questions?: unknown[] })?.questions;
-  if (!Array.isArray(items)) throw new Error("模型结果缺少 questions 数组");
-  return items.map((value, index) => {
+type AnswerUpdate = { number: string; answer: string; analysis: string; confidence: number };
+
+function normalize(raw: unknown, pageNumber: number): { questions: Question[]; answerUpdates: AnswerUpdate[] } {
+  const result = raw as { questions?: unknown[]; answerUpdates?: unknown[] };
+  const items = Array.isArray(result?.questions) ? result.questions : [];
+  const rawUpdates = Array.isArray(result?.answerUpdates) ? result.answerUpdates : [];
+  if (!Array.isArray(result?.questions) && !Array.isArray(result?.answerUpdates)) {
+    throw new Error("模型结果缺少 questions 和 answerUpdates 数组");
+  }
+  const normalizedQuestions: Question[] = items.map((value, index) => {
     const item = value as Record<string, unknown>;
     const type = ["single", "multiple", "fill", "answer"].includes(String(item.type)) ? String(item.type) as QuestionType : "answer";
     const id = crypto.randomUUID();
@@ -67,6 +74,16 @@ function normalize(raw: unknown, pageNumber: number): Question[] {
       score: Number(item.score ?? 0),
     };
   });
+  const answerUpdates = rawUpdates.map((value) => {
+    const item = value as Record<string, unknown>;
+    return {
+      number: String(item.number ?? "").trim(),
+      answer: String(item.answer ?? ""),
+      analysis: String(item.analysis ?? ""),
+      confidence: Math.max(0, Math.min(1, Number(item.confidence ?? 0))),
+    };
+  }).filter((item) => item.number && (item.answer || item.analysis));
+  return { questions: normalizedQuestions, answerUpdates };
 }
 
 function parseJsonContent(content: string) {
@@ -80,19 +97,33 @@ function parseJsonContent(content: string) {
 export async function POST(request: Request) {
   const payload = await request.json() as {
     documentId?: string; pageId?: string; pageNumber?: number; image?: string; fileName?: string;
-    profileId?: string; idempotencyKey?: string;
+    profileId?: string;
   };
   if (!payload.documentId || !payload.image) {
     return Response.json({ error: "documentId 和页面图像均为必填项" }, { status: 400 });
+  }
+  if (!payload.image.startsWith("data:image/") || payload.image.length > 30 * 1024 * 1024) {
+    return Response.json({ error: "页面图像格式非法或超过 30 MB" }, { status: 413 });
   }
   const documentId = payload.documentId;
   await ensureDatabase();
   const ownerId = requestOwner(request);
   const pageNumber = Number(payload.pageNumber ?? 1);
+  const db = getDb();
+  const ownedDocument = await db.query.documents.findFirst({
+    where: and(eq(documents.id, documentId), eq(documents.ownerId, ownerId)),
+  });
+  if (!ownedDocument) return Response.json({ error: "文档不存在" }, { status: 404 });
+  if (payload.pageId) {
+    const ownedPage = await db.query.pages.findFirst({
+      where: and(eq(pages.id, payload.pageId), eq(pages.documentId, documentId)),
+    });
+    if (!ownedPage || ownedPage.pageNumber !== pageNumber) return Response.json({ error: "页面与文档不匹配" }, { status: 400 });
+  }
   const sqlite = getSqlite();
   const runId = crypto.randomUUID();
   const createdAt = now();
-  const idempotencyKey = payload.idempotencyKey ?? `${documentId}:page:${pageNumber}:extract-v1`;
+  const idempotencyKey = `${documentId}:page:${pageNumber}:extract-v2`;
   const existingRun = await getDb().query.extractionRuns.findFirst({
     where: and(eq(extractionRuns.idempotencyKey, idempotencyKey), eq(extractionRuns.status, "complete")),
   });
@@ -133,7 +164,8 @@ export async function POST(request: Request) {
       image: payload.image,
       jsonMode: true,
     });
-    const extracted = normalize(parseJsonContent(result.content), pageNumber);
+    const normalized = normalize(parseJsonContent(result.content), pageNumber);
+    const extracted = normalized.questions;
     const finishedAt = now();
     sqliteTransaction((transaction) => {
       transaction.prepare("DELETE FROM questions WHERE document_id = ? AND page_number = ?").run(documentId, pageNumber);
@@ -160,6 +192,15 @@ export async function POST(request: Request) {
           ).run(question.id, tagName);
         }
       }
+      for (const update of normalized.answerUpdates) {
+        transaction.prepare(
+          `UPDATE questions SET
+             answer = CASE WHEN ? <> '' THEN ? ELSE answer END,
+             analysis = CASE WHEN ? <> '' THEN ? ELSE analysis END,
+             confidence = max(confidence, ?), updated_at = ?
+           WHERE document_id = ? AND number = ?`,
+        ).run(update.answer, update.answer, update.analysis, update.analysis, update.confidence, finishedAt, documentId, update.number);
+      }
       transaction.prepare(
         "UPDATE extraction_runs SET status = 'complete', raw_json = ?, error = NULL, finished_at = ? WHERE idempotency_key = ?",
       ).run(result.content, finishedAt, idempotencyKey);
@@ -169,7 +210,7 @@ export async function POST(request: Request) {
     });
     return Response.json({
       runId, provider: profile.provider, model: profile.model, modelProfileId: profile.id,
-      mode: "live", idempotentReplay: false, questions: extracted,
+      mode: "live", idempotentReplay: false, questions: extracted, answerUpdates: normalized.answerUpdates,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "识别失败";

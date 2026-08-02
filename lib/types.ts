@@ -13,6 +13,9 @@ export type QuestionAsset = {
   page: number;
   bbox: BoundingBox;
   label: string;
+  sourceKey?: string | null;
+  cropKey?: string | null;
+  url?: string | null;
 };
 
 export type Question = {
@@ -38,9 +41,46 @@ export type SourceDocument = {
   subject: string;
   grade: string;
   pageCount: number;
-  status: "uploading" | "extracting" | "reviewing" | "complete";
+  status: "uploading" | "extracting" | "reviewing" | "complete" | "failed";
   createdAt: string;
   questionCount: number;
   approvedCount: number;
 };
 
+export type QuestionSource = {
+  documentId: string;
+  documentName: string;
+  subject: string;
+  grade: string;
+  year?: number | null;
+  examType?: string | null;
+  region?: string | null;
+  school?: string | null;
+};
+
+export type QuestionWithSource = Question & {
+  source: QuestionSource;
+};
+
+export type ReviewPage = {
+  id: string;
+  pageNumber: number;
+  imageUrl: string;
+  width: number;
+  height: number;
+};
+
+export type ReviewDocument = {
+  id: string;
+  name: string;
+  subject: string;
+  grade: string;
+  year?: number | null;
+  examType?: string | null;
+  region?: string | null;
+  school?: string | null;
+  status: string;
+  pageCount: number;
+  questionCount: number;
+  approvedCount: number;
+};

@@ -1,8 +1,12 @@
 import { QuestionBank } from "../../components/QuestionBank";
-import { demoQuestions } from "../../lib/demo-data";
+import { getBankData } from "../../lib/question-repository";
+import { headers } from "next/headers";
 
 export const metadata = { title: "我的题库 · 拾题" };
 
-export default function BankPage() {
-  return <QuestionBank initialQuestions={demoQuestions} />;
+export default async function BankPage() {
+  const requestHeaders = await headers();
+  const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
+  const data = await getBankData(ownerId);
+  return <QuestionBank initialQuestions={data.questions} stats={data.stats} availableTags={data.tags} />;
 }

@@ -1,7 +1,8 @@
 import { getDb } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
-import { pages } from "../../../../../db/schema";
-import { now } from "../../../../../lib/server";
+import { documents, pages } from "../../../../../db/schema";
+import { now, requestOwner } from "../../../../../lib/server";
+import { and, eq } from "drizzle-orm";
 import { putFile } from "../../../../../lib/file-storage";
 
 export const runtime = "nodejs";
@@ -9,6 +10,11 @@ export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ documentId: string }> }) {
   await ensureDatabase();
   const { documentId } = await context.params;
+  const db = getDb();
+  const document = await db.query.documents.findFirst({
+    where: and(eq(documents.id, documentId), eq(documents.ownerId, requestOwner(request))),
+  });
+  if (!document) return Response.json({ error: "文档不存在" }, { status: 404 });
   const form = await request.formData();
   const page = form.get("page");
   if (!(page instanceof File)) return Response.json({ error: "缺少页面图" }, { status: 400 });
@@ -22,7 +28,6 @@ export async function POST(request: Request, context: { params: Promise<{ docume
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   const checksum = Array.from(digest, (value) => value.toString(16).padStart(2, "0")).join("");
   await putFile(storageKey, bytes);
-  const db = getDb();
   const existing = await db.query.pages.findFirst({
     where: (table, operators) => operators.and(operators.eq(table.documentId, documentId), operators.eq(table.pageNumber, pageNumber)),
   });

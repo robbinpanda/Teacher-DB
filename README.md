@@ -24,6 +24,11 @@
 - 所有模型调用固定 `reasoning_effort: "none"`
 - 每页抽题幂等键、尝试次数、原始响应、失败原因和事务入库
 - 题目 JSON、LaTeX、页面/题图坐标、置信度、标签和人工审核界面
+- 答案页通过 `answerUpdates` 按题号回填，不会伪造为新题
+- 人工修改题号、题型、题干、选项、答案、解析、分值和标签，并可手动补题
+- 题图框拖拽调整后使用 Sharp 生成真实 JPEG 裁剪文件
+- 已审核题库的题型、标签、来源全文筛选，以及 JSON / Markdown 下载
+- 从题库选题、排序、智能补齐到 100 分、自动保存试卷、打印或保存 PDF
 
 ## 本地运行
 
@@ -54,6 +59,17 @@
 
 数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_assets、tags、model_profiles、papers 和 paper_items。
 
-## 尚待完成
+## 验证
 
-目前题库、审核和组卷仍有部分演示数据。下一阶段会依次替换为真实查询，补齐裁剪图生成、来源全文筛选、JSON/Markdown/PDF 导出、后台任务恢复和自动化测试。旧版 `.doc` 将通过可选 LibreOffice 工作进程支持，而不是在浏览器中强行解析。
+    npm test
+
+开发服务器运行时，还可以执行会自动创建并清理隔离数据的接口回归：
+
+    npm run test:runtime
+
+## 当前边界
+
+- `.docx` 由浏览器中的 `docx-preview` 渲染；复杂 Word 浮动对象、特殊字体或旧版 `.doc` 仍建议先转成 PDF。旧版 `.doc` 当前会明确报错，不会静默生成错误页面。
+- 题目跨页断开时不会自动猜测缺失内容，需要在审核页人工合并或补录。
+- “打印 / 保存 PDF”调用浏览器标准打印能力，教师可直接选择“另存为 PDF”；服务端无头 PDF 队列尚未加入。
+- 本地模式是单教师 `local-demo` 空间。部署为多用户系统时，需要由可信反向代理提供 `oai-authenticated-user-id`，不能让公网客户端自行伪造该请求头。

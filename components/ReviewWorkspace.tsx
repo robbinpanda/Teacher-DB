@@ -20,16 +20,14 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { MathText } from "./MathText";
-import type { BoundingBox, Question } from "../lib/types";
-import { typeLabels } from "../lib/demo-data";
-
-const pageImage = "/demo-exam-page.svg";
+import type { BoundingBox, Question, QuestionType, QuestionWithSource, ReviewDocument, ReviewPage } from "../lib/types";
+import { typeLabels } from "../lib/question-labels";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function CropPreview({ bbox }: { bbox: BoundingBox }) {
+function CropPreview({ bbox, imageUrl }: { bbox: BoundingBox; imageUrl: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const image = new Image();
@@ -44,22 +42,70 @@ function CropPreview({ bbox }: { bbox: BoundingBox }) {
       canvas.height = Math.max(130, Math.round(440 * sourceHeight / sourceWidth));
       canvas.getContext("2d")?.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
     };
-    image.src = pageImage;
-  }, [bbox]);
+    image.src = imageUrl;
+  }, [bbox, imageUrl]);
   return <canvas ref={canvasRef} className="crop-preview-canvas" />;
 }
 
-export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Question[] }) {
+export function ReviewWorkspace({
+  sourceDocument,
+  pages,
+  initialQuestions,
+  initialActiveId,
+}: {
+  sourceDocument: ReviewDocument;
+  pages: ReviewPage[];
+  initialQuestions: QuestionWithSource[];
+  initialActiveId?: string;
+}) {
   const [questions, setQuestions] = useState(initialQuestions);
-  const [activeId, setActiveId] = useState(initialQuestions[1]?.id ?? initialQuestions[0].id);
+  const initialActive = initialQuestions.find((question) => question.id === initialActiveId) ?? initialQuestions[0];
+  const [activeId, setActiveId] = useState(initialActive?.id ?? "");
+  const [currentPage, setCurrentPage] = useState(initialActive?.page ?? pages[0]?.pageNumber ?? 1);
   const [zoom, setZoom] = useState(82);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [finishing, setFinishing] = useState(false);
   const [newTag, setNewTag] = useState("");
   const pageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<null | { mode: "move" | "resize"; x: number; y: number; box: BoundingBox }>(null);
   const active = questions.find((question) => question.id === activeId) ?? questions[0];
-  const activeAsset = active.assets[0];
-  const editableBox = activeAsset?.bbox ?? active.bbox;
+  const activeAsset = active?.assets[0];
+  const editableBox = activeAsset?.bbox ?? active?.bbox;
+  const currentPageInfo = pages.find((page) => page.pageNumber === currentPage) ?? pages[0];
+  const pageQuestions = questions.filter((question) => question.page === currentPage);
+  const approvedCount = questions.filter((question) => question.status === "approved").length;
+  const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
+
+  async function addManualQuestion(pageNumber = currentPage) {
+    setSaveError("");
+    const response = await fetch(`/api/documents/${sourceDocument.id}/questions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ page: pageNumber }),
+    });
+    const result = await response.json().catch(() => ({})) as { question?: QuestionWithSource; error?: string };
+    if (!response.ok || !result.question) {
+      setSaveError(result.error ?? "手动补题失败");
+      return;
+    }
+    setQuestions((items) => [...items, result.question!]);
+    setActiveId(result.question.id);
+    setCurrentPage(result.question.page);
+  }
+
+  if (!active || !editableBox || !currentPageInfo) {
+    return (
+      <div className="page-shell">
+        <Link href="/" className="btn"><ArrowLeft size={16} /> 返回</Link>
+        <section className="card empty-state">
+          <h1>{sourceDocument.name}</h1>
+          <p>当前文档已有原始页面，但还没有提取到可审核题目。可以手动补题，或回到上传流程重新提取。</p>
+          {currentPageInfo && <button type="button" className="btn btn-primary" onClick={() => void addManualQuestion(currentPageInfo.pageNumber)}><Plus size={15} /> 手动补一道题</button>}
+        </section>
+      </div>
+    );
+  }
 
   function patchActive(patch: Partial<Question>) {
     setQuestions((items) => items.map((item) => item.id === active.id ? { ...item, ...patch } : item));
@@ -104,14 +150,53 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
 
   async function saveQuestion() {
     setSaved(false);
-    await fetch("/api/questions/" + active.id, {
+    setSaveError("");
+    const response = await fetch("/api/questions/" + active.id, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ...active, status: "approved" }),
-    }).catch(() => null);
+    });
+    const result = await response.json().catch(() => ({})) as { error?: string };
+    if (!response.ok) {
+      setSaveError(result.error ?? "保存失败，请稍后重试");
+      return;
+    }
     patchActive({ status: "approved" });
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2200);
+  }
+
+  function selectQuestion(question: QuestionWithSource) {
+    setActiveId(question.id);
+    setCurrentPage(question.page);
+    setSaveError("");
+  }
+
+  function switchPage(direction: -1 | 1) {
+    const index = pages.findIndex((page) => page.pageNumber === currentPage);
+    const next = pages[clamp(index + direction, 0, pages.length - 1)];
+    if (!next) return;
+    setCurrentPage(next.pageNumber);
+    const firstQuestion = questions.find((question) => question.page === next.pageNumber);
+    if (firstQuestion) setActiveId(firstQuestion.id);
+  }
+
+  async function finishReview() {
+    setFinishing(true);
+    setSaveError("");
+    try {
+      const response = await fetch("/api/documents/" + sourceDocument.id, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "complete" }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "无法完成审核");
+      window.location.href = "/bank";
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "无法完成审核");
+      setFinishing(false);
+    }
   }
 
   function addTag() {
@@ -125,31 +210,32 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
       <header className="review-topbar no-print">
         <div className="review-title">
           <Link href="/" className="icon-btn" aria-label="返回"><ArrowLeft size={18} /></Link>
-          <div><strong>2025 届九年级第二次模拟考试·数学</strong><span>第 1 / 8 页　·　发现 24 道题</span></div>
+          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {pages.length} 页　·　发现 {questions.length} 道题</span></div>
         </div>
-        <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: "75%" }} /></div><b>18 / 24</b></div>
+        <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
-          <button className="btn btn-small" type="button"><Save size={14} /> 暂存</button>
-          <Link className="btn btn-primary btn-small" href="/bank">完成并入库 <Check size={14} /></Link>
+          <button className="btn btn-small" type="button" onClick={() => void saveQuestion()}><Save size={14} /> 暂存当前题</button>
+          <button className="btn btn-primary btn-small" type="button" disabled={finishing} onClick={() => void finishReview()}>{finishing ? "正在完成…" : "完成并入库"} <Check size={14} /></button>
         </div>
       </header>
 
       <div className="review-body">
         <aside className="question-rail no-print">
-          <div className="rail-title"><span>本页题目</span><b>{questions.length}</b></div>
-          {questions.map((question) => (
-            <button type="button" key={question.id} onClick={() => setActiveId(question.id)} className={question.id === active.id ? "active" : ""}>
+          <div className="rail-title"><span>本页题目</span><b>{pageQuestions.length}</b></div>
+          {pageQuestions.map((question) => (
+            <button type="button" key={question.id} onClick={() => selectQuestion(question)} className={question.id === active.id ? "active" : ""}>
               <span className="question-number">{question.number}</span>
               <span><strong>{typeLabels[question.type]}</strong><small>{question.assets.length ? "含 1 张题图" : "纯文字题"}</small></span>
               {question.status === "approved" ? <Check size={14} className="status-ok" /> : question.status === "needs_attention" ? <AlertTriangle size={14} className="status-warn" /> : <i className="status-dot" />}
             </button>
           ))}
-          <button type="button" className="add-question"><Plus size={15} /> 手动补一道题</button>
+          {!pageQuestions.length && <p className="hint">本页未提取到题目</p>}
+          <button type="button" className="add-question" onClick={() => void addManualQuestion()}><Plus size={15} /> 手动补一道题</button>
         </aside>
 
         <section className="source-panel">
           <div className="source-toolbar no-print">
-            <div><span className="pill gray">原始页 01</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
+            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
             <div className="zoom-control"><button type="button" onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span>{zoom}%</span><button type="button" onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div>
           </div>
           <div className="page-stage">
@@ -161,18 +247,18 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
               onPointerUp={() => { dragRef.current = null; }}
               onPointerCancel={() => { dragRef.current = null; }}
             >
-              <NextImage src={pageImage} alt="原试卷第 1 页" width={900} height={1273} draggable={false} priority />
-              {questions.map((question) => (
+              <NextImage src={currentPageInfo.imageUrl} alt={`原试卷第 ${currentPage} 页`} width={currentPageInfo.width} height={currentPageInfo.height} draggable={false} priority unoptimized />
+              {pageQuestions.map((question) => (
                 <button
                   type="button"
                   key={question.id}
                   className={"question-box " + (question.id === active.id ? "active" : "")}
                   style={{ left: question.bbox.x + "%", top: question.bbox.y + "%", width: question.bbox.width + "%", height: question.bbox.height + "%" }}
-                  onClick={() => setActiveId(question.id)}
+                  onClick={() => selectQuestion(question)}
                   aria-label={"第 " + question.number + " 题范围"}
                 ><span>Q{question.number}</span></button>
               ))}
-              {activeAsset && (
+              {activeAsset && active.page === currentPage && (
                 <div
                   className="asset-box"
                   style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }}
@@ -184,7 +270,7 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
               )}
             </div>
           </div>
-          <div className="page-switch no-print"><button type="button"><ChevronLeft size={15} /></button><span>第 1 页 / 共 8 页</span><button type="button"><ChevronRight size={15} /></button></div>
+          <div className="page-switch no-print"><button type="button" disabled={currentPage === pages[0]?.pageNumber} onClick={() => switchPage(-1)}><ChevronLeft size={15} /></button><span>第 {currentPage} 页 / 共 {pages.length} 页</span><button type="button" disabled={currentPage === pages.at(-1)?.pageNumber} onClick={() => switchPage(1)}><ChevronRight size={15} /></button></div>
         </section>
 
         <aside className="editor-panel no-print">
@@ -196,7 +282,7 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
           {activeAsset && (
             <div className="crop-card">
               <div className="field-label"><span><ImageIcon size={13} /> 题图裁剪</span><b>可拖动调整</b></div>
-              <CropPreview bbox={editableBox} />
+              <CropPreview bbox={editableBox} imageUrl={currentPageInfo.imageUrl} />
               <div className="bbox-grid">
                 {(["x", "y", "width", "height"] as const).map((key) => (
                   <label key={key}><span>{key === "width" ? "宽" : key === "height" ? "高" : key.toUpperCase()}</span><input type="number" min="0" max="100" step=".1" value={editableBox[key].toFixed(1)} onChange={(event) => patchBox({ ...editableBox, [key]: Number(event.target.value) })} /><i>%</i></label>
@@ -205,15 +291,27 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
             </div>
           )}
 
+          <div className="two-fields">
+            <label className="edit-field"><span>题号</span><input value={active.number} onChange={(event) => patchActive({ number: event.target.value })} /></label>
+            <label className="edit-field"><span>题型</span><select value={active.type} onChange={(event) => {
+              const nextType = event.target.value as QuestionType;
+              const options = ["single", "multiple"].includes(nextType)
+                ? (active.options?.length ? active.options : ["A", "B", "C", "D"].map((key) => ({ key, content: "" })))
+                : [];
+              patchActive({ type: nextType, options });
+            }}>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          </div>
+
           <label className="edit-field"><span>题干 <em>支持 $LaTeX$</em></span><textarea rows={4} value={active.stem} onChange={(event) => patchActive({ stem: event.target.value })} /></label>
           <div className="render-preview"><span>渲染预览</span><MathText text={active.stem} /></div>
 
-          {active.options && (
+          {["single", "multiple"].includes(active.type) && (
             <div className="option-editor">
               <span className="field-label">选项</span>
-              {active.options.map((option, index) => (
+              {(active.options ?? []).map((option, index) => (
                 <label key={option.key}><b>{option.key}</b><input value={option.content} onChange={(event) => patchActive({ options: active.options?.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item) })} /></label>
               ))}
+              <button type="button" className="btn btn-small" onClick={() => patchActive({ options: [...(active.options ?? []), { key: String.fromCharCode(65 + (active.options?.length ?? 0)), content: "" }] })}><Plus size={12} /> 添加选项</button>
             </div>
           )}
 
@@ -229,6 +327,7 @@ export function ReviewWorkspace({ initialQuestions }: { initialQuestions: Questi
             <div className="tag-input"><input placeholder="输入标签后回车" value={newTag} onChange={(event) => setNewTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} /><button type="button" onClick={addTag}><Plus size={14} /></button></div>
           </div>
 
+          {saveError && <p className="form-error">{saveError}</p>}
           <button type="button" className="btn btn-primary save-review" onClick={() => void saveQuestion()}><Check size={16} /> {saved ? "已保存，审核通过" : "保存并通过此题"}</button>
         </aside>
       </div>

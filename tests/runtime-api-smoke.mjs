@@ -1,0 +1,110 @@
+import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import Database from "better-sqlite3";
+import sharp from "sharp";
+
+const baseUrl = process.env.TEST_BASE_URL ?? "http://127.0.0.1:3000";
+const token = crypto.randomUUID();
+const documentId = `runtime-smoke-${token}`;
+const pageId = `runtime-smoke-page-${token}`;
+const questionId = `runtime-smoke-question-${token}`;
+const assetId = `runtime-smoke-asset-${token}`;
+const paperId = `runtime-smoke-paper-${token}`;
+const keepFixture = process.env.KEEP_RUNTIME_FIXTURE === "1";
+const dataRoot = path.resolve("data");
+const fixtureRoot = path.resolve(dataRoot, "files", "documents", documentId);
+assert.ok(fixtureRoot.startsWith(path.resolve(dataRoot, "files") + path.sep));
+const pageKey = `documents/${documentId}/pages/0001.png`;
+const pagePath = path.resolve(dataRoot, "files", pageKey);
+const databasePath = path.resolve(dataRoot, "teacher-question-bank.sqlite3");
+const db = new Database(databasePath);
+const timestamp = new Date().toISOString();
+
+async function jsonFetch(url, init) {
+  const response = await fetch(baseUrl + url, init);
+  const body = await response.json().catch(() => ({}));
+  assert.ok(response.ok, `${url}: ${response.status} ${JSON.stringify(body)}`);
+  return body;
+}
+
+try {
+  await mkdir(path.dirname(pagePath), { recursive: true });
+  await writeFile(pagePath, await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#f5efe1" } }).png().toBuffer());
+  db.prepare(`INSERT INTO documents
+    (id, owner_id, name, mime_type, status, page_count, subject, grade, source_year, source_exam_type, created_at, updated_at)
+    VALUES (?, 'local-demo', ?, 'image/png', 'reviewing', 1, '数学', '九年级', 2026, '运行时回归', ?, ?)`)
+    .run(documentId, `运行时回归-${token}.png`, timestamp, timestamp);
+  db.prepare(`INSERT INTO pages (id, document_id, page_number, storage_key, width, height, status, created_at)
+    VALUES (?, ?, 1, ?, 1200, 800, 'ready', ?)`)
+    .run(pageId, documentId, pageKey, timestamp);
+  db.prepare(`INSERT INTO questions
+    (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json, status, confidence, score, created_at, updated_at)
+    VALUES (?, ?, '1', 'single', '若 $x^2=4$，则 $x$ 的值是？', '[{"key":"A","content":"$2$"}]', '$\\pm 2$', '平方根定义', 1, '{"x":5,"y":5,"width":80,"height":35}', 'pending', 0.98, 3, ?, ?)`)
+    .run(questionId, documentId, timestamp, timestamp);
+  db.prepare(`INSERT INTO question_assets (id, question_id, page_id, kind, label, source_key, bbox_json, created_at)
+    VALUES (?, ?, ?, 'figure', '运行时题图', ?, '{"x":10,"y":10,"width":30,"height":25}', ?)`)
+    .run(assetId, questionId, pageId, pageKey, timestamp);
+
+  const saved = await jsonFetch(`/api/questions/${questionId}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: questionId, number: "1", type: "single", stem: "若 $x^2=4$，则 $x$ 的值是？",
+      options: [{ key: "A", content: "$2$" }], answer: "$\\pm 2$", analysis: "平方根定义",
+      page: 1, bbox: { x: 5, y: 5, width: 80, height: 35 },
+      assets: [{ id: assetId, kind: "figure", page: 1, bbox: { x: 10, y: 10, width: 30, height: 25 }, label: "运行时题图" }],
+      tags: ["运行时回归"], confidence: 0.98, status: "approved", score: 3,
+    }),
+  });
+  assert.equal(saved.saved, true);
+  assert.match(saved.question.assets[0].url, /\/api\/files\//);
+  const crop = await fetch(baseUrl + saved.question.assets[0].url);
+  assert.equal(crop.status, 200);
+  assert.equal(crop.headers.get("content-type"), "image/jpeg");
+  assert.ok((await crop.arrayBuffer()).byteLength > 100);
+
+  const manual = await jsonFetch(`/api/documents/${documentId}/questions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ page: 1 }),
+  });
+  assert.equal(manual.question.page, 1);
+  await jsonFetch(`/api/questions/${manual.question.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...manual.question, stem: "人工补录题", status: "approved" }),
+  });
+
+  const exported = await jsonFetch(`/api/exports/questions?ids=${questionId}&format=json`);
+  assert.equal(exported.count, 1);
+  assert.equal(exported.questions[0].source.examType, "运行时回归");
+  assert.equal(exported.questions[0].assets[0].cropKey.endsWith(`${assetId}.jpg`), true);
+  const markdown = await fetch(`${baseUrl}/api/exports/questions?ids=${questionId}&format=markdown`);
+  assert.equal(markdown.status, 200);
+  assert.match(await markdown.text(), /x\^2=4/);
+
+  await jsonFetch("/api/papers", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: paperId, title: "运行时回归试卷", subtitle: "自动测试", questionIds: [questionId] }),
+  });
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM paper_items WHERE paper_id = ?").get(paperId).count, 1);
+
+  await jsonFetch(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "complete" }),
+  });
+  assert.equal(db.prepare("SELECT status FROM documents WHERE id = ?").get(documentId).status, "complete");
+  console.log("runtime API smoke test passed");
+  if (keepFixture) console.log(JSON.stringify({ documentId, paperId, fixtureRoot }));
+} finally {
+  if (!keepFixture) {
+    db.prepare("DELETE FROM papers WHERE id = ?").run(paperId);
+    db.prepare("DELETE FROM documents WHERE id = ?").run(documentId);
+    db.prepare("DELETE FROM tags WHERE name = '运行时回归' AND NOT EXISTS (SELECT 1 FROM question_tags WHERE tag_id = tags.id)").run();
+  }
+  db.close();
+  if (!keepFixture) await rm(fixtureRoot, { recursive: true, force: true });
+}

@@ -1,11 +1,16 @@
 import Link from "next/link";
 import { ArrowRight, Clock3, FileStack, ScanText, Sparkles } from "lucide-react";
 import { UploadWorkbench } from "../components/UploadWorkbench";
-import { demoDocuments } from "../lib/demo-data";
+import { getDocuments } from "../lib/question-repository";
+import { headers } from "next/headers";
 
 export const metadata = { title: "处理中心 · 拾题" };
 
-export default function Home() {
+export default async function Home() {
+  const requestHeaders = await headers();
+  const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
+  const sourceDocuments = await getDocuments(ownerId);
+  const nextReview = sourceDocuments.find((document) => document.status === "reviewing");
   return (
     <div className="page-shell dashboard">
       <header className="page-header">
@@ -16,7 +21,7 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <Link className="btn" href="/bank"><FileStack size={16} /> 查看题库</Link>
-          <Link className="btn btn-primary" href="/review/demo"><ScanText size={16} /> 继续审核</Link>
+          {nextReview && <Link className="btn btn-primary" href={`/review/${nextReview.id}`}><ScanText size={16} /> 继续审核</Link>}
         </div>
       </header>
       <section className="dashboard-grid">
@@ -33,19 +38,20 @@ export default function Home() {
         </aside>
       </section>
       <section className="recent-section">
-        <div className="section-title"><div><h2>最近处理的试卷</h2><p>从上传到落库的状态一目了然</p></div><button type="button" className="btn btn-small btn-ghost">全部记录 <ArrowRight size={14} /></button></div>
+        <div className="section-title"><div><h2>最近处理的试卷</h2><p>从上传到落库的状态一目了然</p></div></div>
         <div className="document-list">
-          {demoDocuments.map((doc) => {
+          {sourceDocuments.map((doc) => {
             const progress = doc.questionCount ? Math.round((doc.approvedCount / doc.questionCount) * 100) : doc.status === "extracting" ? 42 : 0;
             return (
-              <Link href={doc.id === "demo" ? "/review/demo" : "/bank"} className="document-row card" key={doc.id}>
+              <Link href={doc.status === "complete" ? "/bank" : `/review/${doc.id}`} className="document-row card" key={doc.id}>
                 <span className={"document-icon " + doc.subject}>{doc.subject.slice(0, 1)}</span>
-                <div className="document-main"><strong>{doc.name}</strong><span><Clock3 size={12} /> {doc.createdAt}　·　{doc.pageCount} 页　·　{doc.grade}</span></div>
+                <div className="document-main"><strong>{doc.name}</strong><span><Clock3 size={12} /> {new Date(doc.createdAt).toLocaleString("zh-CN")}　·　{doc.pageCount} 页　·　{doc.grade}</span></div>
                 <div className="document-progress"><div><span>{doc.status === "extracting" ? "AI 识别中" : doc.status === "complete" ? "已入库" : "已审核 " + doc.approvedCount + "/" + doc.questionCount}</span><b>{progress}%</b></div><div className="progress"><span style={{ width: progress + "%" }} /></div></div>
                 <ArrowRight size={17} className="row-arrow" />
               </Link>
             );
           })}
+          {!sourceDocuments.length && <div className="card empty-state"><h3>还没有处理记录</h3><p>在上方上传第一份 PDF、DOCX 或图片试卷。</p></div>}
         </div>
       </section>
     </div>
