@@ -120,16 +120,20 @@ export function UploadWorkbench() {
         await fetch("/api/documents/" + documentId + "/pages", { method: "POST", body: form }).catch(() => null);
       }
       setStage("extracting");
-      setMessage("视觉模型正在识别题目边界、LaTeX 与答案…");
-      const extractionResponse = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ documentId, pageNumber: 1, image: pages[0]?.dataUrl, fileName: file.name }),
-      });
-      if (!extractionResponse.ok) throw new Error("识题接口暂时不可用");
-      const result = await extractionResponse.json() as { questions?: unknown[] };
+      let extractedCount = 0;
+      for (let index = 0; index < pages.length; index += 1) {
+        setMessage("视觉模型正在识别第 " + (index + 1) + " / " + pages.length + " 页的题目、LaTeX 与答案…");
+        const extractionResponse = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ documentId, pageNumber: index + 1, image: pages[index].dataUrl, fileName: file.name }),
+        });
+        if (!extractionResponse.ok) throw new Error("第 " + (index + 1) + " 页识题接口暂时不可用");
+        const result = await extractionResponse.json() as { questions?: unknown[] };
+        extractedCount += result.questions?.length ?? 0;
+      }
       setStage("done");
-      setMessage("识别完成：发现 " + (result.questions?.length ?? 0) + " 道题，已进入待审核区。");
+      setMessage("识别完成：共发现 " + extractedCount + " 道题，已进入待审核区。");
     } catch (error) {
       setStage("error");
       setMessage(error instanceof Error ? error.message : "处理失败，请稍后再试");
