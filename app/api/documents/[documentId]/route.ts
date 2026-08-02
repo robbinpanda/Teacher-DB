@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { getDb } from "../../../../db";
+import { getDb, getSqlite } from "../../../../db";
 import { ensureDatabase } from "../../../../db/bootstrap";
 import { documents, questions } from "../../../../db/schema";
 import { now, requestOwner } from "../../../../lib/server";
@@ -33,6 +33,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     if (!counts.total) return Response.json({ error: "还没有可入库的题目" }, { status: 409 });
     if (counts.approved !== counts.total) {
       return Response.json({ error: `还有 ${counts.total - counts.approved} 道题未审核，不能完成入库` }, { status: 409 });
+    }
+    const pageProgress = getSqlite().prepare(
+      `SELECT COUNT(p.id) AS total,
+              COALESCE(SUM(CASE WHEN r.status = 'complete' THEN 1 ELSE 0 END), 0) AS complete
+         FROM pages p LEFT JOIN extraction_runs r
+           ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v2'
+        WHERE p.document_id = ?`,
+    ).get(documentId) as { total: number; complete: number };
+    const missingPages = Math.max(0, document.pageCount - pageProgress.total);
+    const incompletePages = missingPages + pageProgress.total - pageProgress.complete;
+    if (incompletePages > 0) {
+      return Response.json({ error: `还有 ${incompletePages} 页未完成识别，不能完成入库` }, { status: 409 });
     }
   }
 

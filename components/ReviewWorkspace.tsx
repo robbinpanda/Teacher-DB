@@ -77,6 +77,8 @@ export function ReviewWorkspace({
   const pageQuestions = questions.filter((question) => question.page === currentPage);
   const approvedCount = questions.filter((question) => question.status === "approved").length;
   const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
+  const incompletePages = pages.filter((page) => page.extractionStatus !== "complete");
+  const failedPages = pages.filter((page) => page.extractionStatus === "failed");
 
   async function addManualQuestion(pageNumber = currentPage) {
     setSaveError("");
@@ -99,7 +101,7 @@ export function ReviewWorkspace({
     setRetrying(true);
     setSaveError("");
     try {
-      for (const page of pages) {
+      for (const page of incompletePages) {
         const response = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -240,10 +242,11 @@ export function ReviewWorkspace({
       <header className="review-topbar no-print">
         <div className="review-title">
           <Link href="/" className="icon-btn" aria-label="返回"><ArrowLeft size={18} /></Link>
-          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {pages.length} 页　·　发现 {questions.length} 道题</span></div>
+          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {pages.length} 页　·　发现 {questions.length} 道题　·　识别 {pages.length - incompletePages.length}/{pages.length} 页</span></div>
         </div>
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
+          {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><Sparkles size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
           <button className="btn btn-small" type="button" onClick={() => void saveQuestion()}><Save size={14} /> 暂存当前题</button>
           <button className="btn btn-primary btn-small" type="button" disabled={finishing} onClick={() => void finishReview()}>{finishing ? "正在完成…" : "完成并入库"} <Check size={14} /></button>
         </div>
@@ -265,7 +268,7 @@ export function ReviewWorkspace({
 
         <section className="source-panel">
           <div className="source-toolbar no-print">
-            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
+            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className={`pill ${currentPageInfo.extractionStatus === "complete" ? "green" : currentPageInfo.extractionStatus === "failed" ? "orange" : "gray"}`}>{currentPageInfo.extractionStatus === "complete" ? "识别完成" : currentPageInfo.extractionStatus === "failed" ? `识别失败 · 第 ${currentPageInfo.extractionAttempt} 次` : currentPageInfo.extractionStatus === "running" ? "识别中" : "等待识别"}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
             <div className="zoom-control"><button type="button" onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span>{zoom}%</span><button type="button" onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div>
           </div>
           <div className="page-stage">

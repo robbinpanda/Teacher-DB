@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Eye, GripVertical, Printer, Settings2, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, Eye, GripVertical, LoaderCircle, Settings2, Sparkles, Trash2 } from "lucide-react";
 import type { QuestionWithSource } from "../lib/types";
 import { typeLabels } from "../lib/question-labels";
-import { MathText } from "./MathText";
+import { PaperPrintable } from "./PaperPrintable";
 
 export function PaperBuilder({ questions, initialIds }: { questions: QuestionWithSource[]; initialIds: string[] }) {
   const initial = initialIds.length ? initialIds : questions.slice(0, 5).map((question) => question.id);
@@ -16,6 +15,8 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
   const [showAnswers, setShowAnswers] = useState(false);
   const [paperId] = useState(() => crypto.randomUUID());
   const [saveState, setSaveState] = useState<"saving" | "saved" | "error">("saving");
+  const [downloading, setDownloading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const selected = useMemo(() => ids.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as QuestionWithSource[], [ids, questions]);
   const totalScore = selected.reduce((sum, question) => sum + (question.score ?? 0), 0);
 
@@ -68,18 +69,49 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
     setIds((items) => [...items, ...additions]);
   }
 
+  async function downloadPdf() {
+    setDownloading(true);
+    setPdfError("");
+    setSaveState("saving");
+    try {
+      const saveResponse = await fetch("/api/papers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: paperId, title, subtitle, questionIds: ids, settings: { showAnswers } }),
+      });
+      if (!saveResponse.ok) throw new Error("试卷保存失败，无法生成 PDF");
+      setSaveState("saved");
+      const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/pdf${showAnswers ? "?answers=1" : ""}`);
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(result.error ?? "PDF 生成失败");
+      }
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${title.replace(/[\\/:*?"<>|]/g, "_") || "试卷"}${showAnswers ? "-含答案" : ""}.pdf`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+      setPdfError(error instanceof Error ? error.message : "PDF 生成失败");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="paper-builder">
       <header className="paper-topbar no-print">
         <div><Link href="/bank" className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>智能组卷</strong><small>从题库生成可打印试卷</small></span></div>
         <div className="paper-save-state"><Check size={13} /> {saveState === "saving" ? "正在保存…" : saveState === "error" ? "保存失败" : "已自动保存"}</div>
-        <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏答案" : "答案预览"}</button><button type="button" className="btn btn-dark btn-small" onClick={() => window.print()}><Printer size={14} /> 打印 / 保存 PDF</button></div>
+        <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏答案" : "答案预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={downloading} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading ? "正在生成…" : "下载 PDF"}</button></div>
       </header>
       <div className="paper-workspace">
         <aside className="paper-settings no-print">
           <div className="section-title"><div><h2>试卷设置</h2><p>{selected.length} 道题 · 当前 {totalScore} 分</p></div><Settings2 size={17} /></div>
           <label className="edit-field"><span>试卷标题</span><input value={title} onChange={(event) => { setSaveState("saving"); setTitle(event.target.value); }} /></label>
           <label className="edit-field"><span>副标题</span><input value={subtitle} onChange={(event) => { setSaveState("saving"); setSubtitle(event.target.value); }} /></label>
+          {pdfError && <p className="form-error">{pdfError}</p>}
           <div className="paper-summary">
             <div><span>目标分值</span><strong>100</strong></div><div><span>当前分值</span><strong>{totalScore}</strong></div><div><span>预计页数</span><strong>4</strong></div>
           </div>
@@ -94,22 +126,8 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
         </aside>
 
         <main className="paper-preview-wrap">
-          <article className="paper-sheet">
-            <header><h1>{title}</h1><p>{subtitle}</p><div><span>姓名：____________</span><span>班级：____________</span><span>得分：____________</span></div></header>
-            <section className="paper-notice"><strong>注意事项</strong><p>1．答题前请填写姓名和班级；2．请在规定区域内作答，写出必要的计算或证明过程。</p></section>
-            {selected.map((question, index) => (
-              <section className="paper-question" key={question.id}>
-                <div className="paper-question-head"><b>{index + 1}．</b><span>（本题 {question.score} 分）</span></div>
-                <div className="paper-question-stem"><MathText text={question.stem} /></div>
-                {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}>{option.key}．<MathText text={option.content} /></span>)}</div>}
-                {question.assets[0]?.url && <Image src={question.assets[0].url} width={320} height={220} className="paper-crop-placeholder" alt={question.assets[0].label} unoptimized />}
-                {question.type === "fill" ? <div className="answer-line" /> : question.type === "answer" ? <div className="answer-space" /> : null}
-                {showAnswers && <div className="paper-answer"><strong>答案：</strong><MathText text={question.answer} /><br /><strong>解析：</strong><MathText text={question.analysis} /></div>}
-              </section>
-            ))}
-            {!selected.length && <section className="empty-state"><h2>还没有选入题目</h2><p>请先在题库中勾选已审核题目，再进入组卷。</p><Link className="btn btn-primary no-print" href="/bank">返回题库选题</Link></section>}
-            <footer>— 拾题 · 教师题库助手生成 —</footer>
-          </article>
+          <PaperPrintable title={title} subtitle={subtitle} questions={selected} includeAnswers={showAnswers} />
+          {!selected.length && <Link className="btn btn-primary no-print" href="/bank">返回题库选题</Link>}
         </main>
       </div>
     </div>

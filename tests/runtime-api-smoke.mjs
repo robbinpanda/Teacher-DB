@@ -38,6 +38,10 @@ try {
   db.prepare(`INSERT INTO pages (id, document_id, page_number, storage_key, width, height, status, created_at)
     VALUES (?, ?, 1, ?, 1200, 800, 'ready', ?)`)
     .run(pageId, documentId, pageKey, timestamp);
+  db.prepare(`INSERT INTO extraction_runs
+    (id, document_id, page_id, page_number, provider, model, status, attempt, idempotency_key, created_at, finished_at)
+    VALUES (?, ?, ?, 1, 'runtime-test', 'runtime-test', 'complete', 1, ?, ?, ?)`)
+    .run(`runtime-smoke-run-${token}`, documentId, pageId, `${documentId}:page:1:extract-v2`, timestamp, timestamp);
   db.prepare(`INSERT INTO questions
     (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json, status, confidence, score, created_at, updated_at)
     VALUES (?, ?, '1', 'single', '若 $x^2=4$，则 $x$ 的值是？', '[{"key":"A","content":"$2$"}]', '$\\pm 2$', '平方根定义', 1, '{"x":5,"y":5,"width":80,"height":35}', 'pending', 0.98, 3, ?, ?)`)
@@ -63,6 +67,15 @@ try {
   assert.equal(crop.status, 200);
   assert.equal(crop.headers.get("content-type"), "image/jpeg");
   assert.ok((await crop.arrayBuffer()).byteLength > 100);
+  const resaved = await jsonFetch(`/api/questions/${questionId}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(saved.question),
+  });
+  assert.notEqual(resaved.question.assets[0].url, saved.question.assets[0].url);
+  assert.equal((await fetch(baseUrl + saved.question.assets[0].url)).status, 404);
+  assert.equal((await fetch(baseUrl + resaved.question.assets[0].url)).status, 200);
+  assert.equal((await fetch(baseUrl + resaved.question.assets[0].url, { headers: { "oai-authenticated-user-id": "another-owner" } })).status, 404);
 
   const manual = await jsonFetch(`/api/documents/${documentId}/questions`, {
     method: "POST",
@@ -79,7 +92,7 @@ try {
   const exported = await jsonFetch(`/api/exports/questions?ids=${questionId}&format=json`);
   assert.equal(exported.count, 1);
   assert.equal(exported.questions[0].source.examType, "运行时回归");
-  assert.equal(exported.questions[0].assets[0].cropKey.endsWith(`${assetId}.jpg`), true);
+  assert.match(exported.questions[0].assets[0].cropKey, new RegExp(`${assetId}-[0-9a-f-]+\\.jpg$`));
   const markdown = await fetch(`${baseUrl}/api/exports/questions?ids=${questionId}&format=markdown`);
   assert.equal(markdown.status, 200);
   assert.match(await markdown.text(), /x\^2=4/);
@@ -90,7 +103,31 @@ try {
     body: JSON.stringify({ id: paperId, title: "运行时回归试卷", subtitle: "自动测试", questionIds: [questionId] }),
   });
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM paper_items WHERE paper_id = ?").get(paperId).count, 1);
+  const pdfResponse = await fetch(`${baseUrl}/api/papers/${paperId}/pdf?answers=1`);
+  const pdfBytes = Buffer.from(await pdfResponse.arrayBuffer());
+  assert.equal(pdfResponse.status, 200, `PDF export failed: ${pdfBytes.toString("utf8").slice(0, 1000)}`);
+  assert.equal(pdfResponse.headers.get("content-type"), "application/pdf");
+  assert.equal(pdfBytes.subarray(0, 4).toString("ascii"), "%PDF");
+  assert.ok(pdfBytes.byteLength > 5000);
+  if (process.env.SAVE_RUNTIME_PDF) {
+    const destination = path.resolve(process.env.SAVE_RUNTIME_PDF);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, pdfBytes);
+  }
+  const progress = await jsonFetch(`/api/documents/${documentId}/progress`);
+  assert.equal(progress.counts.complete, 1);
+  assert.equal(progress.pages[0].attempt, 1);
+  const health = await jsonFetch("/api/health");
+  assert.equal(health.database.quickCheck, "ok");
 
+  db.prepare("UPDATE extraction_runs SET status = 'queued' WHERE idempotency_key = ?").run(`${documentId}:page:1:extract-v2`);
+  const blockedCompletion = await fetch(`${baseUrl}/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "complete" }),
+  });
+  assert.equal(blockedCompletion.status, 409);
+  db.prepare("UPDATE extraction_runs SET status = 'complete' WHERE idempotency_key = ?").run(`${documentId}:page:1:extract-v2`);
   await jsonFetch(`/api/documents/${documentId}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },

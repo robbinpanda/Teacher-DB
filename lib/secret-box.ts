@@ -20,7 +20,7 @@ function base64ToBytes(value: string) {
 }
 
 async function encryptionKey() {
-  const secret = encryptionSecret();
+  const secret = applicationSecret();
   if (!secret || secret.length < 16) {
     throw new Error("保存自定义 API Key 前，请设置至少 16 位的 MODEL_KEY_ENCRYPTION_SECRET 环境变量。");
   }
@@ -28,7 +28,7 @@ async function encryptionKey() {
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
-function encryptionSecret() {
+export function applicationSecret() {
   const configured = runtimeEnv().MODEL_KEY_ENCRYPTION_SECRET?.trim();
   if (configured) return configured;
   const directory = dataDirectory();

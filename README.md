@@ -29,6 +29,9 @@
 - 题图框拖拽调整后使用 Sharp 生成真实 JPEG 裁剪文件
 - 已审核题库的题型、标签、来源全文筛选，以及 JSON / Markdown 下载
 - 从题库选题、排序、智能补齐到 100 分、自动保存试卷、打印或保存 PDF
+- 由服务端 Chrome / Edge / Chromium 直接生成可下载 A4 PDF，可选择是否包含答案
+- 页面识别任务持久化为 queued / running / complete / failed，记录尝试次数与错误，只重试未完成页
+- `/api/health`、`npm run doctor`、一致性备份、SHA-256 校验和可回滚恢复
 
 ## 本地运行
 
@@ -43,6 +46,8 @@
 
     npm run build
     npm start
+
+服务端 PDF 会自动寻找系统中的 Chrome、Edge 或 Chromium。自定义路径可设置 `CHROMIUM_EXECUTABLE_PATH`。
 
 首次访问数据接口时会创建 `data/teacher-question-bank.sqlite3`、`data/files` 和本机加密密钥。生产环境建议复制 `.env.example` 并设置固定的 `MODEL_KEY_ENCRYPTION_SECRET`。整个 `data` 目录都应纳入备份，但不能提交 Git。
 
@@ -67,9 +72,28 @@
 
     npm run test:runtime
 
+完整的本地健康检查：
+
+    npm run doctor
+
+## 备份与恢复
+
+创建包含 SQLite 一致性快照、原卷、页面图、裁剪图和本机密钥的备份；命令会立即做 SHA-256 与 SQLite 完整性校验：
+
+    npm run backup
+
+也可以指定目录，并在以后单独复验：
+
+    npm run backup -- D:\\teacher-db-backups\\backup-2026-08-03
+    npm run backup:verify -- D:\\teacher-db-backups\\backup-2026-08-03
+
+恢复前必须停止应用。恢复会保留旧数据目录作为 `data.pre-restore-*` 安全副本：
+
+    npm run restore -- D:\\teacher-db-backups\\backup-2026-08-03 --confirm
+
 ## 当前边界
 
 - `.docx` 由浏览器中的 `docx-preview` 渲染；复杂 Word 浮动对象、特殊字体或旧版 `.doc` 仍建议先转成 PDF。旧版 `.doc` 当前会明确报错，不会静默生成错误页面。
 - 题目跨页断开时不会自动猜测缺失内容，需要在审核页人工合并或补录。
-- “打印 / 保存 PDF”调用浏览器标准打印能力，教师可直接选择“另存为 PDF”；服务端无头 PDF 队列尚未加入。
+- 服务端 PDF 依赖本机 Chromium 系浏览器；极简服务器镜像需要额外安装 Chromium 或设置其可执行文件路径。
 - 本地模式是单教师 `local-demo` 空间。部署为多用户系统时，需要由可信反向代理提供 `oai-authenticated-user-id`，不能让公网客户端自行伪造该请求头。

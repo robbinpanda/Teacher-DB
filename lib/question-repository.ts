@@ -2,6 +2,7 @@ import "server-only";
 
 import { getSqlite } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
+import { contentTypeForKey, getFile } from "./file-storage";
 import type {
   BoundingBox,
   Question,
@@ -145,22 +146,39 @@ export async function getReviewData(documentId: string, ownerId: string) {
   ).get(documentId, ownerId) as (Omit<ReviewDocument, "subject" | "grade"> & { subject: string | null; grade: string | null }) | undefined;
   if (!documentRow) return null;
   const pages = sqlite.prepare(
-    `SELECT id, page_number AS pageNumber, storage_key AS storageKey, width, height
-       FROM pages WHERE document_id = ? ORDER BY page_number`,
-  ).all(documentId) as Array<{ id: string; pageNumber: number; storageKey: string; width: number; height: number }>;
+    `SELECT p.id, p.page_number AS pageNumber, p.storage_key AS storageKey, p.width, p.height,
+            COALESCE(r.status, 'queued') AS extractionStatus, COALESCE(r.attempt, 0) AS extractionAttempt,
+            r.error AS extractionError
+       FROM pages p LEFT JOIN extraction_runs r
+         ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v2'
+      WHERE p.document_id = ? ORDER BY p.page_number`,
+  ).all(documentId) as Array<{
+    id: string; pageNumber: number; storageKey: string; width: number; height: number;
+    extractionStatus: ReviewPage["extractionStatus"]; extractionAttempt: number; extractionError: string | null;
+  }>;
   const questionRows = sqlite.prepare(
     `${questionSelect} WHERE d.id = ? AND d.owner_id = ?
       ORDER BY q.page_number, CAST(q.number AS INTEGER), q.number, q.created_at`,
   ).all(documentId, ownerId) as QuestionRow[];
-  return {
-    document: { ...documentRow, subject: documentRow.subject ?? "未设置学科", grade: documentRow.grade ?? "未设置年级" } satisfies ReviewDocument,
-    pages: pages.map((page): ReviewPage => ({
+  const reviewPages = pages.map((page): ReviewPage => ({
       id: page.id,
       pageNumber: page.pageNumber,
       imageUrl: fileUrl(page.storageKey)!,
       width: page.width,
       height: page.height,
-    })),
+      extractionStatus: page.extractionStatus,
+      extractionAttempt: page.extractionAttempt,
+      extractionError: page.extractionError,
+    }));
+  return {
+    document: {
+      ...documentRow,
+      subject: documentRow.subject ?? "未设置学科",
+      grade: documentRow.grade ?? "未设置年级",
+      completedPageCount: reviewPages.filter((page) => page.extractionStatus === "complete").length,
+      failedPageCount: reviewPages.filter((page) => page.extractionStatus === "failed").length,
+    } satisfies ReviewDocument,
+    pages: reviewPages,
     questions: await hydrateQuestions(questionRows),
   };
 }
@@ -209,4 +227,56 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
       WHERE d.owner_id = ? GROUP BY d.id ORDER BY d.created_at DESC LIMIT 30`,
   ).all(ownerId) as SourceDocument[];
   return rows;
+}
+
+export type SavedPaper = {
+  id: string;
+  title: string;
+  subtitle: string;
+  settings: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  questions: QuestionWithSource[];
+};
+
+export async function getPaperData(paperId: string, ownerId: string): Promise<SavedPaper | null> {
+  await ensureDatabase();
+  const sqlite = getSqlite();
+  const paper = sqlite.prepare(
+    `SELECT id, title, COALESCE(subtitle, '') AS subtitle, settings_json AS settingsJson,
+            created_at AS createdAt, updated_at AS updatedAt
+       FROM papers WHERE id = ? AND owner_id = ?`,
+  ).get(paperId, ownerId) as { id: string; title: string; subtitle: string; settingsJson: string; createdAt: string; updatedAt: string } | undefined;
+  if (!paper) return null;
+  const items = sqlite.prepare(
+    "SELECT question_id AS questionId FROM paper_items WHERE paper_id = ? ORDER BY position",
+  ).all(paperId) as Array<{ questionId: string }>;
+  const questions = await getApprovedQuestions(ownerId, items.map((item) => item.questionId));
+  return {
+    id: paper.id,
+    title: paper.title,
+    subtitle: paper.subtitle,
+    settings: parseJson<Record<string, unknown>>(paper.settingsJson, {}),
+    createdAt: paper.createdAt,
+    updatedAt: paper.updatedAt,
+    questions,
+  };
+}
+
+export async function getPaperPrintData(paperId: string, ownerId: string) {
+  const paper = await getPaperData(paperId, ownerId);
+  if (!paper) return null;
+  const questions = await Promise.all(paper.questions.map(async (question) => ({
+    ...question,
+    assets: await Promise.all(question.assets.map(async (asset) => {
+      if (!asset.cropKey) return asset;
+      try {
+        const bytes = await getFile(asset.cropKey);
+        return { ...asset, url: `data:${contentTypeForKey(asset.cropKey)};base64,${bytes.toString("base64")}` };
+      } catch {
+        return { ...asset, url: null };
+      }
+    })),
+  })));
+  return { ...paper, questions };
 }

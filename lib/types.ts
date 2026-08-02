@@ -68,6 +68,9 @@ export type ReviewPage = {
   imageUrl: string;
   width: number;
   height: number;
+  extractionStatus: "queued" | "running" | "complete" | "failed";
+  extractionAttempt: number;
+  extractionError?: string | null;
 };
 
 export type ReviewDocument = {
@@ -83,4 +86,6 @@ export type ReviewDocument = {
   pageCount: number;
   questionCount: number;
   approvedCount: number;
+  completedPageCount: number;
+  failedPageCount: number;
 };

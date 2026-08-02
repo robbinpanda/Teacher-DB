@@ -1,4 +1,4 @@
-import { getDb } from "../../../../../db";
+import { getDb, getSqlite } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { documents, pages } from "../../../../../db/schema";
 import { now, requestOwner } from "../../../../../lib/server";
@@ -52,5 +52,10 @@ export async function POST(request: Request, context: { params: Promise<{ docume
         checksum,
       },
     });
+  getSqlite().prepare(
+    `INSERT OR IGNORE INTO extraction_runs
+      (id, document_id, page_id, page_number, provider, model, status, attempt, idempotency_key, created_at)
+     VALUES (?, ?, ?, ?, 'pending', 'pending', 'queued', 0, ?, ?)`,
+  ).run(crypto.randomUUID(), documentId, pageId, pageNumber, `${documentId}:page:${pageNumber}:extract-v2`, now());
   return Response.json({ id: pageId, storageKey, pageNumber, checksum }, { status: existing ? 200 : 201 });
 }

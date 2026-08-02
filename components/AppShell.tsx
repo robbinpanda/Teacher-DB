@@ -20,6 +20,7 @@ const navigation = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  if (/^\/papers\/[^/]+\/print$/.test(pathname)) return <>{children}</>;
 
   return (
     <div className="app-frame">

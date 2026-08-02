@@ -1,6 +1,6 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { dataDirectory } from "../db";
 
@@ -28,6 +28,14 @@ export async function putFile(key: string, bytes: ArrayBuffer | Uint8Array) {
 
 export async function getFile(key: string) {
   return readFile(resolveStorageKey(key));
+}
+
+export async function deleteFile(key: string) {
+  try {
+    await unlink(resolveStorageKey(key));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }
 
 export function contentTypeForKey(key: string) {

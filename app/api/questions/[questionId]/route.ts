@@ -1,9 +1,7 @@
-import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
-import { getDb, getSqlite } from "../../../../db";
+import { getSqlite, sqliteTransaction } from "../../../../db";
 import { ensureDatabase } from "../../../../db/bootstrap";
-import { assets, questions, questionTags, tags } from "../../../../db/schema";
-import { getFile, putFile } from "../../../../lib/file-storage";
+import { deleteFile, getFile, putFile } from "../../../../lib/file-storage";
 import { now, requestOwner } from "../../../../lib/server";
 import type { BoundingBox, Question } from "../../../../lib/types";
 
@@ -35,6 +33,9 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   if (!new Set(["pending", "approved", "needs_attention"]).has(payload.status)) {
     return Response.json({ error: "非法审核状态" }, { status: 400 });
   }
+  const previousAssets = sqlite.prepare(
+    "SELECT id, crop_key AS cropKey FROM question_assets WHERE question_id = ?",
+  ).all(questionId) as Array<{ id: string; cropKey: string | null }>;
 
   const preparedAssets: Array<{
     asset: Question["assets"][number];
@@ -59,64 +60,60 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       const width = Math.max(1, Math.min(metadata.width - left, Math.round(metadata.width * box.width / 100)));
       const height = Math.max(1, Math.min(metadata.height - top, Math.round(metadata.height * box.height / 100)));
       const cropBytes = await image.extract({ left, top, width, height }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
-      const cropKey = `documents/${ownedQuestion.documentId}/crops/${questionId}/${asset.id}.jpg`;
+      const cropKey = `documents/${ownedQuestion.documentId}/crops/${questionId}/${asset.id}-${crypto.randomUUID()}.jpg`;
       await putFile(cropKey, cropBytes);
       preparedAssets.push({ asset, box, pageId: page.id, sourceKey: page.storageKey, cropKey });
     }
   } catch (error) {
+    await Promise.allSettled(preparedAssets.map((prepared) => deleteFile(prepared.cropKey)));
     return Response.json({ error: error instanceof Error ? error.message : "题图裁剪失败" }, { status: 422 });
   }
 
-  const db = getDb();
-  await db.update(questions).set({
-    number: payload.number,
-    type: payload.type,
-    stem: payload.stem,
-    optionsJson: JSON.stringify(payload.options ?? []),
-    answer: payload.answer,
-    analysis: payload.analysis,
-    bboxJson: JSON.stringify(safeBox(payload.bbox)),
-    status: payload.status,
-    score: payload.score ?? 0,
-    updatedAt: now(),
-  }).where(eq(questions.id, questionId));
-
-  for (const prepared of preparedAssets) {
-    await db.insert(assets).values({
-      id: prepared.asset.id,
-      questionId,
-      pageId: prepared.pageId,
-      kind: prepared.asset.kind,
-      label: prepared.asset.label,
-      sourceKey: prepared.sourceKey,
-      cropKey: prepared.cropKey,
-      bboxJson: JSON.stringify(prepared.box),
-      createdAt: now(),
-    }).onConflictDoUpdate({
-      target: assets.id,
-      set: {
-        pageId: prepared.pageId,
-        bboxJson: JSON.stringify(prepared.box),
-        label: prepared.asset.label,
-        kind: prepared.asset.kind,
-        sourceKey: prepared.sourceKey,
-        cropKey: prepared.cropKey,
-      },
+  const timestamp = now();
+  const tagNames = Array.from(new Set(payload.tags.map((tag) => tag.trim()).filter(Boolean)));
+  try {
+    sqliteTransaction((transaction) => {
+      transaction.prepare(
+        `UPDATE questions SET number = ?, type = ?, stem = ?, options_json = ?, answer = ?, analysis = ?,
+           bbox_json = ?, status = ?, score = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        payload.number, payload.type, payload.stem, JSON.stringify(payload.options ?? []), payload.answer,
+        payload.analysis, JSON.stringify(safeBox(payload.bbox)), payload.status, payload.score ?? 0, timestamp, questionId,
+      );
+      for (const prepared of preparedAssets) {
+        transaction.prepare(
+          `INSERT INTO question_assets
+            (id, question_id, page_id, kind, label, source_key, crop_key, bbox_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET page_id = excluded.page_id, kind = excluded.kind,
+             label = excluded.label, source_key = excluded.source_key, crop_key = excluded.crop_key,
+             bbox_json = excluded.bbox_json`,
+        ).run(
+          prepared.asset.id, questionId, prepared.pageId, prepared.asset.kind, prepared.asset.label,
+          prepared.sourceKey, prepared.cropKey, JSON.stringify(prepared.box), timestamp,
+        );
+      }
+      if (preparedAssets.length) {
+        transaction.prepare(
+          `DELETE FROM question_assets WHERE question_id = ? AND id NOT IN (${preparedAssets.map(() => "?").join(",")})`,
+        ).run(questionId, ...preparedAssets.map((prepared) => prepared.asset.id));
+      } else {
+        transaction.prepare("DELETE FROM question_assets WHERE question_id = ?").run(questionId);
+      }
+      transaction.prepare("DELETE FROM question_tags WHERE question_id = ?").run(questionId);
+      for (const name of tagNames) {
+        transaction.prepare("INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?, ?, ?)").run(crypto.randomUUID(), name, timestamp);
+        transaction.prepare(
+          "INSERT OR IGNORE INTO question_tags (question_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
+        ).run(questionId, name);
+      }
     });
+  } catch (error) {
+    await Promise.allSettled(preparedAssets.map((prepared) => deleteFile(prepared.cropKey)));
+    return Response.json({ error: error instanceof Error ? error.message : "题目保存失败" }, { status: 500 });
   }
-  const retainedAssetIds = new Set(preparedAssets.map((item) => item.asset.id));
-  const existingAssets = await db.select({ id: assets.id }).from(assets).where(eq(assets.questionId, questionId));
-  for (const existing of existingAssets) {
-    if (!retainedAssetIds.has(existing.id)) await db.delete(assets).where(and(eq(assets.id, existing.id), eq(assets.questionId, questionId)));
-  }
-
-  await db.delete(questionTags).where(eq(questionTags.questionId, questionId));
-  for (const name of Array.from(new Set(payload.tags.map((tag) => tag.trim()).filter(Boolean)))) {
-    const existing = await db.query.tags.findFirst({ where: eq(tags.name, name) });
-    const tagId = existing?.id ?? crypto.randomUUID();
-    if (!existing) await db.insert(tags).values({ id: tagId, name, createdAt: now() });
-    await db.insert(questionTags).values({ questionId, tagId }).onConflictDoNothing();
-  }
+  const retainedCropKeys = new Set(preparedAssets.map((prepared) => prepared.cropKey));
+  await Promise.allSettled(previousAssets.filter((asset) => asset.cropKey && !retainedCropKeys.has(asset.cropKey)).map((asset) => deleteFile(asset.cropKey!)));
 
   return Response.json({
     question: {
