@@ -93,6 +93,11 @@ try {
   assert.equal(exported.count, 1);
   assert.equal(exported.questions[0].source.examType, "运行时回归");
   assert.match(exported.questions[0].assets[0].cropKey, new RegExp(`${assetId}-[0-9a-f-]+\\.jpg$`));
+  const searched = await jsonFetch(`/api/questions?q=${encodeURIComponent("x^2")}&documentId=${documentId}&page=1&pageSize=10`);
+  assert.equal(searched.pagination.total, 1);
+  assert.equal(searched.questions[0].id, questionId);
+  const noMatch = await jsonFetch(`/api/questions?q=${encodeURIComponent("不存在的学校")}&documentId=${documentId}`);
+  assert.equal(noMatch.pagination.total, 0);
   const markdown = await fetch(`${baseUrl}/api/exports/questions?ids=${questionId}&format=markdown`);
   assert.equal(markdown.status, 200);
   assert.match(await markdown.text(), /x\^2=4/);

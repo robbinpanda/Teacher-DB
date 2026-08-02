@@ -198,8 +198,75 @@ export async function getApprovedQuestions(ownerId: string, ids?: string[]) {
   return hydrated.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 }
 
+export type QuestionSearchOptions = {
+  query?: string;
+  type?: string;
+  tag?: string;
+  documentId?: string;
+  subject?: string;
+  grade?: string;
+  year?: number;
+  examType?: string;
+  region?: string;
+  school?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+function likePattern(value: string) {
+  return `%${value.replace(/([%_\\])/g, "\\$1")}%`;
+}
+
+export async function searchApprovedQuestions(ownerId: string, options: QuestionSearchOptions = {}) {
+  await ensureDatabase();
+  const sqlite = getSqlite();
+  const clauses = ["d.owner_id = ?", "q.status = 'approved'"];
+  const params: Array<string | number> = [ownerId];
+  if (options.type && ["single", "multiple", "fill", "answer"].includes(options.type)) {
+    clauses.push("q.type = ?"); params.push(options.type);
+  }
+  if (options.documentId) { clauses.push("d.id = ?"); params.push(options.documentId); }
+  if (options.subject) { clauses.push("d.subject = ?"); params.push(options.subject); }
+  if (options.grade) { clauses.push("d.grade = ?"); params.push(options.grade); }
+  if (options.year) { clauses.push("d.source_year = ?"); params.push(options.year); }
+  if (options.examType) { clauses.push("d.source_exam_type = ?"); params.push(options.examType); }
+  if (options.region) { clauses.push("d.source_region = ?"); params.push(options.region); }
+  if (options.school) { clauses.push("d.source_school = ?"); params.push(options.school); }
+  if (options.tag) {
+    clauses.push("EXISTS (SELECT 1 FROM question_tags sqt JOIN tags st ON st.id = sqt.tag_id WHERE sqt.question_id = q.id AND st.name = ?)");
+    params.push(options.tag);
+  }
+  const query = options.query?.trim();
+  if (query) {
+    const pattern = likePattern(query);
+    clauses.push(`(
+      q.stem LIKE ? ESCAPE '\\' OR q.answer LIKE ? ESCAPE '\\' OR q.analysis LIKE ? ESCAPE '\\'
+      OR d.name LIKE ? ESCAPE '\\' OR COALESCE(d.subject, '') LIKE ? ESCAPE '\\'
+      OR COALESCE(d.grade, '') LIKE ? ESCAPE '\\' OR COALESCE(d.source_exam_type, '') LIKE ? ESCAPE '\\'
+      OR COALESCE(d.source_region, '') LIKE ? ESCAPE '\\' OR COALESCE(d.source_school, '') LIKE ? ESCAPE '\\'
+      OR EXISTS (SELECT 1 FROM question_tags qqt JOIN tags tt ON tt.id = qqt.tag_id WHERE qqt.question_id = q.id AND tt.name LIKE ? ESCAPE '\\')
+    )`);
+    params.push(...Array.from({ length: 10 }, () => pattern));
+  }
+  const where = clauses.join(" AND ");
+  const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize ?? 30)));
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const total = (sqlite.prepare(
+    `SELECT COUNT(*) AS total FROM questions q JOIN documents d ON d.id = q.document_id WHERE ${where}`,
+  ).get(...params) as { total: number }).total;
+  const rows = sqlite.prepare(
+    `${questionSelect} WHERE ${where}
+      ORDER BY d.created_at DESC, q.page_number, CAST(q.number AS INTEGER), q.number
+      LIMIT ? OFFSET ?`,
+  ).all(...params, pageSize, (page - 1) * pageSize) as QuestionRow[];
+  return {
+    questions: await hydrateQuestions(rows),
+    pagination: { page, pageSize, total, pageCount: Math.max(1, Math.ceil(total / pageSize)) },
+  };
+}
+
 export async function getBankData(ownerId: string) {
-  const questions = await getApprovedQuestions(ownerId);
+  const result = await searchApprovedQuestions(ownerId, { pageSize: 30 });
   const sqlite = getSqlite();
   const stats = sqlite.prepare(
     `SELECT COUNT(q.id) AS total,
@@ -213,7 +280,13 @@ export async function getBankData(ownerId: string) {
       JOIN questions q ON q.id = qt.question_id JOIN documents d ON d.id = q.document_id
       WHERE d.owner_id = ? AND q.status = 'approved' ORDER BY t.name`,
   ).all(ownerId) as Array<{ name: string }>;
-  return { questions, stats, tags: tags.map((tag) => tag.name) };
+  const sources = sqlite.prepare(
+    `SELECT DISTINCT d.id, d.name, d.source_year AS year, d.source_exam_type AS examType,
+            d.source_region AS region, d.source_school AS school
+       FROM documents d JOIN questions q ON q.document_id = d.id
+      WHERE d.owner_id = ? AND q.status = 'approved' ORDER BY d.created_at DESC`,
+  ).all(ownerId) as Array<{ id: string; name: string; year: number | null; examType: string | null; region: string | null; school: string | null }>;
+  return { ...result, stats, tags: tags.map((tag) => tag.name), sources };
 }
 
 export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {

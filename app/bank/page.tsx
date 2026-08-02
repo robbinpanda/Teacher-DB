@@ -8,5 +8,5 @@ export default async function BankPage() {
   const requestHeaders = await headers();
   const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
   const data = await getBankData(ownerId);
-  return <QuestionBank initialQuestions={data.questions} stats={data.stats} availableTags={data.tags} />;
+  return <QuestionBank initialQuestions={data.questions} initialPagination={data.pagination} stats={data.stats} availableTags={data.tags} sources={data.sources} />;
 }
