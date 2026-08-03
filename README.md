@@ -22,6 +22,7 @@
 - 自定义多模态 API Base URL、Model Name、API Key 和超时配置
 - AES-GCM 密钥加密、模型切换与真实图片连通性测试
 - 所有模型调用固定 `reasoning_effort: "none"`
+- 强制开启 Thinking、不能关闭推理的模型会在连接测试时明确判定为不兼容，不会偷偷启用推理
 - 每页抽题幂等键、尝试次数、原始响应、失败原因和事务入库
 - 题目 JSON、LaTeX、页面/题图坐标、置信度、标签和人工审核界面
 - 答案页通过 `answerUpdates` 按题号回填，不会伪造为新题

@@ -35,6 +35,9 @@ export async function callVisionModel(input: VisionCall) {
     });
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1200);
+      if (/invalid thinking|only type=enabled|thinking mode.*required/i.test(detail)) {
+        throw new Error(`模型 ${profile.displayName} 强制开启思考模式，与本项目固定 reasoning_effort=none 不兼容。请改用支持无推理模式的多模态模型。`);
+      }
       throw new Error(`模型 ${profile.displayName} 返回 HTTP ${response.status}：${detail}`);
     }
     const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> };

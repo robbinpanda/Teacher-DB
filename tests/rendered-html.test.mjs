@@ -30,7 +30,7 @@ test("ships the teacher question-bank workflow", async () => {
 });
 
 test("ships Node SQLite persistence and disables model reasoning", async () => {
-  const [schema, extraction, vision, database, packageJson, pageUpload, pdfExport] = await Promise.all([
+  const [schema, extraction, vision, database, packageJson, pageUpload, pdfExport, modelTest] = await Promise.all([
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/extract/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/vision-model.ts", import.meta.url), "utf8"),
@@ -38,6 +38,7 @@ test("ships Node SQLite persistence and disables model reasoning", async () => {
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../app/api/documents/[documentId]/pages/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/pdf-export.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/model-profiles/test/route.ts", import.meta.url), "utf8"),
   ]);
   assert.match(schema, /documents/);
   assert.match(schema, /question_assets/);
@@ -46,10 +47,13 @@ test("ships Node SQLite persistence and disables model reasoning", async () => {
   assert.match(extraction, /answerUpdates/);
   assert.match(extraction, /getFile\(ownedPage\.storageKey\)/);
   assert.match(vision, /reasoning_effort:\s*"none"/);
+  assert.match(vision, /invalid thinking/);
   assert.match(database, /better-sqlite3/);
   assert.match(packageJson, /"dev":\s*"next dev"/);
   assert.match(pageUpload, /'queued'/);
   assert.match(pdfExport, /--print-to-pdf/);
+  assert.match(modelTest, /width:\s*64/);
+  assert.doesNotMatch(modelTest, /AAAAEAAAAB/);
   await access(new URL("../drizzle/0000_lean_songbird.sql", import.meta.url));
   await assert.rejects(access(new URL("../.openai/hosting.json", import.meta.url)));
 });

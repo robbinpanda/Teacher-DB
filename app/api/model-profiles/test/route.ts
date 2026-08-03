@@ -4,8 +4,14 @@ import { modelProfiles } from "../../../../db/schema";
 import { ensureOwnerModelSettings } from "../../../../lib/model-profiles";
 import { now, requestOwner } from "../../../../lib/server";
 import { callVisionModel } from "../../../../lib/vision-model";
+import sharp from "sharp";
 
-const whitePixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z0eUAAAAASUVORK5CYII=";
+export const runtime = "nodejs";
+
+async function modelTestImage() {
+  const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#ffffff" } }).png().toBuffer();
+  return `data:image/png;base64,${png.toString("base64")}`;
+}
 
 export async function POST(request: Request) {
   const ownerId = requestOwner(request);
@@ -20,7 +26,7 @@ export async function POST(request: Request) {
   const testedAt = now();
   try {
     const result = await callVisionModel({
-      ownerId, profileId: profile.id, system: "你是连通性测试助手。", text: "识别这张图片，并只回复 OK。", image: whitePixel,
+      ownerId, profileId: profile.id, system: "你是连通性测试助手。", text: "识别这张图片，并只回复 OK。", image: await modelTestImage(),
     });
     const message = result.content.trim().slice(0, 200);
     await db.update(modelProfiles).set({ lastTestStatus: "success", lastTestMessage: message, lastTestedAt: testedAt, updatedAt: testedAt }).where(eq(modelProfiles.id, profile.id));
