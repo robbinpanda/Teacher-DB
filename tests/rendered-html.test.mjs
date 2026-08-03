@@ -30,7 +30,7 @@ test("ships the teacher question-bank workflow", async () => {
 });
 
 test("ships Node SQLite persistence and disables model reasoning", async () => {
-  const [schema, extraction, vision, database, packageJson, pageUpload, pdfExport, modelTest] = await Promise.all([
+  const [schema, extraction, vision, database, packageJson, pageUpload, pdfExport, modelTest, modelProfiles] = await Promise.all([
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/extract/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/vision-model.ts", import.meta.url), "utf8"),
@@ -39,6 +39,7 @@ test("ships Node SQLite persistence and disables model reasoning", async () => {
     readFile(new URL("../app/api/documents/[documentId]/pages/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/pdf-export.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/model-profiles/test/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/model-profiles.ts", import.meta.url), "utf8"),
   ]);
   assert.match(schema, /documents/);
   assert.match(schema, /question_assets/);
@@ -54,6 +55,8 @@ test("ships Node SQLite persistence and disables model reasoning", async () => {
   assert.match(pdfExport, /--print-to-pdf/);
   assert.match(modelTest, /width:\s*64/);
   assert.doesNotMatch(modelTest, /AAAAEAAAAB/);
+  assert.match(modelProfiles, /OPENCODE_PUBLIC_API_KEY\s*=\s*"public"/);
+  assert.match(modelProfiles, /encryptSecret\(OPENCODE_PUBLIC_API_KEY\)/);
   await access(new URL("../drizzle/0000_lean_songbird.sql", import.meta.url));
   await assert.rejects(access(new URL("../.openai/hosting.json", import.meta.url)));
 });

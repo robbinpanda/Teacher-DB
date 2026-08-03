@@ -2,10 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
 import { appSettings, modelProfiles } from "../db/schema";
-import { decryptSecret } from "./secret-box";
+import { decryptSecret, encryptSecret } from "./secret-box";
 import { now } from "./server";
 
 export const OPENCODE_MIMO_PROFILE_ID = "builtin-opencode-mimo-v2.5-free";
+export const OPENCODE_PUBLIC_API_KEY = "public";
+export const OPENCODE_PUBLIC_API_KEY_MASK = "public";
 export const OPENCODE_MIMO = {
   displayName: "OpenCode MiMo V2.5 Free",
   provider: "openai-compatible",
@@ -26,13 +28,38 @@ export async function ensureOwnerModelSettings(ownerId: string) {
   const db = getDb();
   const timestamp = now();
   const profileId = ownerMimoProfileId(ownerId);
-  await db.insert(modelProfiles).values({
-    id: profileId,
-    ...OPENCODE_MIMO,
-    ownerId,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }).onConflictDoNothing();
+  const existingProfile = await db.query.modelProfiles.findFirst({
+    where: and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)),
+  });
+  if (!existingProfile) {
+    const encrypted = await encryptSecret(OPENCODE_PUBLIC_API_KEY);
+    await db.insert(modelProfiles).values({
+      id: profileId,
+      ...OPENCODE_MIMO,
+      ownerId,
+      apiKeyCiphertext: encrypted.ciphertext,
+      apiKeyIv: encrypted.iv,
+      apiKeyMask: OPENCODE_PUBLIC_API_KEY_MASK,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }).onConflictDoNothing();
+  } else if (
+    existingProfile.apiKeyMask !== OPENCODE_PUBLIC_API_KEY_MASK
+    || !existingProfile.apiKeyCiphertext
+    || !existingProfile.apiKeyIv
+  ) {
+    const encrypted = await encryptSecret(OPENCODE_PUBLIC_API_KEY);
+    await db.update(modelProfiles).set({
+      ...OPENCODE_MIMO,
+      apiKeyCiphertext: encrypted.ciphertext,
+      apiKeyIv: encrypted.iv,
+      apiKeyMask: OPENCODE_PUBLIC_API_KEY_MASK,
+      lastTestStatus: null,
+      lastTestMessage: null,
+      lastTestedAt: null,
+      updatedAt: timestamp,
+    }).where(and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)));
+  }
   await db.insert(appSettings).values({
     ownerId,
     selectedModelProfileId: profileId,
@@ -66,7 +93,7 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
   });
   if (!profile) throw new Error("所选模型配置不存在或已停用");
   if (!profile.apiKeyCiphertext || !profile.apiKeyIv) {
-    throw new Error(profile.isManaged ? "请先在模型设置中绑定 OpenCode Zen API Key" : "该模型配置缺少 API Key");
+    throw new Error(profile.isManaged ? "OpenCode 公共凭据初始化失败" : "该模型配置缺少 API Key");
   }
   const apiKey = await decryptSecret(profile.apiKeyCiphertext, profile.apiKeyIv);
   return { ...profile, apiKey };

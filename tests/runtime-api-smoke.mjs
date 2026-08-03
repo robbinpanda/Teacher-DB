@@ -21,6 +21,7 @@ const databasePath = path.resolve(dataRoot, "teacher-question-bank.sqlite3");
 const db = new Database(databasePath);
 const timestamp = new Date().toISOString();
 const uploadOwnerId = `runtime-upload-${token}`;
+const modelOwnerId = `runtime-model-${token}`;
 let uploadedDocumentId;
 
 async function jsonFetch(url, init) {
@@ -31,6 +32,15 @@ async function jsonFetch(url, init) {
 }
 
 try {
+  const managedModels = await jsonFetch("/api/model-profiles", {
+    headers: { "oai-authenticated-user-id": modelOwnerId },
+  });
+  const managedMimo = managedModels.profiles.find((profile) => profile.model === "mimo-v2.5-free");
+  assert.equal(managedMimo.isManaged, true);
+  assert.equal(managedMimo.apiKeyMask, "public");
+  assert.equal("apiKeyCiphertext" in managedMimo, false);
+  assert.equal("apiKeyIv" in managedMimo, false);
+
   const firstUpload = new FormData();
   firstUpload.append("file", new File([Buffer.from("runtime-upload")], `runtime-smoke-${token}.png`, { type: "image/png" }));
   firstUpload.append("pageCount", "1");
@@ -167,6 +177,8 @@ try {
   if (keepFixture) console.log(JSON.stringify({ documentId, paperId, fixtureRoot }));
 } finally {
   if (!keepFixture) {
+    db.prepare("DELETE FROM app_settings WHERE owner_id = ?").run(modelOwnerId);
+    db.prepare("DELETE FROM model_profiles WHERE owner_id = ?").run(modelOwnerId);
     if (uploadedDocumentId) db.prepare("DELETE FROM documents WHERE id = ?").run(uploadedDocumentId);
     db.prepare("DELETE FROM papers WHERE id = ?").run(paperId);
     db.prepare("DELETE FROM documents WHERE id = ?").run(documentId);

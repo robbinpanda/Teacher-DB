@@ -18,7 +18,7 @@
 - PDF、DOCX、PNG、JPG、WEBP 浏览器端逐页渲染；无显式分页符的 DOCX 会按纸张尺寸和内容块边界切页
 - 原卷/页面本地落盘，SHA-256 去重和页面校验
 - SQLite 自动建库与兼容升级
-- 内置 OpenCode MiMo V2.5 Free 模型元数据（免费模型仍需用户自己的 OpenCode Zen API Key）
+- 内置 OpenCode MiMo V2.5 Free，自动使用 OpenCode 公共凭据，无需账号或个人 API Key
 - 自定义多模态 API Base URL、Model Name、API Key 和超时配置
 - AES-GCM 密钥加密、模型切换与真实图片连通性测试
 - 所有模型调用固定 `reasoning_effort: "none"`
@@ -56,7 +56,7 @@
 
 进入“模型设置”：
 
-- MiMo V2.5 Free 已预填 endpoint 和 model id，但按 OpenCode Zen 当前规则仍需绑定个人 API Key。
+- MiMo V2.5 Free 已预填 endpoint、model id 和公共凭据 `public`，开箱即用；自定义模型仍需填写自己的 API Key。
 - 也可添加任何支持图片输入、兼容 `/chat/completions` 的模型。
 - 自定义 Base URL 必须为 HTTPS；仅 `localhost`/`127.0.0.1`/`::1` 允许 HTTP。
 - 应用不会向浏览器回传 API Key 明文。

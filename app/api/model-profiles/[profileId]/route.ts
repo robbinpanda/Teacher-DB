@@ -28,6 +28,7 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
   const db = getDb();
   const profile = await db.query.modelProfiles.findFirst({ where: and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)) });
   if (!profile) return Response.json({ error: "模型配置不存在" }, { status: 404 });
+  if (profile.isManaged) return Response.json({ error: "内置免费模型使用公共凭据，不允许改写 API Key" }, { status: 400 });
   const encrypted = await encryptSecret(apiKey);
   await db.update(modelProfiles).set({
     apiKeyCiphertext: encrypted.ciphertext,

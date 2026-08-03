@@ -23,7 +23,6 @@ export function ModelSettings() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
-  const [managedKeys, setManagedKeys] = useState<Record<string, string>>({});
   const [form, setForm] = useState({ displayName: "", baseUrl: "", model: "", apiKey: "", timeoutMs: 90000 });
 
   async function load() {
@@ -104,27 +103,10 @@ export function ModelSettings() {
     finally { setBusy(""); }
   }
 
-  async function saveManagedKey(profileId: string) {
-    const apiKey = managedKeys[profileId]?.trim();
-    if (!apiKey) return setMessage("请输入 OpenCode Zen API Key");
-    setBusy("key:" + profileId);
-    try {
-      const response = await fetch("/api/model-profiles/" + profileId, {
-        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey }),
-      });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "密钥保存失败");
-      setManagedKeys({ ...managedKeys, [profileId]: "" });
-      setMessage("OpenCode Zen API Key 已加密绑定，请点击测试确认多模态连接");
-      await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "密钥保存失败"); }
-    finally { setBusy(""); }
-  }
-
   return (
     <div className="page-shell settings-page">
       <header className="page-header">
-        <div><span className="eyebrow"><KeyRound size={14} /> MULTIMODAL MODELS</span><h1>模型与密钥</h1><p>选择免费的 MiMo 2.5，或接入任何 OpenAI 兼容的多模态模型。OpenCode 免费模型仍需你的 Zen API Key；识题与连通性测试均固定使用无推理模式。</p></div>
+        <div><span className="eyebrow"><KeyRound size={14} /> MULTIMODAL MODELS</span><h1>模型与密钥</h1><p>内置 MiMo 2.5 Free 自动使用 OpenCode 公共凭据，无需账号或 API Key；也可以接入其他 OpenAI 兼容多模态模型。识题与连通性测试均固定使用无推理模式。</p></div>
         <button className="btn" type="button" onClick={() => void load()}><RefreshCw size={15} /> 刷新</button>
       </header>
       {message && <div className="settings-message" role="status">{message}</div>}
@@ -139,18 +121,12 @@ export function ModelSettings() {
                     <span className="profile-radio">{selected === profile.id && <Check size={13} />}</span>
                     <span><strong>{profile.displayName}</strong><small>{profile.model} · {profile.baseUrl}</small></span>
                   </button>
-                  <div className="profile-meta"><span className="pill green">多模态</span>{profile.isManaged && <span className="pill gray">内置免费</span>}<code>{profile.apiKeyMask}</code></div>
+                  <div className="profile-meta"><span className="pill green">多模态</span>{profile.isManaged && <span className="pill gray">内置免费 · 无需账号</span>}<code>{profile.isManaged ? "公共凭据" : profile.apiKeyMask}</code></div>
                   <div className="profile-actions">
                     <button className="btn btn-small" type="button" disabled={Boolean(busy) || !profile.apiKeyMask} onClick={() => void testProfile(profile.id)}>{busy === "test:" + profile.id ? <LoaderCircle className="spin" size={13} /> : <Wifi size={13} />} 测试</button>
                     {!profile.isManaged && <button className="icon-danger" title="删除" type="button" disabled={Boolean(busy)} onClick={() => void removeProfile(profile.id)}><Trash2 size={14} /></button>}
                   </div>
                   {profile.lastTestedAt && <small className={"test-state " + profile.lastTestStatus}>{profile.lastTestStatus === "success" ? "最近测试成功" : "最近测试失败"} · {new Date(profile.lastTestedAt).toLocaleString()}</small>}
-                  {profile.isManaged && !profile.apiKeyMask && (
-                    <div className="managed-key-row">
-                      <input type="password" autoComplete="new-password" value={managedKeys[profile.id] ?? ""} onChange={(event) => setManagedKeys({ ...managedKeys, [profile.id]: event.target.value })} placeholder="粘贴 OpenCode Zen API Key" />
-                      <button className="btn btn-small btn-primary" type="button" disabled={Boolean(busy)} onClick={() => void saveManagedKey(profile.id)}>{busy === "key:" + profile.id ? <LoaderCircle className="spin" size={13} /> : <KeyRound size={13} />} 加密绑定</button>
-                    </div>
-                  )}
                 </article>
               ))}
             </div>
