@@ -11,31 +11,43 @@ import { contentTypeForKey, getFile } from "../../../lib/file-storage";
 export const runtime = "nodejs";
 
 const systemPrompt = [
-  "你是中文中学试卷结构化专家。请只根据给出的页面图像识别题目，不补写看不清的内容。",
-  "1. 将每道题题干、选项、答案、解析分开；页面没有答案或解析时填空字符串。",
-  "2. 所有数学表达式改写为 LaTeX，并用单个 $ 包裹；普通中文保留原文。",
-  "3. bbox 坐标使用页面宽高百分比，范围 0-100，分别为 x,y,width,height。",
-  "4. question bbox 覆盖完整题目。assets 只框真正需要随题保存的图、表、函数图象，不要把题干文字放进题图。",
-  "5. type 只能是 single、multiple、fill、answer。",
-  "6. 如果本页是答案页或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按题号关联前文题目。",
-  "7. 不要输出 Markdown，只输出严格 JSON。",
+  "你是中文中学试卷的视觉结构化专家。只能抄录图中确实可见的内容，禁止凭常识补写模糊、被遮挡或不在图中的文字。",
+  "你会收到一张主页面，可能还会收到紧接着的下一页。只输出题号或题目开头位于主页面的题；下一页只用于补全跨页题目，禁止把从下一页才开始的新题重复输出。",
+  "1. 将题干、选项、答案、解析严格分开。保留原有编号和语义顺序；页面没有答案或解析时使用空字符串。",
+  "2. 行内和独立数学表达式全部转为 LaTeX，并用单个 $ 包裹。不要把普通中文、题号或选项字母放进 LaTeX。",
+  "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出主页面和下一页两个 regions，并把两页文字按阅读顺序合并为一份完整 stem/options/analysis；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。",
+  "4. bbox 必须贴合内容：包含题号、完整题干、选项、作答横线及属于该题的图注；排除页眉、页脚、密封线、装订线、空白页边和相邻题目。边缘可留 0.3%-0.8% 安全余量，不要使用整页大框。",
+  "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
+  "6. type 只能是 single、multiple、fill、answer。score 不确定时填 0。confidence 要反映文字与框选两者中较低的可信度。",
+  "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联。跨页解析要合并为完整 analysis。",
+  "8. 输出前逐题自检：region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。任一文字或框选不清楚时降低 confidence，不要猜测。",
+  "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
   "JSON 格式：",
-  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"page\":1,\"bbox\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0},\"assets\":[{\"kind\":\"figure\",\"label\":\"图的说明\",\"page\":1,\"bbox\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95}]}",
+  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95}]}",
 ].join("\n");
 
 function safeBox(value: unknown): BoundingBox {
   const box = value as Partial<BoundingBox> | null;
+  const x = Math.max(0, Math.min(99, Number(box?.x ?? 0)));
+  const y = Math.max(0, Math.min(99, Number(box?.y ?? 0)));
   return {
-    x: Math.max(0, Math.min(100, Number(box?.x ?? 0))),
-    y: Math.max(0, Math.min(100, Number(box?.y ?? 0))),
-    width: Math.max(1, Math.min(100, Number(box?.width ?? 10))),
-    height: Math.max(1, Math.min(100, Number(box?.height ?? 10))),
+    x,
+    y,
+    width: Math.max(1, Math.min(100 - x, Number(box?.width ?? 10))),
+    height: Math.max(1, Math.min(100 - y, Number(box?.height ?? 10))),
   };
+}
+
+function containsBox(container: BoundingBox, child: BoundingBox, tolerance = 0.75) {
+  return child.x >= container.x - tolerance
+    && child.y >= container.y - tolerance
+    && child.x + child.width <= container.x + container.width + tolerance
+    && child.y + child.height <= container.y + container.height + tolerance;
 }
 
 type AnswerUpdate = { number: string; answer: string; analysis: string; confidence: number };
 
-function normalize(raw: unknown, pageNumber: number): { questions: Question[]; answerUpdates: AnswerUpdate[] } {
+function normalize(raw: unknown, pageNumber: number, availablePages: number[]): { questions: Question[]; answerUpdates: AnswerUpdate[] } {
   const result = raw as { questions?: unknown[]; answerUpdates?: unknown[] };
   const items = Array.isArray(result?.questions) ? result.questions : [];
   const rawUpdates = Array.isArray(result?.answerUpdates) ? result.answerUpdates : [];
@@ -46,6 +58,32 @@ function normalize(raw: unknown, pageNumber: number): { questions: Question[]; a
     const item = value as Record<string, unknown>;
     const type = ["single", "multiple", "fill", "answer"].includes(String(item.type)) ? String(item.type) as QuestionType : "answer";
     const id = crypto.randomUUID();
+    const rawRegions = Array.isArray(item.regions) ? item.regions : [];
+    const regions = rawRegions.map((region) => {
+      const entry = region as Record<string, unknown>;
+      return { page: Number(entry.page ?? pageNumber), bbox: safeBox(entry.bbox) };
+    }).filter((region) => availablePages.includes(region.page));
+    if (!regions.some((region) => region.page === pageNumber)) {
+      regions.unshift({ page: pageNumber, bbox: safeBox(item.bbox) });
+    }
+    const uniqueRegions = regions.filter((region, regionIndex) => regions.findIndex((candidate) => candidate.page === region.page) === regionIndex);
+    const primaryRegion = uniqueRegions.find((region) => region.page === pageNumber)!;
+    const rawAssets = Array.isArray(item.assets) ? item.assets : [];
+    const normalizedAssets = rawAssets.map((asset, assetIndex) => {
+      const entry = asset as Record<string, unknown>;
+      return {
+        id: id + "-asset-" + assetIndex,
+        kind: ["figure", "table", "graph"].includes(String(entry.kind)) ? String(entry.kind) as "figure" | "table" | "graph" : "figure",
+        label: String(entry.label ?? "题图"),
+        page: Number(entry.page ?? pageNumber),
+        bbox: safeBox(entry.bbox),
+      };
+    }).filter((asset) => availablePages.includes(asset.page));
+    const assetGeometryNeedsReview = normalizedAssets.length !== rawAssets.length || normalizedAssets.some((asset) => {
+      const region = uniqueRegions.find((candidate) => candidate.page === asset.page);
+      return !region || !containsBox(region.bbox, asset.bbox);
+    });
+    const confidence = Math.max(0, Math.min(1, Number(item.confidence ?? 0)));
     return {
       id,
       number: String(item.number ?? index + 1),
@@ -57,21 +95,13 @@ function normalize(raw: unknown, pageNumber: number): { questions: Question[]; a
       }) : undefined,
       answer: String(item.answer ?? ""),
       analysis: String(item.analysis ?? ""),
-      page: Number(item.page ?? pageNumber),
-      bbox: safeBox(item.bbox),
-      assets: Array.isArray(item.assets) ? item.assets.map((asset, assetIndex) => {
-        const entry = asset as Record<string, unknown>;
-        return {
-          id: id + "-asset-" + assetIndex,
-          kind: ["figure", "table", "graph"].includes(String(entry.kind)) ? String(entry.kind) as "figure" | "table" | "graph" : "figure",
-          label: String(entry.label ?? "题图"),
-          page: Number(entry.page ?? pageNumber),
-          bbox: safeBox(entry.bbox),
-        };
-      }) : [],
+      page: pageNumber,
+      bbox: primaryRegion.bbox,
+      regions: uniqueRegions,
+      assets: normalizedAssets,
       tags: Array.isArray(item.tags) ? item.tags.map(String).slice(0, 8) : [],
-      confidence: Math.max(0, Math.min(1, Number(item.confidence ?? 0))),
-      status: Number(item.confidence ?? 0) >= .92 ? "pending" : "needs_attention",
+      confidence,
+      status: confidence >= .92 && !assetGeometryNeedsReview ? "pending" : "needs_attention",
       score: Number(item.score ?? 0),
     };
   });
@@ -114,19 +144,27 @@ export async function POST(request: Request) {
     ? await db.query.pages.findFirst({ where: and(eq(pages.id, payload.pageId), eq(pages.documentId, documentId)) })
     : await db.query.pages.findFirst({ where: and(eq(pages.documentId, documentId), eq(pages.pageNumber, pageNumber)) });
   if (!ownedPage || ownedPage.pageNumber !== pageNumber) return Response.json({ error: "页面与文档不匹配" }, { status: 400 });
-  let pageImage = payload.image;
-  if (!pageImage) {
-    const bytes = await getFile(ownedPage.storageKey);
-    if (bytes.byteLength > 20 * 1024 * 1024) return Response.json({ error: "落盘页面超过 20 MB" }, { status: 413 });
-    pageImage = `data:${contentTypeForKey(ownedPage.storageKey)};base64,${bytes.toString("base64")}`;
-  }
-  if (!pageImage.startsWith("data:image/") || pageImage.length > 30 * 1024 * 1024) {
-    return Response.json({ error: "页面图像格式非法或超过 30 MB" }, { status: 413 });
+  const nextPage = await db.query.pages.findFirst({
+    where: and(eq(pages.documentId, documentId), eq(pages.pageNumber, pageNumber + 1)),
+  });
+  const sourcePages = [ownedPage, ...(nextPage ? [nextPage] : [])];
+  const modelImages: Array<{ page: number; dataUrl: string }> = [];
+  for (const sourcePage of sourcePages) {
+    let dataUrl = sourcePage.id === ownedPage.id ? payload.image : undefined;
+    if (!dataUrl) {
+      const bytes = await getFile(sourcePage.storageKey);
+      if (bytes.byteLength > 20 * 1024 * 1024) return Response.json({ error: `第 ${sourcePage.pageNumber} 页落盘图超过 20 MB` }, { status: 413 });
+      dataUrl = `data:${contentTypeForKey(sourcePage.storageKey)};base64,${bytes.toString("base64")}`;
+    }
+    if (!dataUrl.startsWith("data:image/") || dataUrl.length > 30 * 1024 * 1024) {
+      return Response.json({ error: `第 ${sourcePage.pageNumber} 页图像格式非法或超过 30 MB` }, { status: 413 });
+    }
+    modelImages.push({ page: sourcePage.pageNumber, dataUrl });
   }
   const sqlite = getSqlite();
   const runId = crypto.randomUUID();
   const createdAt = now();
-  const idempotencyKey = `${documentId}:page:${pageNumber}:extract-v2`;
+  const idempotencyKey = `${documentId}:page:${pageNumber}:extract-v3`;
   const existingRun = await getDb().query.extractionRuns.findFirst({
     where: and(eq(extractionRuns.idempotencyKey, idempotencyKey), eq(extractionRuns.status, "complete")),
   });
@@ -163,11 +201,11 @@ export async function POST(request: Request) {
       ownerId,
       profileId: profile.id,
       system: systemPrompt,
-      text: "文件：" + (payload.fileName ?? "未命名试卷") + "，这是第 " + pageNumber + " 页。请提取本页所有完整题目。",
-      image: pageImage,
+      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。只输出题号或题目开头位于第 ${pageNumber} 页的题。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
+      images: modelImages,
       jsonMode: true,
     });
-    const normalized = normalize(parseJsonContent(result.content), pageNumber);
+    const normalized = normalize(parseJsonContent(result.content), pageNumber, sourcePages.map((page) => page.pageNumber));
     const extracted = normalized.questions;
     const finishedAt = now();
     sqliteTransaction((transaction) => {
@@ -182,11 +220,19 @@ export async function POST(request: Request) {
           JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
           JSON.stringify(question.bbox), question.status, question.confidence, question.score ?? 0, createdAt, createdAt,
         );
+        for (const [regionIndex, region] of question.regions.entries()) {
+          const regionPage = sourcePages.find((page) => page.pageNumber === region.page);
+          transaction.prepare(
+            `INSERT INTO question_regions (id, question_id, page_id, page_number, bbox_json, position, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ).run(crypto.randomUUID(), question.id, regionPage?.id ?? null, region.page, JSON.stringify(region.bbox), regionIndex, createdAt);
+        }
         for (const asset of question.assets) {
+          const assetPage = sourcePages.find((page) => page.pageNumber === asset.page);
           transaction.prepare(
             `INSERT INTO question_assets (id, question_id, page_id, kind, label, source_key, bbox_json, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(asset.id, question.id, payload.pageId ?? null, asset.kind, asset.label, null, JSON.stringify(asset.bbox), createdAt);
+          ).run(asset.id, question.id, assetPage?.id ?? null, asset.kind, asset.label, null, JSON.stringify(asset.bbox), createdAt);
         }
         for (const tagName of question.tags) {
           transaction.prepare("INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?, ?, ?)").run(crypto.randomUUID(), tagName, createdAt);
@@ -234,6 +280,12 @@ async function loadPageQuestions(documentId: string, pageNumber: number): Promis
   const rows = await db.select().from(questions).where(and(eq(questions.documentId, documentId), eq(questions.pageNumber, pageNumber)));
   const ids = rows.map((row) => row.id);
   const assetRows = ids.length ? await db.select().from(assets).where(inArray(assets.questionId, ids)) : [];
+  const regionRows = ids.length
+    ? getSqlite().prepare(
+        `SELECT question_id AS questionId, page_number AS page, bbox_json AS bboxJson
+           FROM question_regions WHERE question_id IN (${ids.map(() => "?").join(",")}) ORDER BY position`,
+      ).all(...ids) as Array<{ questionId: string; page: number; bboxJson: string }>
+    : [];
   const tagRows = ids.length
     ? getSqlite().prepare(
         `SELECT qt.question_id AS questionId, t.name AS name FROM question_tags qt JOIN tags t ON t.id = qt.tag_id
@@ -250,10 +302,16 @@ async function loadPageQuestions(documentId: string, pageNumber: number): Promis
     analysis: row.analysis,
     page: row.pageNumber,
     bbox: JSON.parse(row.bboxJson) as BoundingBox,
+    regions: regionRows.filter((region) => region.questionId === row.id).map((region) => ({
+      page: region.page,
+      bbox: JSON.parse(region.bboxJson) as BoundingBox,
+    })).concat(regionRows.some((region) => region.questionId === row.id) ? [] : [{ page: row.pageNumber, bbox: JSON.parse(row.bboxJson) as BoundingBox }]),
     assets: assetRows.filter((asset) => asset.questionId === row.id).map((asset) => ({
       id: asset.id,
       kind: asset.kind as "figure" | "table" | "graph",
-      page: row.pageNumber,
+      page: assetRows.find((candidate) => candidate.id === asset.id)?.pageId
+        ? (getSqlite().prepare("SELECT page_number AS page FROM pages WHERE id = ?").get(asset.pageId) as { page: number } | undefined)?.page ?? row.pageNumber
+        : row.pageNumber,
       bbox: JSON.parse(asset.bboxJson) as BoundingBox,
       label: asset.label,
     })),

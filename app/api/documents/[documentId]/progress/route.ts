@@ -17,7 +17,7 @@ export async function GET(request: Request, context: { params: Promise<{ documen
     `SELECT p.id AS pageId, p.page_number AS pageNumber, COALESCE(r.status, 'queued') AS status,
             COALESCE(r.attempt, 0) AS attempt, r.error, r.created_at AS startedAt, r.finished_at AS finishedAt
        FROM pages p LEFT JOIN extraction_runs r
-         ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v2'
+         ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
       WHERE p.document_id = ? ORDER BY p.page_number`,
   ).all(documentId) as Array<{
     pageId: string; pageNumber: number; status: string; attempt: number; error: string | null;

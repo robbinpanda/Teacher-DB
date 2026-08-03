@@ -4,9 +4,9 @@ import { AppShell } from "../components/AppShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.APP_BASE_URL || "http://localhost:3000"),
+  metadataBase: new URL(process.env.APP_BASE_URL || "http://localhost:3050"),
   title: "拾题 · 教师题库助手",
-  description: "把 PDF、Word 试卷转换为可审核、可检索、可组卷的结构化题库。",
+  description: "把 PDF 试卷转换为可审核、可检索、可组卷的结构化题库。",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

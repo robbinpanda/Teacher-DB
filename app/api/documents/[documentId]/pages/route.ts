@@ -56,6 +56,6 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     `INSERT OR IGNORE INTO extraction_runs
       (id, document_id, page_id, page_number, provider, model, status, attempt, idempotency_key, created_at)
      VALUES (?, ?, ?, ?, 'pending', 'pending', 'queued', 0, ?, ?)`,
-  ).run(crypto.randomUUID(), documentId, pageId, pageNumber, `${documentId}:page:${pageNumber}:extract-v2`, now());
+  ).run(crypto.randomUUID(), documentId, pageId, pageNumber, `${documentId}:page:${pageNumber}:extract-v3`, now());
   return Response.json({ id: pageId, storageKey, pageNumber, checksum }, { status: existing ? 200 : 201 });
 }

@@ -42,6 +42,10 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     createdAt: timestamp,
     updatedAt: timestamp,
   });
+  getSqlite().prepare(
+    `INSERT INTO question_regions (id, question_id, page_id, page_number, bbox_json, position, created_at)
+     SELECT ?, ?, id, ?, ?, 0, ? FROM pages WHERE document_id = ? AND page_number = ?`,
+  ).run(crypto.randomUUID(), id, page, JSON.stringify({ x: 5, y: 5, width: 90, height: 20 }), timestamp, documentId, page);
   return Response.json({
     question: {
       id,
@@ -53,6 +57,7 @@ export async function POST(request: Request, context: { params: Promise<{ docume
       analysis: "",
       page,
       bbox: { x: 5, y: 5, width: 90, height: 20 },
+      regions: [{ page, bbox: { x: 5, y: 5, width: 90, height: 20 } }],
       assets: [],
       tags: [],
       confidence: 1,

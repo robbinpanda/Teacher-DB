@@ -5,7 +5,8 @@ type VisionCall = {
   profileId?: string;
   system: string;
   text: string;
-  image: string;
+  image?: string;
+  images?: Array<{ page: number; dataUrl: string }>;
   jsonMode?: boolean;
 };
 
@@ -14,16 +15,24 @@ export async function callVisionModel(input: VisionCall) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), profile.timeoutMs);
   try {
+    const images = input.images?.length
+      ? input.images
+      : input.image
+        ? [{ page: 1, dataUrl: input.image }]
+        : [];
+    if (!images.length) throw new Error("模型调用缺少页面图像");
+    const userContent: Array<Record<string, unknown>> = [{ type: "text", text: input.text }];
+    for (const image of images) {
+      userContent.push({ type: "text", text: `下面是原试卷第 ${image.page} 页：` });
+      userContent.push({ type: "image_url", image_url: { url: image.dataUrl, detail: "high" } });
+    }
     const body: Record<string, unknown> = {
       model: profile.model,
       reasoning_effort: "none",
       temperature: 0,
       messages: [
         { role: "system", content: input.system },
-        { role: "user", content: [
-          { type: "text", text: input.text },
-          { type: "image_url", image_url: { url: input.image, detail: "high" } },
-        ] },
+        { role: "user", content: userContent },
       ],
     };
     if (input.jsonMode) body.response_format = { type: "json_object" };

@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 CREATE INDEX IF NOT EXISTS questions_document_page_idx ON questions(document_id, page_number);
 CREATE INDEX IF NOT EXISTS questions_type_status_idx ON questions(type, status);
+CREATE TABLE IF NOT EXISTS question_regions (
+  id TEXT PRIMARY KEY NOT NULL, question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  page_id TEXT REFERENCES pages(id) ON DELETE SET NULL, page_number INTEGER NOT NULL,
+  bbox_json TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS question_regions_question_page_idx ON question_regions(question_id, page_number);
+CREATE INDEX IF NOT EXISTS question_regions_page_idx ON question_regions(page_id);
 CREATE TABLE IF NOT EXISTS question_assets (
   id TEXT PRIMARY KEY NOT NULL, question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   page_id TEXT REFERENCES pages(id) ON DELETE SET NULL, kind TEXT NOT NULL, label TEXT NOT NULL DEFAULT '题图',

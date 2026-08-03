@@ -27,6 +27,17 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+async function runWithConcurrency<T>(items: T[], concurrency: number, operation: (item: T) => Promise<void>) {
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await operation(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+}
+
 function CropPreview({ bbox, imageUrl }: { bbox: BoundingBox; imageUrl: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -71,10 +82,11 @@ export function ReviewWorkspace({
   const pageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<null | { mode: "move" | "resize"; x: number; y: number; box: BoundingBox }>(null);
   const active = questions.find((question) => question.id === activeId) ?? questions[0];
-  const activeAsset = active?.assets[0];
-  const editableBox = activeAsset?.bbox ?? active?.bbox;
+  const activeAsset = active?.assets.find((asset) => asset.page === currentPage);
+  const activeRegion = active?.regions.find((region) => region.page === currentPage) ?? active?.regions[0];
+  const editableBox = activeAsset?.bbox ?? activeRegion?.bbox;
   const currentPageInfo = pages.find((page) => page.pageNumber === currentPage) ?? pages[0];
-  const pageQuestions = questions.filter((question) => question.page === currentPage);
+  const pageQuestions = questions.filter((question) => question.regions.some((region) => region.page === currentPage));
   const approvedCount = questions.filter((question) => question.status === "approved").length;
   const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
   const incompletePages = pages.filter((page) => page.extractionStatus !== "complete");
@@ -101,7 +113,7 @@ export function ReviewWorkspace({
     setRetrying(true);
     setSaveError("");
     try {
-      for (const page of incompletePages) {
+      await runWithConcurrency(incompletePages, 2, async (page) => {
         const response = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -114,7 +126,10 @@ export function ReviewWorkspace({
         });
         const result = await response.json().catch(() => ({})) as { error?: string };
         if (!response.ok) throw new Error(result.error ?? `第 ${page.pageNumber} 页重新识别失败`);
-      }
+      });
+      const finalize = await fetch(`/api/documents/${sourceDocument.id}/finalize`, { method: "POST" });
+      const finalizeResult = await finalize.json().catch(() => ({})) as { error?: string };
+      if (!finalize.ok) throw new Error(finalizeResult.error ?? "跨页题与答案合并失败");
       window.location.reload();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "重新识别失败");
@@ -146,9 +161,11 @@ export function ReviewWorkspace({
 
   function patchBox(box: BoundingBox) {
     if (activeAsset) {
-      patchActive({ assets: active.assets.map((asset, index) => index === 0 ? { ...asset, bbox: box } : asset) });
+      patchActive({ assets: active.assets.map((asset) => asset.id === activeAsset.id ? { ...asset, bbox: box } : asset) });
     } else {
-      patchActive({ bbox: box });
+      const regions = active.regions.map((region) => region.page === currentPage ? { ...region, bbox: box } : region);
+      const primary = regions[0];
+      patchActive({ regions, page: primary.page, bbox: primary.bbox });
     }
   }
 
@@ -200,7 +217,7 @@ export function ReviewWorkspace({
 
   function selectQuestion(question: QuestionWithSource) {
     setActiveId(question.id);
-    setCurrentPage(question.page);
+    if (!question.regions.some((region) => region.page === currentPage)) setCurrentPage(question.regions[0]?.page ?? question.page);
     setSaveError("");
   }
 
@@ -209,7 +226,7 @@ export function ReviewWorkspace({
     const next = pages[clamp(index + direction, 0, pages.length - 1)];
     if (!next) return;
     setCurrentPage(next.pageNumber);
-    const firstQuestion = questions.find((question) => question.page === next.pageNumber);
+    const firstQuestion = questions.find((question) => question.regions.some((region) => region.page === next.pageNumber));
     if (firstQuestion) setActiveId(firstQuestion.id);
   }
 
@@ -281,17 +298,20 @@ export function ReviewWorkspace({
               onPointerCancel={() => { dragRef.current = null; }}
             >
               <NextImage src={currentPageInfo.imageUrl} alt={`原试卷第 ${currentPage} 页`} width={currentPageInfo.width} height={currentPageInfo.height} draggable={false} priority unoptimized />
-              {pageQuestions.map((question) => (
+              {pageQuestions.map((question) => {
+                const region = question.regions.find((item) => item.page === currentPage) ?? { page: currentPage, bbox: question.bbox };
+                return (
                 <button
                   type="button"
                   key={question.id}
                   className={"question-box " + (question.id === active.id ? "active" : "")}
-                  style={{ left: question.bbox.x + "%", top: question.bbox.y + "%", width: question.bbox.width + "%", height: question.bbox.height + "%" }}
+                  style={{ left: region.bbox.x + "%", top: region.bbox.y + "%", width: region.bbox.width + "%", height: region.bbox.height + "%" }}
                   onClick={() => selectQuestion(question)}
                   aria-label={"第 " + question.number + " 题范围"}
-                ><span>Q{question.number}</span></button>
-              ))}
-              {activeAsset && active.page === currentPage && (
+                ><span>Q{question.number}{question.regions.length > 1 ? ` · 跨${question.regions.length}页` : ""}</span></button>
+                );
+              })}
+              {activeAsset && (
                 <div
                   className="asset-box"
                   style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }}
@@ -312,9 +332,18 @@ export function ReviewWorkspace({
             <span className={"confidence " + (active.confidence < .9 ? "medium" : "")}>{Math.round(active.confidence * 100)}% 置信度</span>
           </div>
 
-          {activeAsset && (
+          {active.regions.length > 1 && (
+            <div className="cross-page-regions">
+              <span>跨页题目范围</span>
+              {active.regions.map((region) => (
+                <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => setCurrentPage(region.page)}>第 {region.page} 页</button>
+              ))}
+            </div>
+          )}
+
+          {editableBox && (
             <div className="crop-card">
-              <div className="field-label"><span><ImageIcon size={13} /> 题图裁剪</span><b>可拖动调整</b></div>
+              <div className="field-label"><span>{activeAsset ? <ImageIcon size={13} /> : <Crop size={13} />} {activeAsset ? "题图裁剪" : `第 ${currentPage} 页题目范围`}</span><b>可拖动调整</b></div>
               <CropPreview bbox={editableBox} imageUrl={currentPageInfo.imageUrl} />
               <div className="bbox-grid">
                 {(["x", "y", "width", "height"] as const).map((key) => (

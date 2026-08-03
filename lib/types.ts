@@ -5,6 +5,11 @@ export type BoundingBox = {
   height: number;
 };
 
+export type QuestionRegion = {
+  page: number;
+  bbox: BoundingBox;
+};
+
 export type QuestionType = "single" | "multiple" | "fill" | "answer";
 
 export type QuestionAsset = {
@@ -28,6 +33,7 @@ export type Question = {
   analysis: string;
   page: number;
   bbox: BoundingBox;
+  regions: QuestionRegion[];
   assets: QuestionAsset[];
   tags: string[];
   confidence: number;

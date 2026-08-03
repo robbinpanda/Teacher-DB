@@ -33,6 +33,22 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   if (!new Set(["pending", "approved", "needs_attention"]).has(payload.status)) {
     return Response.json({ error: "非法审核状态" }, { status: 400 });
   }
+  const requestedRegions = payload.regions?.length ? payload.regions : [{ page: payload.page, bbox: payload.bbox }];
+  const preparedRegions: Array<{ page: number; pageId: string; bbox: BoundingBox; position: number }> = [];
+  try {
+    for (const region of requestedRegions) {
+      if (preparedRegions.some((candidate) => candidate.page === region.page)) continue;
+      const page = sqlite.prepare(
+        "SELECT id FROM pages WHERE document_id = ? AND page_number = ?",
+      ).get(ownedQuestion.documentId, region.page) as { id: string } | undefined;
+      if (!page) throw new Error(`找不到题目范围对应的第 ${region.page} 页原图`);
+      preparedRegions.push({ page: region.page, pageId: page.id, bbox: safeBox(region.bbox), position: preparedRegions.length });
+    }
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "题目页面范围无效" }, { status: 422 });
+  }
+  if (!preparedRegions.length) return Response.json({ error: "题目至少需要一个页面范围" }, { status: 400 });
+  const primaryRegion = preparedRegions[0];
   const previousAssets = sqlite.prepare(
     "SELECT id, crop_key AS cropKey FROM question_assets WHERE question_id = ?",
   ).all(questionId) as Array<{ id: string; cropKey: string | null }>;
@@ -78,8 +94,15 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
            bbox_json = ?, status = ?, score = ?, updated_at = ? WHERE id = ?`,
       ).run(
         payload.number, payload.type, payload.stem, JSON.stringify(payload.options ?? []), payload.answer,
-        payload.analysis, JSON.stringify(safeBox(payload.bbox)), payload.status, payload.score ?? 0, timestamp, questionId,
+        payload.analysis, JSON.stringify(primaryRegion.bbox), payload.status, payload.score ?? 0, timestamp, questionId,
       );
+      transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
+      for (const region of preparedRegions) {
+        transaction.prepare(
+          `INSERT INTO question_regions (id, question_id, page_id, page_number, bbox_json, position, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(crypto.randomUUID(), questionId, region.pageId, region.page, JSON.stringify(region.bbox), region.position, timestamp);
+      }
       for (const prepared of preparedAssets) {
         transaction.prepare(
           `INSERT INTO question_assets
@@ -118,6 +141,9 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   return Response.json({
     question: {
       ...payload,
+      page: primaryRegion.page,
+      bbox: primaryRegion.bbox,
+      regions: preparedRegions.map((region) => ({ page: region.page, bbox: region.bbox })),
       assets: preparedAssets.map(({ asset, box, sourceKey, cropKey }) => ({
         ...asset,
         bbox: box,

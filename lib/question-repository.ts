@@ -49,6 +49,12 @@ type AssetRow = {
   pageStorageKey: string | null;
 };
 
+type RegionRow = {
+  questionId: string;
+  page: number;
+  bboxJson: string;
+};
+
 function fileUrl(key: string | null | undefined) {
   if (!key) return null;
   return "/api/files/" + key.split("/").map(encodeURIComponent).join("/");
@@ -76,6 +82,12 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       WHERE a.question_id IN (${placeholders(ids.length)})
       ORDER BY a.created_at, a.id`,
   ).all(...ids) as AssetRow[];
+  const regions = sqlite.prepare(
+    `SELECT question_id AS questionId, page_number AS page, bbox_json AS bboxJson
+       FROM question_regions
+      WHERE question_id IN (${placeholders(ids.length)})
+      ORDER BY position, page_number`,
+  ).all(...ids) as RegionRow[];
   const tagRows = sqlite.prepare(
     `SELECT qt.question_id AS questionId, t.name
        FROM question_tags qt JOIN tags t ON t.id = qt.tag_id
@@ -94,6 +106,11 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       cropKey: asset.cropKey,
       url: fileUrl(asset.cropKey),
     }));
+    const questionRegions = regions.filter((region) => region.questionId === row.id).map((region) => ({
+      page: region.page,
+      bbox: parseJson<BoundingBox>(region.bboxJson, { x: 0, y: 0, width: 10, height: 10 }),
+    }));
+    const legacyBox = parseJson<BoundingBox>(row.bboxJson, { x: 0, y: 0, width: 10, height: 10 });
     return {
       id: row.id,
       number: row.number,
@@ -103,7 +120,8 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       answer: row.answer,
       analysis: row.analysis,
       page: row.pageNumber,
-      bbox: parseJson<BoundingBox>(row.bboxJson, { x: 0, y: 0, width: 10, height: 10 }),
+      bbox: legacyBox,
+      regions: questionRegions.length ? questionRegions : [{ page: row.pageNumber, bbox: legacyBox }],
       assets: questionAssets,
       tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
       confidence: row.confidence,
@@ -150,7 +168,7 @@ export async function getReviewData(documentId: string, ownerId: string) {
             COALESCE(r.status, 'queued') AS extractionStatus, COALESCE(r.attempt, 0) AS extractionAttempt,
             r.error AS extractionError
        FROM pages p LEFT JOIN extraction_runs r
-         ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v2'
+         ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
       WHERE p.document_id = ? ORDER BY p.page_number`,
   ).all(documentId) as Array<{
     id: string; pageNumber: number; storageKey: string; width: number; height: number;

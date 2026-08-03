@@ -15,7 +15,7 @@ try {
   const foreignKeyErrors = database.pragma("foreign_key_check");
   report.checks.foreignKeyErrors = foreignKeyErrors.length;
   if (foreignKeyErrors.length) report.ok = false;
-  const requiredTables = ["documents", "pages", "extraction_runs", "questions", "question_assets", "tags", "papers", "model_profiles"];
+  const requiredTables = ["documents", "pages", "extraction_runs", "questions", "question_regions", "question_assets", "tags", "papers", "model_profiles"];
   const existingTables = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
   const missingTables = requiredTables.filter((table) => !existingTables.has(table));
   report.checks.missingTables = missingTables;

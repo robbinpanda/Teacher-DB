@@ -6,9 +6,10 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3050",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3050",
+    "start:test": "next start -p 8050",
     "test": "npm run build && node --test tests/rendered-html.test.mjs && npm run test:backup",
     "test:runtime": "node tests/runtime-api-smoke.mjs",
     "test:cleanup": "node tests/cleanup-runtime-fixtures.mjs",
@@ -23,9 +24,7 @@
   "dependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "better-sqlite3": "^13.0.2",
-    "docx-preview": "^0.4.0",
     "drizzle-orm": "0.45.2",
-    "html2canvas": "^1.4.1",
     "katex": "^0.18.1",
     "lucide-react": "^1.28.0",
     "next": "16.2.6",

@@ -18,6 +18,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     examType?: string | null;
     region?: string | null;
     school?: string | null;
+    error?: string | null;
   };
   const db = getDb();
   const document = await db.query.documents.findFirst({
@@ -38,7 +39,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
       `SELECT COUNT(p.id) AS total,
               COALESCE(SUM(CASE WHEN r.status = 'complete' THEN 1 ELSE 0 END), 0) AS complete
          FROM pages p LEFT JOIN extraction_runs r
-           ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v2'
+           ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
         WHERE p.document_id = ?`,
     ).get(documentId) as { total: number; complete: number };
     const missingPages = Math.max(0, document.pageCount - pageProgress.total);
@@ -48,7 +49,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     }
   }
 
-  const allowedStatuses = new Set(["uploading", "extracting", "reviewing", "complete"]);
+  const allowedStatuses = new Set(["uploading", "extracting", "reviewing", "failed", "complete"]);
   if (payload.status && !allowedStatuses.has(payload.status)) {
     return Response.json({ error: "非法文档状态" }, { status: 400 });
   }
@@ -60,6 +61,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     ...(payload.examType !== undefined ? { sourceExamType: payload.examType || null } : {}),
     ...(payload.region !== undefined ? { sourceRegion: payload.region || null } : {}),
     ...(payload.school !== undefined ? { sourceSchool: payload.school || null } : {}),
+    ...(payload.error !== undefined ? { error: payload.error?.slice(0, 4000) || null } : {}),
     updatedAt: now(),
   }).where(and(eq(documents.id, documentId), eq(documents.ownerId, ownerId)));
 

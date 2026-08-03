@@ -1,6 +1,6 @@
 # 拾题 · 教师题库助手
 
-面向教师的本地优先题库工具。上传 PDF、DOCX 或图片后，浏览器把原卷渲染成高清页面，再调用 OpenAI-compatible 多模态模型提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核、题库检索和组卷流程。
+面向教师的本地优先题库工具。批量上传 PDF 试卷后，浏览器把原卷渲染成高清页面，再调用 OpenAI-compatible 多模态模型提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核、题库检索和组卷流程。为保证页面证据与原卷一致，当前产品范围只接收 PDF。
 
 ## 技术架构
 
@@ -15,7 +15,8 @@
 
 ## 当前已实现
 
-- PDF、DOCX、PNG、JPG、WEBP 浏览器端逐页渲染；无显式分页符的 DOCX 会按纸张尺寸和内容块边界切页
+- PDF 批量上传与浏览器端逐页高清渲染；最多并发处理 2 份试卷，每份并发保存 3 页、识别 2 页
+- 原卷在页面渲染前立即预登记，切换到其他最近试卷不会丢失新任务；模型未配置时原卷和分页图也会保留
 - 原卷/页面本地落盘，SHA-256 去重和页面校验
 - SQLite 自动建库与兼容升级
 - 内置 OpenCode MiMo V2.5 Free，自动使用 OpenCode 公共凭据，无需账号或个人 API Key
@@ -25,6 +26,8 @@
 - 强制开启 Thinking、不能关闭推理的模型会在连接测试时明确判定为不兼容，不会偷偷启用推理
 - 每页抽题幂等键、尝试次数、原始响应、失败原因和事务入库
 - 题目 JSON、LaTeX、页面/题图坐标、置信度、标签和人工审核界面
+- 每次识别同时查看当前页与下一页；跨页题只在起始页创建一次，并用多个 `question_regions` 保存各页独立范围
+- 审核页可在跨页题的各来源页之间切换，分别拖拽或输入坐标调整每一页的题目范围
 - 答案页通过 `answerUpdates` 按题号回填，不会伪造为新题
 - 人工修改题号、题型、题干、选项、答案、解析、分值和标签，并可手动补题
 - 题图框拖拽调整后使用 Sharp 生成真实 JPEG 裁剪文件
@@ -41,12 +44,14 @@
        npm install
        npm run dev
 
-2. 打开 `http://localhost:3000`。
+2. 打开 `http://localhost:3050`。
 
 生产构建：
 
     npm run build
     npm start
+
+`npm run dev` 和 `npm start` 固定使用 3050；需要单独启动生产测试实例时可用 `npm run start:test`，它使用 8050。项目不会占用 3000 或 8010。
 
 服务端 PDF 会自动寻找系统中的 Chrome、Edge 或 Chromium。自定义路径可设置 `CHROMIUM_EXECUTABLE_PATH`。
 
@@ -64,7 +69,7 @@
 
 ## 数据与迁移
 
-数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_assets、tags、model_profiles、papers 和 paper_items。
+数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_regions、question_assets、tags、model_profiles、papers 和 paper_items。
 
 ## 验证
 
@@ -95,7 +100,7 @@
 
 ## 当前边界
 
-- `.docx` 由浏览器中的 `docx-preview` 渲染。Word 若没有显式分页符，浏览器无法复刻 Word 排版引擎的分页结果，应用会按纸张尺寸并尽量靠近段落/表格边界切页；复杂浮动对象、特殊字体或旧版 `.doc` 仍建议先转成 PDF。旧版 `.doc` 当前会明确报错，不会静默生成错误页面。
-- 题目跨页断开时不会自动猜测缺失内容，需要在审核页人工合并或补录。
+- 只接收 PDF。DOC、DOCX、ODT 和图片会明确拒绝；请先在原编辑器中导出 PDF，以避免公式、字体和浮动对象因不同排版引擎而错位。
+- 自动跨页合并只查看相邻的下一页；极少数连续跨越三页以上或题号模糊的内容会标记为低置信度，需在审核页人工修正。
 - 服务端 PDF 依赖本机 Chromium 系浏览器；极简服务器镜像需要额外安装 Chromium 或设置其可执行文件路径。
 - 本地模式是单教师 `local-demo` 空间。部署为多用户系统时，需要由可信反向代理提供 `oai-authenticated-user-id`，不能让公网客户端自行伪造该请求头。

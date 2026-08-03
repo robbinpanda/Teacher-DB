@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FileImage, FileText, LoaderCircle, ScanLine, UploadCloud } from "lucide-react";
-import { computePageSlices } from "../lib/page-slices.mjs";
+import { useRouter } from "next/navigation";
+import { AlertCircle, CheckCircle2, FileText, LoaderCircle, ScanLine, UploadCloud } from "lucide-react";
 
 type Stage = "idle" | "rendering" | "uploading" | "extracting" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
+type RenderedDocument = { pages: RenderedPage[]; renderer: string };
+type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; documentId?: string; renderer?: string };
 
 async function canvasToPage(canvas: HTMLCanvasElement): Promise<RenderedPage> {
   const blob = await new Promise<Blob>((resolve, reject) => {
@@ -34,118 +36,35 @@ async function renderPdf(file: File): Promise<RenderedPage[]> {
   return pages;
 }
 
-async function renderDocx(file: File): Promise<RenderedPage[]> {
-  const [{ renderAsync }, html2canvasModule] = await Promise.all([import("docx-preview"), import("html2canvas")]);
-  const html2canvas = html2canvasModule.default;
-  const host = document.createElement("div");
-  host.style.cssText = "position:fixed;left:-20000px;top:0;width:900px;background:white;z-index:-1;";
-  document.body.appendChild(host);
-  try {
-    await renderAsync(await file.arrayBuffer(), host, undefined, {
-      breakPages: true,
-      ignoreWidth: false,
-      ignoreHeight: false,
-      useBase64URL: true,
-    });
-    await document.fonts?.ready;
-    const sections = Array.from(host.querySelectorAll<HTMLElement>("section.docx"));
-    const targets = sections.length ? sections : [host];
-    const pages: RenderedPage[] = [];
-    for (const target of targets) {
-      const rect = target.getBoundingClientRect();
-      const totalHeight = Math.max(rect.height, target.scrollHeight);
-      const computed = window.getComputedStyle(target);
-      const minimumHeight = Number.parseFloat(computed.minHeight);
-      const pageHeight = Number.isFinite(minimumHeight) && minimumHeight >= rect.width * 0.8 && minimumHeight <= rect.width * 2
-        ? minimumHeight
-        : rect.width * Math.SQRT2;
-      const candidateBreaks = Array.from(target.querySelectorAll<HTMLElement>("p, table, tr"))
-        .map((element) => element.getBoundingClientRect().bottom - rect.top)
-        .filter((value) => value > 0 && value < totalHeight);
-      const slices = computePageSlices(totalHeight, pageHeight, candidateBreaks);
-      const scale = 1.45;
-      const expectedCanvasHeight = totalHeight * scale;
-
-      if (expectedCanvasHeight <= 60_000) {
-        const fullCanvas = await html2canvas(target, { backgroundColor: "#ffffff", scale, useCORS: true, logging: false });
-        const scaleX = fullCanvas.width / rect.width;
-        const scaleY = fullCanvas.height / totalHeight;
-        for (const slice of slices) {
-          const pageCanvas = document.createElement("canvas");
-          pageCanvas.width = fullCanvas.width;
-          pageCanvas.height = Math.max(1, Math.round(pageHeight * scaleY));
-          const context = pageCanvas.getContext("2d");
-          if (!context) throw new Error("无法创建 Word 页面画布");
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-          const sourceY = Math.round(slice.start * scaleY);
-          const sourceHeight = Math.min(fullCanvas.height - sourceY, Math.max(1, Math.round(slice.height * scaleY)));
-          context.drawImage(fullCanvas, 0, sourceY, Math.round(rect.width * scaleX), sourceHeight, 0, 0, pageCanvas.width, sourceHeight);
-          pages.push(await canvasToPage(pageCanvas));
-        }
-      } else {
-        for (const slice of slices) {
-          const cropped = await html2canvas(target, {
-            backgroundColor: "#ffffff", scale, useCORS: true, logging: false,
-            width: Math.ceil(rect.width), height: Math.ceil(slice.height), x: 0, y: Math.floor(slice.start),
-          });
-          const pageCanvas = document.createElement("canvas");
-          pageCanvas.width = cropped.width;
-          pageCanvas.height = Math.max(1, Math.round(pageHeight * scale));
-          const context = pageCanvas.getContext("2d");
-          if (!context) throw new Error("无法创建 Word 分页画布");
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-          context.drawImage(cropped, 0, 0);
-          pages.push(await canvasToPage(pageCanvas));
-        }
-      }
-    }
-    if (!pages.length) throw new Error("Word 没有渲染出可识别页面");
-    return pages;
-  } finally {
-    host.remove();
-  }
-}
-
-async function renderImage(file: File): Promise<RenderedPage[]> {
-  const url = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("图片读取失败"));
-      element.src = url;
-    });
-    const scale = Math.min(1, 1800 / image.naturalWidth);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(image.naturalWidth * scale);
-    canvas.height = Math.round(image.naturalHeight * scale);
-    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return [await canvasToPage(canvas)];
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-async function renderFile(file: File) {
+async function renderFile(file: File): Promise<RenderedDocument> {
   const name = file.name.toLowerCase();
-  if (file.type === "application/pdf" || name.endsWith(".pdf")) return renderPdf(file);
-  if (name.endsWith(".docx")) return renderDocx(file);
-  if (file.type.startsWith("image/")) return renderImage(file);
-  if (name.endsWith(".doc")) throw new Error("旧版 .doc 暂不支持浏览器直接渲染，请先另存为 .docx 或 PDF。");
-  throw new Error("暂不支持该格式，请上传 PDF、DOCX、PNG、JPG 或 WEBP。");
+  if (file.type === "application/pdf" || name.endsWith(".pdf")) return { pages: await renderPdf(file), renderer: "pdf.js" };
+  throw new Error("当前产品仅支持 PDF 试卷，请先将其他格式另存为 PDF。");
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, operation: (item: T, index: number) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await operation(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
 }
 
 export function UploadWorkbench() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [stage, setStage] = useState<Stage>("idle");
-  const [message, setMessage] = useState("支持 PDF、DOCX、PNG、JPG、WEBP");
-  const [fileName, setFileName] = useState("");
-  const [pageCount, setPageCount] = useState(0);
-  const [documentId, setDocumentId] = useState<string>();
+  const [tasks, setTasks] = useState<UploadTask[]>([]);
   const [sourceMeta, setSourceMeta] = useState({ subject: "数学", grade: "九年级", sourceYear: String(new Date().getFullYear()), sourceExamType: "", sourceRegion: "", sourceSchool: "" });
-  const working = ["rendering", "uploading", "extracting"].includes(stage);
+  const working = tasks.some((task) => ["rendering", "uploading", "extracting"].includes(task.stage));
+
+  function patchTask(taskId: string, patch: Partial<UploadTask>) {
+    setTasks((items) => items.map((item) => item.id === taskId ? { ...item, ...patch } : item));
+  }
 
   async function ensureModelReady() {
     const response = await fetch("/api/model-profiles", { cache: "no-store" });
@@ -159,47 +78,61 @@ export function UploadWorkbench() {
     if (!selected?.apiKeyMask) throw new Error("识题模型尚未配置 API Key，请先到“模型设置”填写并测试连接。");
   }
 
-  async function processFile(file: File) {
-    setFileName(file.name);
-    setStage("rendering");
-    setMessage("正在把原卷渲染为高清页面…");
+  async function processFile(file: File, taskId: string, metadata: typeof sourceMeta) {
+    patchTask(taskId, { stage: "rendering", message: "正在把原卷渲染为高清页面…" });
+    let persistedDocumentId: string | undefined;
     try {
-      const pages = await renderFile(file);
-      setPageCount(pages.length);
-      setStage("uploading");
-      setMessage("已生成 " + pages.length + " 页，正在保存原卷与页面证据…");
+      const provisional = new FormData();
+      provisional.append("file", file);
+      provisional.append("pageCount", "0");
+      Object.entries(metadata).forEach(([key, value]) => provisional.append(key, value));
+      const provisionalResponse = await fetch("/api/documents", { method: "POST", body: provisional });
+      const provisionalResult = await provisionalResponse.json() as { id?: string; error?: string; status?: string };
+      if (!provisionalResponse.ok || !provisionalResult.id) throw new Error(provisionalResult.error ?? "原卷预登记失败");
+      const currentDocumentId = provisionalResult.id;
+      persistedDocumentId = currentDocumentId;
+      patchTask(taskId, { documentId: currentDocumentId });
+      router.refresh();
+      if (provisionalResult.status === "complete") {
+        patchTask(taskId, { stage: "done", message: "相同原卷已经处理完成，可直接进入题库或审核。" });
+        return;
+      }
+      const rendered = await renderFile(file);
+      const pages = rendered.pages;
+      patchTask(taskId, { pageCount: pages.length, renderer: rendered.renderer, stage: "uploading", message: `已生成 ${pages.length} 页，正在并发保存页面证据…` });
       const original = new FormData();
       original.append("file", file);
       original.append("pageCount", String(pages.length));
-      Object.entries(sourceMeta).forEach(([key, value]) => original.append(key, value));
+      Object.entries(metadata).forEach(([key, value]) => original.append(key, value));
       const documentResponse = await fetch("/api/documents", { method: "POST", body: original });
       const documentResult = await documentResponse.json() as { id?: string; error?: string };
       if (!documentResponse.ok || !documentResult.id) throw new Error(documentResult.error ?? "原卷保存失败");
-      const currentDocumentId = documentResult.id;
-      setDocumentId(currentDocumentId);
-      const pageIds: string[] = [];
-      for (let index = 0; index < pages.length; index += 1) {
+      if (documentResult.id !== currentDocumentId) throw new Error("原卷登记与分页任务不一致");
+      router.refresh();
+      let uploadedCount = 0;
+      const pageIds = await mapWithConcurrency(pages, 3, async (page, index) => {
         const form = new FormData();
-        form.append("page", pages[index].blob, "page-" + (index + 1) + ".jpg");
+        form.append("page", page.blob, "page-" + (index + 1) + ".jpg");
         form.append("pageNumber", String(index + 1));
-        form.append("width", String(pages[index].width));
-        form.append("height", String(pages[index].height));
+        form.append("width", String(page.width));
+        form.append("height", String(page.height));
         const pageResponse = await fetch("/api/documents/" + currentDocumentId + "/pages", { method: "POST", body: form });
         const pageResult = await pageResponse.json() as { id?: string; error?: string };
         if (!pageResponse.ok || !pageResult.id) throw new Error(pageResult.error ?? `第 ${index + 1} 页保存失败`);
-        pageIds.push(pageResult.id);
-      }
+        uploadedCount += 1;
+        patchTask(taskId, { completedPages: uploadedCount, message: `正在保存页面证据（${uploadedCount}/${pages.length}）…` });
+        return pageResult.id;
+      });
       try {
         await ensureModelReady();
       } catch (error) {
-        setStage("waiting_model");
-        setMessage((error instanceof Error ? error.message : "识题模型尚未配置") + " 原卷和分页图已经安全保存，可配置模型后在审核页重试识别。");
+        patchTask(taskId, { stage: "waiting_model", message: (error instanceof Error ? error.message : "识题模型尚未配置") + " 原卷和分页图已经安全保存，可配置模型后在审核页重试识别。" });
+        router.refresh();
         return;
       }
-      setStage("extracting");
-      let extractedCount = 0;
-      for (let index = 0; index < pages.length; index += 1) {
-        setMessage("视觉模型正在识别第 " + (index + 1) + " / " + pages.length + " 页的题目、LaTeX 与答案…");
+      patchTask(taskId, { stage: "extracting", completedPages: 0, message: `视觉模型正在并发识别 ${pages.length} 页，并检查跨页题…` });
+      let extractedPages = 0;
+      const extractionResults = await mapWithConcurrency(pages, 2, async (_page, index) => {
         const extractionResponse = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -212,25 +145,48 @@ export function UploadWorkbench() {
         });
         const result = await extractionResponse.json() as { questions?: unknown[]; error?: string };
         if (!extractionResponse.ok) throw new Error(result.error ?? "第 " + (index + 1) + " 页识题失败");
-        extractedCount += result.questions?.length ?? 0;
-      }
-      setStage("done");
-      setMessage("识别完成：共发现 " + extractedCount + " 道题，已进入待审核区。");
+        extractedPages += 1;
+        patchTask(taskId, { completedPages: extractedPages, message: `视觉模型识别中（${extractedPages}/${pages.length}），正在合并跨页题…` });
+        return result.questions?.length ?? 0;
+      });
+      const extractedCount = extractionResults.reduce((sum, count) => sum + count, 0);
+      const finalizeResponse = await fetch(`/api/documents/${currentDocumentId}/finalize`, { method: "POST" });
+      const finalizeResult = await finalizeResponse.json().catch(() => ({})) as { error?: string };
+      if (!finalizeResponse.ok) throw new Error(finalizeResult.error ?? "跨页题与答案合并失败");
+      patchTask(taskId, { stage: "done", completedPages: pages.length, message: `识别完成：共发现 ${extractedCount} 道题，已进入待审核区。` });
+      router.refresh();
     } catch (error) {
-      setStage("error");
-      setMessage(error instanceof Error ? error.message : "处理失败，请稍后再试");
+      const message = error instanceof Error ? error.message : "处理失败，请稍后再试";
+      patchTask(taskId, { stage: "error", message });
+      if (persistedDocumentId) {
+        await fetch(`/api/documents/${persistedDocumentId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "failed", error: message }),
+        }).catch(() => undefined);
+      }
+      router.refresh();
     }
+  }
+
+  async function processFiles(files: File[]) {
+    if (!files.length) return;
+    const metadata = { ...sourceMeta };
+    const queued = files.map((file) => ({ id: crypto.randomUUID(), file }));
+    setTasks((items) => [...queued.map((item) => ({
+      id: item.id, fileName: item.file.name, stage: "idle" as Stage, message: "等待处理…", pageCount: 0, completedPages: 0,
+    })), ...items]);
+    await mapWithConcurrency(queued, 2, (item) => processFile(item.file, item.id, metadata));
   }
 
   function onDrop(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    const file = event.dataTransfer.files[0];
-    if (file) void processFile(file);
+    void processFiles(Array.from(event.dataTransfer.files));
   }
 
   return (
     <div className="upload-card card">
-      <div className="section-title"><div><h2>上传一份新试卷</h2><p>文件只在你的题库空间内保存</p></div><span className="pill dark"><ScanLine size={12} /> AI 自动抽题</span></div>
+      <div className="section-title"><div><h2>批量上传试卷</h2><p>最多同时处理 2 份试卷，每份并发上传 3 页、识别 2 页</p></div><span className="pill dark"><ScanLine size={12} /> AI 自动抽题</span></div>
       <div className="upload-source-grid">
         <label><span>学科</span><input value={sourceMeta.subject} onChange={(event) => setSourceMeta({ ...sourceMeta, subject: event.target.value })} /></label>
         <label><span>年级</span><input value={sourceMeta.grade} onChange={(event) => setSourceMeta({ ...sourceMeta, grade: event.target.value })} /></label>
@@ -239,30 +195,31 @@ export function UploadWorkbench() {
         <label><span>地区</span><input placeholder="如：上海市" value={sourceMeta.sourceRegion} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceRegion: event.target.value })} /></label>
         <label><span>学校</span><input placeholder="可选" value={sourceMeta.sourceSchool} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceSchool: event.target.value })} /></label>
       </div>
-      <input ref={inputRef} hidden type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,application/pdf,image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void processFile(file); }} />
+      <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div
-        className={"drop-zone " + (working ? "working " : "") + (["done", "waiting_model"].includes(stage) ? "success " : "") + (stage === "error" ? "failed" : "")}
+        className={"drop-zone " + (working ? "working " : "")}
         onDragOver={(event) => event.preventDefault()}
         onDrop={onDrop}
-        onClick={() => !working && inputRef.current?.click()}
+        onClick={() => inputRef.current?.click()}
         role="button"
         tabIndex={0}
       >
         <span className="upload-orbit">
-          {working ? <LoaderCircle size={28} className="spin" /> : stage === "done" ? <CheckCircle2 size={29} /> : ["error", "waiting_model"].includes(stage) ? <AlertCircle size={29} /> : <UploadCloud size={29} />}
+          {working ? <LoaderCircle size={28} className="spin" /> : <UploadCloud size={29} />}
         </span>
-        <strong>{fileName || "拖入试卷，或点击选择文件"}</strong>
-        <p>{message}</p>
-        {["done", "waiting_model"].includes(stage) ? (
-          <div className="header-actions">
-            <Link href={"/review/" + documentId} className="btn btn-primary btn-small" onClick={(event) => event.stopPropagation()}>{stage === "done" ? "开始人工审核" : "查看已保存页面"}</Link>
-            {stage === "waiting_model" && <Link href="/settings/models" className="btn btn-small" onClick={(event) => event.stopPropagation()}>配置模型</Link>}
-          </div>
-        ) : (
-          <div className="file-types"><span><FileText size={13} /> PDF / Word</span><span><FileImage size={13} /> 图片</span></div>
-        )}
+        <strong>拖入一批试卷，或点击多选文件</strong>
+        <p>{working ? "后台队列正在继续处理；可以打开其他试卷，任务不会从列表消失。" : "仅支持 PDF，可一次选择多份试卷"}</p>
+        <div className="file-types"><span><FileText size={13} /> PDF 试卷</span></div>
       </div>
-      <div className="upload-meta"><span><b>{pageCount || "—"}</b> 页面</span><i /><span><b>{stage === "done" ? "JSON" : "—"}</b> 结构化结果</span><i /><span><b>LaTeX</b> 数学公式</span></div>
+      {tasks.length > 0 && <div className="upload-task-list">
+        {tasks.map((task) => <article key={task.id} className={`upload-task ${task.stage}`}>
+          <span className="upload-task-icon">{["rendering", "uploading", "extracting"].includes(task.stage) ? <LoaderCircle className="spin" size={16} /> : task.stage === "done" ? <CheckCircle2 size={16} /> : task.stage === "error" ? <AlertCircle size={16} /> : <FileText size={16} />}</span>
+          <div><strong>{task.fileName}</strong><small>{task.message}</small>{task.renderer && <em>渲染：{task.renderer}</em>}</div>
+          <b>{task.pageCount ? `${Math.min(task.completedPages, task.pageCount)}/${task.pageCount} 页` : task.stage === "idle" ? "排队中" : "准备中"}</b>
+          {task.documentId && <Link href={`/review/${task.documentId}`} onClick={(event) => event.stopPropagation()}>{task.stage === "done" ? "审核" : "查看"}</Link>}
+        </article>)}
+      </div>}
+      <div className="upload-meta"><span><b>{tasks.length || "—"}</b> 试卷任务</span><i /><span><b>2</b> 份并发</span><i /><span><b>LaTeX</b> 数学公式</span></div>
     </div>
   );
 }

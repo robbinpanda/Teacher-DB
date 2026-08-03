@@ -78,6 +78,19 @@ export const questions = sqliteTable("questions", {
   index("questions_type_status_idx").on(table.type, table.status),
 ]);
 
+export const questionRegions = sqliteTable("question_regions", {
+  id: text("id").primaryKey(),
+  questionId: text("question_id").notNull().references(() => questions.id, { onDelete: "cascade" }),
+  pageId: text("page_id").references(() => pages.id, { onDelete: "set null" }),
+  pageNumber: integer("page_number").notNull(),
+  bboxJson: text("bbox_json").notNull(),
+  position: integer("position").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("question_regions_question_page_idx").on(table.questionId, table.pageNumber),
+  index("question_regions_page_idx").on(table.pageId),
+]);
+
 export const assets = sqliteTable("question_assets", {
   id: text("id").primaryKey(),
   questionId: text("question_id").notNull().references(() => questions.id, { onDelete: "cascade" }),
