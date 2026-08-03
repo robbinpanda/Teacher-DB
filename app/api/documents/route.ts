@@ -40,13 +40,32 @@ export async function POST(request: Request) {
   const createdAt = now();
   const originalKey = "documents/" + id + "/original/" + file.name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
   const pageCount = Number(form.get("pageCount") ?? 0);
+  if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > 250) {
+    return Response.json({ error: "页数必须在 1 到 250 之间" }, { status: 400 });
+  }
   const bytes = await file.arrayBuffer();
   const checksum = hex(await crypto.subtle.digest("SHA-256", bytes));
   const ownerId = requestOwner(request);
   const existing = await getDb().query.documents.findFirst({
     where: and(eq(documents.ownerId, ownerId), eq(documents.checksum, checksum)),
   });
-  if (existing) return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount: existing.pageCount, duplicate: true });
+  if (existing) {
+    if (existing.status !== "complete") {
+      await getDb().update(documents).set({
+        pageCount,
+        status: "extracting",
+        subject: String(form.get("subject") ?? "") || null,
+        grade: String(form.get("grade") ?? "") || null,
+        sourceYear: Number(form.get("sourceYear")) || null,
+        sourceExamType: String(form.get("sourceExamType") ?? "") || null,
+        sourceRegion: String(form.get("sourceRegion") ?? "") || null,
+        sourceSchool: String(form.get("sourceSchool") ?? "") || null,
+        updatedAt: createdAt,
+      }).where(and(eq(documents.id, existing.id), eq(documents.ownerId, ownerId)));
+      return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount, duplicate: true, resumed: true });
+    }
+    return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount: existing.pageCount, duplicate: true, resumed: false });
+  }
   await putFile(originalKey, bytes);
   await getDb().insert(documents).values({
       id,

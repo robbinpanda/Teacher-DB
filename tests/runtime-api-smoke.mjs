@@ -20,6 +20,8 @@ const pagePath = path.resolve(dataRoot, "files", pageKey);
 const databasePath = path.resolve(dataRoot, "teacher-question-bank.sqlite3");
 const db = new Database(databasePath);
 const timestamp = new Date().toISOString();
+const uploadOwnerId = `runtime-upload-${token}`;
+let uploadedDocumentId;
 
 async function jsonFetch(url, init) {
   const response = await fetch(baseUrl + url, init);
@@ -29,6 +31,28 @@ async function jsonFetch(url, init) {
 }
 
 try {
+  const firstUpload = new FormData();
+  firstUpload.append("file", new File([Buffer.from("runtime-upload")], `runtime-smoke-${token}.png`, { type: "image/png" }));
+  firstUpload.append("pageCount", "1");
+  const firstUploadResponse = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST", headers: { "oai-authenticated-user-id": uploadOwnerId }, body: firstUpload,
+  });
+  const firstUploadResult = await firstUploadResponse.json();
+  assert.equal(firstUploadResponse.status, 201);
+  uploadedDocumentId = firstUploadResult.id;
+
+  const resumedUpload = new FormData();
+  resumedUpload.append("file", new File([Buffer.from("runtime-upload")], `runtime-smoke-${token}.png`, { type: "image/png" }));
+  resumedUpload.append("pageCount", "16");
+  const resumedUploadResponse = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST", headers: { "oai-authenticated-user-id": uploadOwnerId }, body: resumedUpload,
+  });
+  const resumedUploadResult = await resumedUploadResponse.json();
+  assert.equal(resumedUploadResponse.status, 200);
+  assert.equal(resumedUploadResult.id, uploadedDocumentId);
+  assert.equal(resumedUploadResult.resumed, true);
+  assert.equal(db.prepare("SELECT page_count AS pageCount FROM documents WHERE id = ?").get(uploadedDocumentId).pageCount, 16);
+
   await mkdir(path.dirname(pagePath), { recursive: true });
   await writeFile(pagePath, await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#f5efe1" } }).png().toBuffer());
   db.prepare(`INSERT INTO documents
@@ -143,10 +167,12 @@ try {
   if (keepFixture) console.log(JSON.stringify({ documentId, paperId, fixtureRoot }));
 } finally {
   if (!keepFixture) {
+    if (uploadedDocumentId) db.prepare("DELETE FROM documents WHERE id = ?").run(uploadedDocumentId);
     db.prepare("DELETE FROM papers WHERE id = ?").run(paperId);
     db.prepare("DELETE FROM documents WHERE id = ?").run(documentId);
     db.prepare("DELETE FROM tags WHERE name = '运行时回归' AND NOT EXISTS (SELECT 1 FROM question_tags WHERE tag_id = tags.id)").run();
   }
   db.close();
   if (!keepFixture) await rm(fixtureRoot, { recursive: true, force: true });
+  if (!keepFixture && uploadedDocumentId) await rm(path.resolve(dataRoot, "files", "documents", uploadedDocumentId), { recursive: true, force: true });
 }

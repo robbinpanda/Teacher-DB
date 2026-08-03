@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, FileImage, FileText, LoaderCircle, ScanLine, UploadCloud } from "lucide-react";
+import { computePageSlices } from "../lib/page-slices.mjs";
 
-type Stage = "idle" | "rendering" | "uploading" | "extracting" | "done" | "error";
+type Stage = "idle" | "rendering" | "uploading" | "extracting" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
 
 async function canvasToPage(canvas: HTMLCanvasElement): Promise<RenderedPage> {
@@ -46,13 +47,61 @@ async function renderDocx(file: File): Promise<RenderedPage[]> {
       ignoreHeight: false,
       useBase64URL: true,
     });
+    await document.fonts?.ready;
     const sections = Array.from(host.querySelectorAll<HTMLElement>("section.docx"));
     const targets = sections.length ? sections : [host];
     const pages: RenderedPage[] = [];
     for (const target of targets) {
-      const canvas = await html2canvas(target, { backgroundColor: "#ffffff", scale: 1.45, useCORS: true });
-      pages.push(await canvasToPage(canvas));
+      const rect = target.getBoundingClientRect();
+      const totalHeight = Math.max(rect.height, target.scrollHeight);
+      const computed = window.getComputedStyle(target);
+      const minimumHeight = Number.parseFloat(computed.minHeight);
+      const pageHeight = Number.isFinite(minimumHeight) && minimumHeight >= rect.width * 0.8 && minimumHeight <= rect.width * 2
+        ? minimumHeight
+        : rect.width * Math.SQRT2;
+      const candidateBreaks = Array.from(target.querySelectorAll<HTMLElement>("p, table, tr"))
+        .map((element) => element.getBoundingClientRect().bottom - rect.top)
+        .filter((value) => value > 0 && value < totalHeight);
+      const slices = computePageSlices(totalHeight, pageHeight, candidateBreaks);
+      const scale = 1.45;
+      const expectedCanvasHeight = totalHeight * scale;
+
+      if (expectedCanvasHeight <= 60_000) {
+        const fullCanvas = await html2canvas(target, { backgroundColor: "#ffffff", scale, useCORS: true, logging: false });
+        const scaleX = fullCanvas.width / rect.width;
+        const scaleY = fullCanvas.height / totalHeight;
+        for (const slice of slices) {
+          const pageCanvas = document.createElement("canvas");
+          pageCanvas.width = fullCanvas.width;
+          pageCanvas.height = Math.max(1, Math.round(pageHeight * scaleY));
+          const context = pageCanvas.getContext("2d");
+          if (!context) throw new Error("无法创建 Word 页面画布");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+          const sourceY = Math.round(slice.start * scaleY);
+          const sourceHeight = Math.min(fullCanvas.height - sourceY, Math.max(1, Math.round(slice.height * scaleY)));
+          context.drawImage(fullCanvas, 0, sourceY, Math.round(rect.width * scaleX), sourceHeight, 0, 0, pageCanvas.width, sourceHeight);
+          pages.push(await canvasToPage(pageCanvas));
+        }
+      } else {
+        for (const slice of slices) {
+          const cropped = await html2canvas(target, {
+            backgroundColor: "#ffffff", scale, useCORS: true, logging: false,
+            width: Math.ceil(rect.width), height: Math.ceil(slice.height), x: 0, y: Math.floor(slice.start),
+          });
+          const pageCanvas = document.createElement("canvas");
+          pageCanvas.width = cropped.width;
+          pageCanvas.height = Math.max(1, Math.round(pageHeight * scale));
+          const context = pageCanvas.getContext("2d");
+          if (!context) throw new Error("无法创建 Word 分页画布");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+          context.drawImage(cropped, 0, 0);
+          pages.push(await canvasToPage(pageCanvas));
+        }
+      }
     }
+    if (!pages.length) throw new Error("Word 没有渲染出可识别页面");
     return pages;
   } finally {
     host.remove();
@@ -98,6 +147,18 @@ export function UploadWorkbench() {
   const [sourceMeta, setSourceMeta] = useState({ subject: "数学", grade: "九年级", sourceYear: String(new Date().getFullYear()), sourceExamType: "", sourceRegion: "", sourceSchool: "" });
   const working = ["rendering", "uploading", "extracting"].includes(stage);
 
+  async function ensureModelReady() {
+    const response = await fetch("/api/model-profiles", { cache: "no-store" });
+    const result = await response.json().catch(() => ({})) as {
+      profiles?: Array<{ id: string; displayName: string; apiKeyMask: string | null }>;
+      selectedProfileId?: string;
+      error?: string;
+    };
+    if (!response.ok) throw new Error(result.error ?? "无法读取模型配置");
+    const selected = result.profiles?.find((profile) => profile.id === result.selectedProfileId);
+    if (!selected?.apiKeyMask) throw new Error("识题模型尚未配置 API Key，请先到“模型设置”填写并测试连接。");
+  }
+
   async function processFile(file: File) {
     setFileName(file.name);
     setStage("rendering");
@@ -127,6 +188,13 @@ export function UploadWorkbench() {
         const pageResult = await pageResponse.json() as { id?: string; error?: string };
         if (!pageResponse.ok || !pageResult.id) throw new Error(pageResult.error ?? `第 ${index + 1} 页保存失败`);
         pageIds.push(pageResult.id);
+      }
+      try {
+        await ensureModelReady();
+      } catch (error) {
+        setStage("waiting_model");
+        setMessage((error instanceof Error ? error.message : "识题模型尚未配置") + " 原卷和分页图已经安全保存，可配置模型后在审核页重试识别。");
+        return;
       }
       setStage("extracting");
       let extractedCount = 0;
@@ -173,7 +241,7 @@ export function UploadWorkbench() {
       </div>
       <input ref={inputRef} hidden type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,application/pdf,image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void processFile(file); }} />
       <div
-        className={"drop-zone " + (working ? "working " : "") + (stage === "done" ? "success " : "") + (stage === "error" ? "failed" : "")}
+        className={"drop-zone " + (working ? "working " : "") + (["done", "waiting_model"].includes(stage) ? "success " : "") + (stage === "error" ? "failed" : "")}
         onDragOver={(event) => event.preventDefault()}
         onDrop={onDrop}
         onClick={() => !working && inputRef.current?.click()}
@@ -181,12 +249,15 @@ export function UploadWorkbench() {
         tabIndex={0}
       >
         <span className="upload-orbit">
-          {working ? <LoaderCircle size={28} className="spin" /> : stage === "done" ? <CheckCircle2 size={29} /> : stage === "error" ? <AlertCircle size={29} /> : <UploadCloud size={29} />}
+          {working ? <LoaderCircle size={28} className="spin" /> : stage === "done" ? <CheckCircle2 size={29} /> : ["error", "waiting_model"].includes(stage) ? <AlertCircle size={29} /> : <UploadCloud size={29} />}
         </span>
         <strong>{fileName || "拖入试卷，或点击选择文件"}</strong>
         <p>{message}</p>
-        {stage === "done" ? (
-          <Link href={"/review/" + documentId} className="btn btn-primary btn-small" onClick={(event) => event.stopPropagation()}>开始人工审核</Link>
+        {["done", "waiting_model"].includes(stage) ? (
+          <div className="header-actions">
+            <Link href={"/review/" + documentId} className="btn btn-primary btn-small" onClick={(event) => event.stopPropagation()}>{stage === "done" ? "开始人工审核" : "查看已保存页面"}</Link>
+            {stage === "waiting_model" && <Link href="/settings/models" className="btn btn-small" onClick={(event) => event.stopPropagation()}>配置模型</Link>}
+          </div>
         ) : (
           <div className="file-types"><span><FileText size={13} /> PDF / Word</span><span><FileImage size={13} /> 图片</span></div>
         )}

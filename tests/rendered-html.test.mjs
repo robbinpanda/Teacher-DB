@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
+import { computePageSlices } from "../lib/page-slices.mjs";
+
+test("splits continuous DOCX output into stable page ranges", () => {
+  const slices = computePageSlices(25174, 1628, [1500, 3200, 4800, 6500]);
+  assert.equal(slices.length, 16);
+  assert.equal(slices[0].start, 0);
+  assert.equal(slices.reduce((sum, slice) => sum + slice.height, 0), 25174);
+  assert.ok(slices.every((slice) => slice.height > 0 && slice.height <= 1800));
+});
 
 test("ships the teacher question-bank workflow", async () => {
   const [home, upload, review, bank, paper] = await Promise.all([
@@ -13,6 +22,8 @@ test("ships the teacher question-bank workflow", async () => {
   assert.match(home, /上传一份新试卷|UploadWorkbench/);
   assert.match(upload, /renderPdf/);
   assert.match(upload, /renderDocx/);
+  assert.match(upload, /computePageSlices/);
+  assert.match(upload, /waiting_model/);
   assert.match(review, /beginDrag/);
   assert.match(bank, /选中组卷/);
   assert.match(paper, /\/api\/papers\/.*\/pdf/);
