@@ -38,7 +38,6 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     bboxJson: JSON.stringify({ x: 5, y: 5, width: 90, height: 20 }),
     status: "pending",
     confidence: 1,
-    score: 0,
     createdAt: timestamp,
     updatedAt: timestamp,
   });
@@ -62,7 +61,6 @@ export async function POST(request: Request, context: { params: Promise<{ docume
       tags: [],
       confidence: 1,
       status: "pending",
-      score: 0,
       source: {
         documentId,
         documentName: document.name,

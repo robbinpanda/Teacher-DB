@@ -28,13 +28,13 @@ export function QuestionBank({
   const [pagination, setPagination] = useState(initialPagination);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<"all" | QuestionType>("all");
-  const [selectedScores, setSelectedScores] = useState<Record<string, number>>({});
+  const [selectedIds, setSelectedIds] = useState<Record<string, true>>({});
   const [activeTag, setActiveTag] = useState("全部");
   const [source, setSource] = useState("全部");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const selected = Object.keys(selectedScores);
+  const selected = Object.keys(selectedIds);
   const tags = ["全部", ...availableTags];
 
   useEffect(() => {
@@ -64,21 +64,21 @@ export function QuestionBank({
   }, [activeTag, page, query, source, type]);
 
   function toggle(question: QuestionWithSource) {
-    setSelectedScores((items) => {
+    setSelectedIds((items) => {
       const next = { ...items };
       if (question.id in next) delete next[question.id];
-      else next[question.id] = question.score ?? 0;
+      else next[question.id] = true;
       return next;
     });
   }
 
   function togglePage() {
-    const allSelected = questions.length > 0 && questions.every((question) => question.id in selectedScores);
-    setSelectedScores((items) => {
+    const allSelected = questions.length > 0 && questions.every((question) => question.id in selectedIds);
+    setSelectedIds((items) => {
       const next = { ...items };
       for (const question of questions) {
         if (allSelected) delete next[question.id];
-        else next[question.id] = question.score ?? 0;
+        else next[question.id] = true;
       }
       return next;
     });
@@ -87,7 +87,7 @@ export function QuestionBank({
   const paperHref = "/papers/new?ids=" + encodeURIComponent(selected.join(","));
   const exportIds = selected.length ? "?ids=" + encodeURIComponent(selected.join(",")) + "&" : "?";
   const approvalRate = stats.total ? Math.round(stats.approved / stats.total * 1000) / 10 : 0;
-  const allPageSelected = questions.length > 0 && questions.every((question) => question.id in selectedScores);
+  const allPageSelected = questions.length > 0 && questions.every((question) => question.id in selectedIds);
 
   return (
     <div className="page-shell bank-page">
@@ -115,12 +115,12 @@ export function QuestionBank({
         {searchError && <p className="form-error">{searchError}</p>}
         <div className="question-cards">
           {questions.map((question) => {
-            const checked = question.id in selectedScores;
+            const checked = question.id in selectedIds;
             return (
               <article key={question.id} className={"question-card card " + (checked ? "selected" : "")}>
                 <button type="button" className="question-check" onClick={() => toggle(question)} aria-label="选择题目">{checked && <Check size={14} />}</button>
                 <div className="question-card-main">
-                  <div className="question-meta"><span className="pill gray">{typeLabels[question.type]}</span><span>{question.score} 分</span><span>{question.source.grade} · {question.source.subject}</span><span>{[question.source.year, question.source.examType].filter(Boolean).join(" ") || question.source.documentName}</span>{question.assets.length > 0 && <span className="has-image"><ImageIcon size={12} /> 含题图</span>}</div>
+                  <div className="question-meta"><span className="pill gray">{typeLabels[question.type]}</span><span>{question.source.grade} · {question.source.subject}</span><span>{[question.source.year, question.source.examType].filter(Boolean).join(" ") || question.source.documentName}</span>{question.assets.length > 0 && <span className="has-image"><ImageIcon size={12} /> 含题图</span>}</div>
                   <div className="question-stem"><b>{question.number}.</b><MathText text={question.stem} /></div>
                   {question.options && <div className="bank-options">{question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div>}
                   <div className="question-footer"><div>{question.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div><Link href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}>预览与编辑</Link></div>
@@ -132,7 +132,7 @@ export function QuestionBank({
         {!questions.length && !loading && <div className="card empty-state"><h2>没有匹配的已审核题目</h2><p>调整筛选条件，或先上传试卷并完成逐题审核。</p><Link className="btn btn-primary" href="/">上传试卷</Link></div>}
         {pagination.pageCount > 1 && <nav className="bank-pagination" aria-label="题库分页"><button type="button" disabled={pagination.page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={14} /> 上一页</button><span>第 {pagination.page} / {pagination.pageCount} 页</span><button type="button" disabled={pagination.page >= pagination.pageCount || loading} onClick={() => setPage((value) => Math.min(pagination.pageCount, value + 1))}>下一页 <ChevronRight size={14} /></button></nav>}
       </div>
-      {selected.length > 0 && <div className="selection-bar"><span><b>{selected.length}</b> 道题已选 · 预计 {Object.values(selectedScores).reduce((sum, score) => sum + score, 0)} 分</span><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={15} /> 去组卷</Link></div>}
+      {selected.length > 0 && <div className="selection-bar"><span><b>{selected.length}</b> 道题已选</span><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={15} /> 去组卷</Link></div>}
     </div>
   );
 }

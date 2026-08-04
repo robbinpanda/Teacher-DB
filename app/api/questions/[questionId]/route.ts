@@ -95,7 +95,7 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       ).run(
         payload.number, payload.type, payload.stem, JSON.stringify(payload.options ?? []), payload.answer,
         payload.analysis, JSON.stringify(primaryRegion.bbox), payload.status,
-        Math.max(0, Math.min(1, Number(payload.confidence) || 0)), payload.score ?? 0, timestamp, questionId,
+        Math.max(0, Math.min(1, Number(payload.confidence) || 0)), 0, timestamp, questionId,
       );
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
       for (const region of preparedRegions) {

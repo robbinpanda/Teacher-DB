@@ -42,8 +42,7 @@ export async function POST(request: Request) {
     transaction.prepare("DELETE FROM paper_items WHERE paper_id = ?").run(id);
     const insert = transaction.prepare("INSERT INTO paper_items (paper_id, question_id, position, score) VALUES (?, ?, ?, ?)");
     questionIds.forEach((questionId, position) => {
-      const question = transaction.prepare("SELECT score FROM questions WHERE id = ?").get(questionId) as { score: number };
-      insert.run(id, questionId, position, question.score);
+      insert.run(id, questionId, position, 0);
     });
   });
   return Response.json({ id, saved: true, updatedAt: timestamp }, { status: existing ? 200 : 201 });

@@ -17,7 +17,6 @@ function toMarkdown(questions: Awaited<ReturnType<typeof getApprovedQuestions>>)
       `## ${index + 1}. ${question.stem}`,
       "",
       `- 题型：${question.type}`,
-      `- 分值：${question.score ?? 0}`,
       `- 来源：${sourceLabel(question)}`,
       `- 标签：${question.tags.join("、") || "无"}`,
       options ? `\n${options}` : "",

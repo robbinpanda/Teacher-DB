@@ -201,6 +201,32 @@ export function ReviewWorkspace({
     }
   }
 
+  function addManualAsset() {
+    const regionBox = active.regions.find((region) => region.page === currentPage)?.bbox ?? active.bbox;
+    const width = Math.max(3, regionBox.width * .5);
+    const height = Math.max(3, regionBox.height * .5);
+    const asset = {
+      id: crypto.randomUUID(),
+      kind: "figure" as const,
+      label: "手动题图",
+      page: currentPage,
+      bbox: {
+        x: clamp(regionBox.x + (regionBox.width - width) / 2, 0, 100 - width),
+        y: clamp(regionBox.y + (regionBox.height - height) / 2, 0, 100 - height),
+        width,
+        height,
+      },
+    };
+    patchActive({ assets: [...active.assets, asset] });
+    setBoxMode("asset");
+  }
+
+  function removePageAsset() {
+    if (!pageAsset) return;
+    patchActive({ assets: active.assets.filter((asset) => asset.id !== pageAsset.id) });
+    setBoxMode("region");
+  }
+
   function beginDrag(event: React.PointerEvent, mode: "move" | "resize") {
     event.preventDefault();
     event.stopPropagation();
@@ -265,7 +291,7 @@ export function ReviewWorkspace({
       });
       const result = await response.json().catch(() => ({})) as {
         error?: string;
-        recognition?: Pick<Question, "type" | "stem" | "options" | "answer" | "analysis" | "tags" | "confidence" | "score">;
+        recognition?: Pick<Question, "type" | "stem" | "options" | "answer" | "analysis" | "tags" | "confidence">;
       };
       if (!response.ok || !result.recognition) throw new Error(result.error ?? "重新识别失败");
       const recognition = result.recognition;
@@ -275,7 +301,6 @@ export function ReviewWorkspace({
         answer: recognition.answer || target.answer,
         analysis: recognition.analysis || target.analysis,
         tags: Array.from(new Set([...target.tags, ...recognition.tags])),
-        score: recognition.score || target.score,
         regions: target.regions,
         page: target.regions[0]?.page ?? target.page,
         bbox: target.regions[0]?.bbox ?? target.bbox,
@@ -364,7 +389,7 @@ export function ReviewWorkspace({
           {pageQuestions.map((question) => (
             <button type="button" key={question.id} onClick={() => selectQuestion(question)} className={question.id === active.id ? "active" : ""}>
               <span className="question-number">{question.number}</span>
-              <span><strong>{typeLabels[question.type]}</strong><small>{question.assets.length ? "含 1 张题图" : "纯文字题"}</small></span>
+              <span><strong>{typeLabels[question.type]}</strong><small>{question.assets.length ? `含 ${question.assets.length} 张题图` : "纯文字题"}</small></span>
               {question.status === "approved" ? <Check size={14} className="status-ok" /> : question.status === "needs_attention" ? <AlertTriangle size={14} className="status-warn" /> : <i className="status-dot" />}
             </button>
           ))}
@@ -442,7 +467,12 @@ export function ReviewWorkspace({
 
           {editableBox && (
             <div className="crop-card">
-              {pageAsset && <div className="box-mode-tabs"><button type="button" className={boxMode === "region" ? "active" : ""} onClick={() => setBoxMode("region")}><Crop size={12} /> 题目范围</button><button type="button" className={boxMode === "asset" ? "active" : ""} onClick={() => setBoxMode("asset")}><ImageIcon size={12} /> 题图裁剪</button></div>}
+              <div className="box-mode-tabs">
+                <button type="button" className={boxMode === "region" ? "active" : ""} onClick={() => setBoxMode("region")}><Crop size={12} /> 题目范围</button>
+                {pageAsset
+                  ? <><button type="button" className={boxMode === "asset" ? "active" : ""} onClick={() => setBoxMode("asset")}><ImageIcon size={12} /> 题图裁剪</button><button type="button" className="remove-asset" onClick={removePageAsset}><X size={12} /> 移除题图</button></>
+                  : <button type="button" className="add-asset" onClick={addManualAsset}><Plus size={12} /> 框选题图</button>}
+              </div>
               <div className="field-label"><span>{activeAsset ? <ImageIcon size={13} /> : <Crop size={13} />} {activeAsset ? "题图裁剪" : `第 ${currentPage} 页题目范围`}</span><b>可拖动调整</b></div>
               <CropPreview bbox={editableBox} imageUrl={currentPageInfo.imageUrl} />
               <div className="bbox-grid">
@@ -492,10 +522,7 @@ export function ReviewWorkspace({
             </div>
           )}
 
-          <div className="two-fields">
-            <label className="edit-field"><span>答案</span><input value={active.answer} onChange={(event) => patchActive({ answer: event.target.value })} /></label>
-            <label className="edit-field"><span>分值</span><input type="number" value={active.score ?? 0} onChange={(event) => patchActive({ score: Number(event.target.value) })} /></label>
-          </div>
+          <label className="edit-field"><span>答案</span><input value={active.answer} onChange={(event) => patchActive({ answer: event.target.value })} /></label>
           <label className="edit-field"><span>解析</span><textarea rows={3} value={active.analysis} onChange={(event) => patchActive({ analysis: event.target.value })} /></label>
 
           <div className="tag-editor">

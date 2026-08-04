@@ -27,7 +27,6 @@ type QuestionRow = {
   bboxJson: string;
   status: string;
   confidence: number;
-  score: number;
   documentName: string;
   subject: string | null;
   grade: string | null;
@@ -126,7 +125,6 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
       confidence: row.confidence,
       status: (["pending", "approved", "needs_attention"].includes(row.status) ? row.status : "pending") as Question["status"],
-      score: row.score,
       source: {
         documentId: row.documentId,
         documentName: row.documentName,
@@ -144,7 +142,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
 const questionSelect = `
   SELECT q.id, q.document_id AS documentId, q.number, q.type, q.stem,
          q.options_json AS optionsJson, q.answer, q.analysis, q.page_number AS pageNumber,
-         q.bbox_json AS bboxJson, q.status, q.confidence, q.score,
+         q.bbox_json AS bboxJson, q.status, q.confidence,
          d.name AS documentName, d.subject, d.grade, d.source_year AS sourceYear,
          d.source_exam_type AS sourceExamType, d.source_region AS sourceRegion,
          d.source_school AS sourceSchool

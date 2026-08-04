@@ -38,7 +38,6 @@ export type Question = {
   tags: string[];
   confidence: number;
   status: "pending" | "approved" | "needs_attention";
-  score?: number;
 };
 
 export type SourceDocument = {

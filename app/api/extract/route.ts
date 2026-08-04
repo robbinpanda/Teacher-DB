@@ -19,14 +19,14 @@ const systemPrompt = [
   "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
   "4. bbox 必须贴合内容：包含题号、完整题干、选项、作答横线及属于该题的图注；排除页眉、页脚、密封线、装订线、空白页边和相邻题目。边缘可留 0.3%-0.8% 安全余量，不要使用整页大框。",
   "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
-  "6. type 只能是 single、multiple、fill、answer。score 不确定时填 0。confidence 要反映文字与框选两者中较低的可信度。",
+  "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。confidence 要反映文字与框选两者中较低的可信度。",
   "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联，同时为答案或解析在本次实际可见的每一页输出 regions。跨页解析必须始终沿用同一题号，系统会逐页合并为完整 analysis。",
   "8. 输出前逐题自检：region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。任一文字或框选不清楚时降低 confidence，不要猜测。",
   "主页面没有题号或题目开头、只有下一页 region 的候选题必须丢弃；严禁为了保留它而补造默认 bbox。",
   "number 只填写整道大题的阿拉伯数字题号；（1）、【小问1】、步骤讲解必须合并进所属大题，禁止单独创建为题目。",
   "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
   "JSON 格式：",
-  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
+  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
 ].join("\n");
 
 function safeBox(value: unknown): BoundingBox {
@@ -130,7 +130,6 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
       tags: Array.isArray(item.tags) ? item.tags.map(String).slice(0, 8) : [],
       confidence,
       status: confidence >= .92 && !assetGeometryNeedsReview ? "pending" : "needs_attention",
-      score: Number(item.score ?? 0),
     };
   }).filter((question): question is Question => question !== null);
   const answerUpdates = rawUpdates.map((value) => {
@@ -289,11 +288,11 @@ export async function POST(request: Request) {
           transaction.prepare(
             `UPDATE questions SET
                stem = ?, options_json = ?, answer = ?, analysis = ?, status = ?,
-               confidence = ?, score = MAX(score, ?), updated_at = ?
+               confidence = ?, score = 0, updated_at = ?
              WHERE id = ?`,
           ).run(
             mergedStem, JSON.stringify(mergedOptions), mergedAnswer, mergedAnalysis, mergedStatus,
-            mergedConfidence, question.score ?? 0, createdAt, questionId,
+            mergedConfidence, createdAt, questionId,
           );
           question.id = questionId;
           question.stem = mergedStem;
@@ -310,7 +309,7 @@ export async function POST(request: Request) {
           ).run(
             questionId, documentId, question.number, question.type, question.stem,
             JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
-            JSON.stringify(question.bbox), question.status, question.confidence, question.score ?? 0, createdAt, createdAt,
+            JSON.stringify(question.bbox), question.status, question.confidence, 0, createdAt, createdAt,
           );
         }
         for (const [regionIndex, region] of question.regions.entries()) {
@@ -486,6 +485,5 @@ async function loadPageQuestions(documentId: string, pageNumber: number): Promis
     tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
     confidence: row.confidence,
     status: row.status as Question["status"],
-    score: row.score,
   }));
 }

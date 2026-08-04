@@ -15,11 +15,11 @@ export function PaperPrintable({
 }) {
   return (
     <article className="paper-sheet printable-paper">
-      <header><h1>{title}</h1><p>{subtitle}</p><div><span>姓名：____________</span><span>班级：____________</span><span>得分：____________</span></div></header>
+      <header><h1>{title}</h1><p>{subtitle}</p><div><span>姓名：____________</span><span>班级：____________</span></div></header>
       <section className="paper-notice"><strong>注意事项</strong><p>1．答题前请填写姓名和班级；2．请在规定区域内作答，写出必要的计算或证明过程。</p></section>
       {questions.map((question, index) => (
         <section className="paper-question" key={question.id}>
-          <div className="paper-question-head"><b>{index + 1}．</b><span>（本题 {question.score} 分）</span></div>
+          <div className="paper-question-head"><b>{index + 1}．</b></div>
           <div className="paper-question-stem"><MathText text={question.stem} /></div>
           {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}>{option.key}．<MathText text={option.content} /></span>)}</div>}
           {question.assets.filter((asset) => asset.url).map((asset) => (
