@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Crop,
   ImageIcon,
+  LoaderCircle,
   Plus,
   Save,
   Sparkles,
@@ -76,9 +77,12 @@ export function ReviewWorkspace({
   const [newResultsAvailable, setNewResultsAvailable] = useState(false);
   const [boxMode, setBoxMode] = useState<"region" | "asset">("region");
   const [newTag, setNewTag] = useState("");
+  const [adjustedQuestionIds, setAdjustedQuestionIds] = useState<Set<string>>(() => new Set());
+  const [reextractingId, setReextractingId] = useState<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<null | { mode: "move" | "resize"; x: number; y: number; box: BoundingBox }>(null);
   const active = questions.find((question) => question.id === activeId) ?? questions[0];
+  const regionAdjusted = active ? adjustedQuestionIds.has(active.id) : false;
   const pageAsset = active?.assets.find((asset) => asset.page === currentPage);
   const activeAsset = boxMode === "asset" ? pageAsset : undefined;
   const activeRegion = active?.regions.find((region) => region.page === currentPage) ?? active?.regions[0];
@@ -193,6 +197,7 @@ export function ReviewWorkspace({
       const regions = active.regions.map((region) => region.page === currentPage ? { ...region, bbox: box } : region);
       const primary = regions[0];
       patchActive({ regions, page: primary.page, bbox: primary.bbox });
+      setAdjustedQuestionIds((items) => new Set(items).add(active.id));
     }
   }
 
@@ -238,8 +243,62 @@ export function ReviewWorkspace({
       return;
     }
     patchActive({ status: "approved" });
+    setAdjustedQuestionIds((items) => {
+      const next = new Set(items);
+      next.delete(active.id);
+      return next;
+    });
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2200);
+  }
+
+  async function reextractQuestion() {
+    const target = active;
+    setReextractingId(target.id);
+    setSaveError("");
+    setSaved(false);
+    try {
+      const response = await fetch(`/api/questions/${encodeURIComponent(target.id)}/reextract`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ regions: target.regions }),
+      });
+      const result = await response.json().catch(() => ({})) as {
+        error?: string;
+        recognition?: Pick<Question, "type" | "stem" | "options" | "answer" | "analysis" | "tags" | "confidence" | "score">;
+      };
+      if (!response.ok || !result.recognition) throw new Error(result.error ?? "重新识别失败");
+      const recognition = result.recognition;
+      const refreshed: QuestionWithSource = {
+        ...target,
+        ...recognition,
+        answer: recognition.answer || target.answer,
+        analysis: recognition.analysis || target.analysis,
+        tags: Array.from(new Set([...target.tags, ...recognition.tags])),
+        score: recognition.score || target.score,
+        regions: target.regions,
+        page: target.regions[0]?.page ?? target.page,
+        bbox: target.regions[0]?.bbox ?? target.bbox,
+        status: "pending",
+      };
+      const saveResponse = await fetch(`/api/questions/${encodeURIComponent(target.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(refreshed),
+      });
+      const saveResult = await saveResponse.json().catch(() => ({})) as { error?: string; question?: QuestionWithSource };
+      if (!saveResponse.ok) throw new Error(saveResult.error ?? "识别成功，但保存新题框失败");
+      setQuestions((items) => items.map((item) => item.id === target.id ? (saveResult.question ?? refreshed) : item));
+      setAdjustedQuestionIds((items) => {
+        const next = new Set(items);
+        next.delete(target.id);
+        return next;
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "重新识别失败");
+    } finally {
+      setReextractingId(null);
+    }
   }
 
   function selectQuestion(question: QuestionWithSource) {
@@ -391,6 +450,21 @@ export function ReviewWorkspace({
                   <label key={key}><span>{key === "width" ? "宽" : key === "height" ? "高" : key.toUpperCase()}</span><input type="number" min="0" max="100" step=".1" value={editableBox[key].toFixed(1)} onChange={(event) => patchBox({ ...editableBox, [key]: Number(event.target.value) })} /><i>%</i></label>
                 ))}
               </div>
+              {!activeAsset && (
+                <button
+                  type="button"
+                  className={`btn reextract-question${regionAdjusted ? " adjusted" : ""}`}
+                  disabled={reextractingId === active.id}
+                  onClick={() => void reextractQuestion()}
+                >
+                  {reextractingId === active.id ? <LoaderCircle size={14} className="spin" /> : <Sparkles size={14} />}
+                  {reextractingId === active.id
+                    ? "正在按新题框识别…"
+                    : regionAdjusted
+                      ? `按新题框重新识别${active.regions.length > 1 ? `（${active.regions.length} 页）` : ""}`
+                      : "重新识别此题"}
+                </button>
+              )}
             </div>
           )}
 
