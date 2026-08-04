@@ -8,6 +8,7 @@ import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../lib/vision-model";
 import { contentTypeForKey, getFile } from "../../../lib/file-storage";
+import { resolveExtractionPage } from "../../../lib/extraction-pages";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ const systemPrompt = [
   "你会收到一张主页面，可能还会收到紧接着的下一页。questions 输出题号或题目开头位于主页面的新题，以及提示中明确列出的、在主页面继续的已保存跨页题；禁止把从下一页才开始的新题重复输出。",
   "1. 将题干、选项、答案、解析严格分开。保留原有编号和语义顺序；页面没有答案或解析时使用空字符串。",
   "2. 行内和独立数学表达式全部转为 LaTeX，并用单个 $ 包裹。不要把普通中文、题号或选项字母放进 LaTeX。",
-  "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
+  "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；page 必须填写提示中的原卷真实页码（例如主页面为第9页时写9，绝不能按输入图片顺序写1）；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
   "4. bbox 必须贴合内容：包含题号、完整题干、选项、作答横线及属于该题的图注；排除页眉、页脚、密封线、装订线、空白页边和相邻题目。边缘可留 0.3%-0.8% 安全余量，不要使用整页大框。",
   "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
   "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。confidence 要反映文字与框选两者中较低的可信度。",
@@ -90,7 +91,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
     const rawRegions = Array.isArray(item.regions) ? item.regions : [];
     const regions = rawRegions.filter((region) => hasExplicitBox((region as Record<string, unknown>).bbox)).map((region) => {
       const entry = region as Record<string, unknown>;
-      return { page: Number(entry.page ?? pageNumber), bbox: safeBox(entry.bbox) };
+      return { page: resolveExtractionPage(entry.page, availablePages, pageNumber), bbox: safeBox(entry.bbox) };
     }).filter((region) => availablePages.includes(region.page));
     // 新题或明确的接力题都必须给出主页面 region；不再接受会产生角落小框的旧 bbox 回退格式。
     if (!regions.some((region) => region.page === pageNumber)) return null;
@@ -103,7 +104,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
         id: id + "-asset-" + assetIndex,
         kind: ["figure", "table", "graph"].includes(String(entry.kind)) ? String(entry.kind) as "figure" | "table" | "graph" : "figure",
         label: String(entry.label ?? "题图"),
-        page: Number(entry.page ?? pageNumber),
+        page: resolveExtractionPage(entry.page, availablePages, pageNumber),
         bbox: safeBox(entry.bbox),
       };
     }).filter((asset) => availablePages.includes(asset.page));
@@ -145,7 +146,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
     const regions = (Array.isArray(item.regions) ? item.regions : [])
       .filter((region) => hasExplicitBox((region as Record<string, unknown>).bbox)).map((region) => {
       const entry = region as Record<string, unknown>;
-      return { page: Number(entry.page ?? pageNumber), bbox: safeBox(entry.bbox) };
+      return { page: resolveExtractionPage(entry.page, availablePages, pageNumber), bbox: safeBox(entry.bbox) };
     }).filter((region) => availablePages.includes(region.page))
       .filter((region, index, all) => all.findIndex((candidate) => candidate.page === region.page) === index);
     return {

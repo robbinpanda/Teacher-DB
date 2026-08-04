@@ -87,7 +87,7 @@ export function ReviewWorkspace({
   const regionAdjusted = active ? adjustedQuestionIds.has(active.id) : false;
   const pageAsset = active?.assets.find((asset) => asset.page === currentPage);
   const activeAsset = boxMode === "asset" ? pageAsset : undefined;
-  const activeRegion = active?.regions.find((region) => region.page === currentPage) ?? active?.regions[0];
+  const activeRegion = active?.regions.find((region) => region.page === currentPage);
   const editableBox = activeAsset?.bbox ?? activeRegion?.bbox;
   const currentPageInfo = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates[0];
   const pageQuestions = questions.filter((question) => question.regions.some((region) => region.page === currentPage));
@@ -164,7 +164,7 @@ export function ReviewWorkspace({
     }
   }
 
-  if (!active || !editableBox || !currentPageInfo) {
+  if (!active || !currentPageInfo) {
     return (
       <div className="page-shell">
         <Link href="/" className="btn"><ArrowLeft size={16} /> 返回</Link>
@@ -204,6 +204,29 @@ export function ReviewWorkspace({
     }
   }
 
+  function addQuestionRegion(pageNumber: number) {
+    const targetPage = pageStates.find((page) => page.pageNumber === pageNumber);
+    if (!targetPage) return;
+    const existing = active.regions.find((region) => region.page === pageNumber);
+    if (existing) {
+      setCurrentPage(pageNumber);
+      setBoxMode("region");
+      return;
+    }
+    const regionPages = active.regions.map((region) => region.page);
+    const beforeFirstPage = pageNumber < Math.min(...regionPages);
+    const bbox: BoundingBox = beforeFirstPage
+      ? { x: 8, y: 55, width: 84, height: 38 }
+      : { x: 8, y: 6, width: 84, height: 42 };
+    const regions = [...active.regions, { page: pageNumber, bbox }].sort((left, right) => left.page - right.page);
+    const primary = regions[0];
+    patchActive({ regions, page: primary.page, bbox: primary.bbox });
+    setAdjustedQuestionIds((items) => new Set(items).add(active.id));
+    setCurrentPage(pageNumber);
+    setBoxMode("region");
+    setSaveError("");
+  }
+
   function addManualAsset() {
     const regionBox = active.regions.find((region) => region.page === currentPage)?.bbox ?? active.bbox;
     const width = Math.max(3, regionBox.width * .5);
@@ -231,6 +254,7 @@ export function ReviewWorkspace({
   }
 
   function beginDrag(event: React.PointerEvent, mode: "move" | "resize") {
+    if (!editableBox) return;
     event.preventDefault();
     event.stopPropagation();
     dragRef.current = { mode, x: event.clientX, y: event.clientY, box: { ...editableBox } };
@@ -433,7 +457,7 @@ export function ReviewWorkspace({
         <section className="source-panel">
           <div className="source-toolbar no-print">
             <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className={`pill ${currentPageInfo.extractionStatus === "complete" ? "green" : currentPageInfo.extractionStatus === "failed" ? "orange" : "gray"}`}>{currentPageInfo.extractionStatus === "complete" ? "识别完成" : currentPageInfo.extractionStatus === "failed" ? `识别失败 · 第 ${currentPageInfo.extractionAttempt} 次` : currentPageInfo.extractionStatus === "running" ? "识别中" : currentPageInfo.extractionStatus === "retry_wait" ? "网络退避中" : "等待识别"}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
-            <div className="zoom-control"><button type="button" onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span>{zoom}%</span><button type="button" onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div>
+            <div className="source-actions">{!activeRegion && <button type="button" className="add-current-region" onClick={() => addQuestionRegion(currentPage)}><Plus size={13} /> 将本页加入第 {active.number} 题</button>}<div className="zoom-control"><button type="button" onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span>{zoom}%</span><button type="button" onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div></div>
           </div>
           <div className="page-stage">
             <div
@@ -458,7 +482,7 @@ export function ReviewWorkspace({
                 ><span>Q{question.number}{question.regions.length > 1 ? ` · 跨${question.regions.length}页` : ""}</span></button>
                 );
               })}
-              {!activeAsset && activeRegion?.page === currentPage && (
+              {!activeAsset && activeRegion && editableBox && (
                 <div
                   className="region-edit-box"
                   style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }}
@@ -468,7 +492,7 @@ export function ReviewWorkspace({
                   <button type="button" className="resize-handle" onPointerDown={(event) => beginDrag(event, "resize")} aria-label="缩放题目范围" />
                 </div>
               )}
-              {activeAsset && (
+              {activeAsset && editableBox && (
                 <div
                   className="asset-box"
                   style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }}
@@ -489,12 +513,20 @@ export function ReviewWorkspace({
             <span className={"confidence " + (active.confidence < .9 ? "medium" : "")}>{Math.round(active.confidence * 100)}% 置信度</span>
           </div>
 
-          {active.regions.length > 1 && (
-            <div className="cross-page-regions">
-              <span>跨页题目范围</span>
-              {active.regions.map((region) => (
-                <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => { setCurrentPage(region.page); setBoxMode("region"); }}>第 {region.page} 页</button>
-              ))}
+          <div className="cross-page-regions">
+            <span>题目页面范围</span>
+            {active.regions.map((region) => (
+              <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => { setCurrentPage(region.page); setBoxMode("region"); }}>第 {region.page} 页</button>
+            ))}
+            {Math.min(...active.regions.map((region) => region.page)) > (pageStates[0]?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.min(...active.regions.map((region) => region.page)) - 1)}><Plus size={11} /> 前一页框</button>}
+            {Math.max(...active.regions.map((region) => region.page)) < (pageStates.at(-1)?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.max(...active.regions.map((region) => region.page)) + 1)}><Plus size={11} /> 后一页框</button>}
+          </div>
+
+          {!activeRegion && (
+            <div className="missing-region-card">
+              <Crop size={16} />
+              <div><strong>第 {currentPage} 页尚未属于第 {active.number} 题</strong><p>若本页是这道题的题干、答案或解析续页，可补框后拖动调整，再重新识别。</p></div>
+              <button type="button" onClick={() => addQuestionRegion(currentPage)}><Plus size={12} /> 补本页框</button>
             </div>
           )}
 
