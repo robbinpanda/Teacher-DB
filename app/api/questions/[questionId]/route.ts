@@ -25,11 +25,14 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   const ownerId = requestOwner(request);
   const sqlite = getSqlite();
   const ownedQuestion = sqlite.prepare(
-    `SELECT q.document_id AS documentId FROM questions q
+    `SELECT q.document_id AS documentId, d.source_removed_at AS sourceRemovedAt FROM questions q
        JOIN documents d ON d.id = q.document_id
       WHERE q.id = ? AND d.owner_id = ?`,
-  ).get(questionId, ownerId) as { documentId: string } | undefined;
+  ).get(questionId, ownerId) as { documentId: string; sourceRemovedAt: string | null } | undefined;
   if (!ownedQuestion) return Response.json({ error: "题目不存在" }, { status: 404 });
+  if (ownedQuestion.sourceRemovedAt) {
+    return Response.json({ error: "原试卷已删除，保留的题目只能查看和导出，无法继续修改" }, { status: 409 });
+  }
   if (!new Set(["pending", "approved", "needs_attention"]).has(payload.status)) {
     return Response.json({ error: "非法审核状态" }, { status: 400 });
   }

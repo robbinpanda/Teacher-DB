@@ -16,6 +16,7 @@ export const documents = sqliteTable("documents", {
   sourceSchool: text("source_school"),
   checksum: text("checksum"),
   error: text("error"),
+  sourceRemovedAt: text("source_removed_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [

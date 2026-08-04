@@ -13,9 +13,9 @@ import {
   ImageIcon,
   LoaderCircle,
   Plus,
-  Save,
   Sparkles,
   Tag,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
@@ -72,7 +72,8 @@ export function ReviewWorkspace({
   const [zoom, setZoom] = useState(82);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [finishing, setFinishing] = useState(false);
+  const [bulkAction, setBulkAction] = useState<"approve" | "remove" | null>(null);
+  const [bulkNotice, setBulkNotice] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [newResultsAvailable, setNewResultsAvailable] = useState(false);
   const [boxMode, setBoxMode] = useState<"region" | "asset">("region");
@@ -343,21 +344,30 @@ export function ReviewWorkspace({
     if (firstQuestion) setActiveId(firstQuestion.id);
   }
 
-  async function finishReview() {
-    setFinishing(true);
+  async function runBulkAction(action: "approve_high_confidence" | "remove_all_from_bank") {
+    if (action === "remove_all_from_bank" && !window.confirm("将本试卷所有已入库题目移出题库？题目内容、页面框选和审核记录都会保留，可以之后重新入库。")) return;
+    setBulkAction(action === "approve_high_confidence" ? "approve" : "remove");
     setSaveError("");
+    setBulkNotice("");
     try {
-      const response = await fetch("/api/documents/" + sourceDocument.id, {
-        method: "PATCH",
+      const response = await fetch(`/api/documents/${sourceDocument.id}/questions/bulk`, {
+        method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: "complete" }),
+        body: JSON.stringify({ action }),
       });
-      const result = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "无法完成审核");
-      window.location.href = "/bank";
+      const result = await response.json().catch(() => ({})) as { error?: string; changed?: number; highConfidenceWarnings?: number };
+      if (!response.ok) throw new Error(result.error ?? "批量操作失败");
+      if (action === "approve_high_confidence") {
+        setQuestions((items) => items.map((item) => item.confidence > .95 && item.status === "pending" ? { ...item, status: "approved" } : item));
+        setBulkNotice(`已入库 ${result.changed ?? 0} 道高置信度题目${result.highConfidenceWarnings ? `；另有 ${result.highConfidenceWarnings} 道虽超过 95% 但存在完整性警告，未自动入库` : ""}`);
+      } else {
+        setQuestions((items) => items.map((item) => item.status === "approved" ? { ...item, status: "pending" } : item));
+        setBulkNotice(`已将 ${result.changed ?? 0} 道题移出题库，题目和框选仍保留`);
+      }
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "无法完成审核");
-      setFinishing(false);
+      setSaveError(error instanceof Error ? error.message : "批量操作失败");
+    } finally {
+      setBulkAction(null);
     }
   }
 
@@ -378,8 +388,9 @@ export function ReviewWorkspace({
         <div className="header-actions">
           {newResultsAvailable && <button className="btn btn-small" type="button" onClick={() => window.location.reload()}><Sparkles size={14} /> 刷新新识别结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><Sparkles size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
-          <button className="btn btn-small" type="button" onClick={() => void saveQuestion()}><Save size={14} /> 暂存当前题</button>
-          <button className="btn btn-primary btn-small" type="button" disabled={finishing} onClick={() => void finishReview()}>{finishing ? "正在完成…" : "完成并入库"} <Check size={14} /></button>
+          {bulkNotice && <span className="bulk-notice">{bulkNotice}</span>}
+          <button className="btn btn-primary btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("approve_high_confidence")}><Check size={14} /> {bulkAction === "approve" ? "批量入库中…" : "一键入库 >95%（无警告）"}</button>
+          <button className="btn btn-danger-soft btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("remove_all_from_bank")}><Trash2 size={14} /> {bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</button>
         </div>
       </header>
 

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS documents (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', name TEXT NOT NULL,
   mime_type TEXT NOT NULL, original_key TEXT, status TEXT NOT NULL DEFAULT 'uploading', page_count INTEGER NOT NULL DEFAULT 0,
   subject TEXT, grade TEXT, source_year INTEGER, source_exam_type TEXT, source_region TEXT, source_school TEXT,
-  checksum TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  checksum TEXT, error TEXT, source_removed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS documents_owner_created_idx ON documents(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS documents_status_idx ON documents(status);
@@ -102,6 +102,7 @@ const upgrades: Record<string, Record<string, string>> = {
     source_school: "TEXT",
     checksum: "TEXT",
     error: "TEXT",
+    source_removed_at: "TEXT",
   },
   pages: { status: "TEXT NOT NULL DEFAULT 'ready'", checksum: "TEXT" },
   extraction_runs: {

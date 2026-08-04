@@ -42,11 +42,14 @@ export async function POST(request: Request, context: { params: Promise<{ questi
   const payload = await request.json() as { regions?: RequestedRegion[]; profileId?: string };
   const sqlite = getSqlite();
   const question = sqlite.prepare(
-    `SELECT q.document_id AS documentId, q.number, q.type
+    `SELECT q.document_id AS documentId, q.number, q.type, d.source_removed_at AS sourceRemovedAt
        FROM questions q JOIN documents d ON d.id = q.document_id
       WHERE q.id = ? AND d.owner_id = ?`,
-  ).get(questionId, ownerId) as { documentId: string; number: string; type: string } | undefined;
+  ).get(questionId, ownerId) as { documentId: string; number: string; type: string; sourceRemovedAt: string | null } | undefined;
   if (!question) return Response.json({ error: "题目不存在" }, { status: 404 });
+  if (question.sourceRemovedAt) {
+    return Response.json({ error: "原试卷已删除，保留的题目无法重新识别或修改" }, { status: 409 });
+  }
 
   const requested = Array.isArray(payload.regions) ? payload.regions.slice(0, 12) : [];
   if (!requested.length) return Response.json({ error: "请先框选题目范围" }, { status: 400 });

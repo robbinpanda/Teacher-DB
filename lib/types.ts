@@ -67,6 +67,7 @@ export type QuestionSource = {
   examType?: string | null;
   region?: string | null;
   school?: string | null;
+  sourceRemoved?: boolean;
 };
 
 export type QuestionWithSource = Question & {

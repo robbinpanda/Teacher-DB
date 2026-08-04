@@ -123,7 +123,7 @@ export function QuestionBank({
                   <div className="question-meta"><span className="pill gray">{typeLabels[question.type]}</span><span>{question.source.grade} · {question.source.subject}</span><span>{[question.source.year, question.source.examType].filter(Boolean).join(" ") || question.source.documentName}</span>{question.assets.length > 0 && <span className="has-image"><ImageIcon size={12} /> 含题图</span>}</div>
                   <div className="question-stem"><b>{question.number}.</b><MathText text={question.stem} /></div>
                   {question.options && <div className="bank-options">{question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div>}
-                  <div className="question-footer"><div>{question.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div><Link href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}>预览与编辑</Link></div>
+                  <div className="question-footer"><div>{question.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>{question.source.sourceRemoved ? <span className="source-removed">来源试卷已删除 · 无法编辑</span> : <Link href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}>预览与编辑</Link>}</div>
                 </div>
               </article>
             );

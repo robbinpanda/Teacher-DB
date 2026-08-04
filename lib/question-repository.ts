@@ -34,6 +34,7 @@ type QuestionRow = {
   sourceExamType: string | null;
   sourceRegion: string | null;
   sourceSchool: string | null;
+  sourceRemovedAt: string | null;
 };
 
 type AssetRow = {
@@ -134,6 +135,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
         examType: row.sourceExamType,
         region: row.sourceRegion,
         school: row.sourceSchool,
+        sourceRemoved: Boolean(row.sourceRemovedAt),
       },
     };
   });
@@ -145,7 +147,7 @@ const questionSelect = `
          q.bbox_json AS bboxJson, q.status, q.confidence,
          d.name AS documentName, d.subject, d.grade, d.source_year AS sourceYear,
          d.source_exam_type AS sourceExamType, d.source_region AS sourceRegion,
-         d.source_school AS sourceSchool
+         d.source_school AS sourceSchool, d.source_removed_at AS sourceRemovedAt
     FROM questions q JOIN documents d ON d.id = q.document_id`;
 
 export async function getReviewData(documentId: string, ownerId: string) {
@@ -160,7 +162,7 @@ export async function getReviewData(documentId: string, ownerId: string) {
             COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approvedCount
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
        LEFT JOIN document_jobs j ON j.document_id = d.id
-      WHERE d.id = ? AND d.owner_id = ? GROUP BY d.id`,
+      WHERE d.id = ? AND d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id`,
   ).get(documentId, ownerId) as (Omit<ReviewDocument, "subject" | "grade"> & { subject: string | null; grade: string | null }) | undefined;
   if (!documentRow) return null;
   const pages = sqlite.prepare(
@@ -321,7 +323,7 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
             j.status AS jobStatus, j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
        LEFT JOIN document_jobs j ON j.document_id = d.id
-      WHERE d.owner_id = ? GROUP BY d.id ORDER BY d.created_at DESC LIMIT 100`,
+      WHERE d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id ORDER BY d.created_at DESC LIMIT 100`,
   ).all(ownerId) as SourceDocument[];
   return rows;
 }
