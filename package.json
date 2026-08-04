@@ -13,6 +13,7 @@
     "backup:verify": "node scripts/verify-backup.mjs",
     "restore": "node scripts/restore.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "queue:verify": "node scripts/verify-queue.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

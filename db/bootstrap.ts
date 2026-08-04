@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS extraction_runs (
   id TEXT PRIMARY KEY NOT NULL, document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   page_id TEXT REFERENCES pages(id) ON DELETE SET NULL, page_number INTEGER, model_profile_id TEXT,
   provider TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 1,
-  idempotency_key TEXT, raw_json TEXT, error TEXT, created_at TEXT NOT NULL, finished_at TEXT
+  idempotency_key TEXT, raw_json TEXT, error TEXT, error_code TEXT, next_attempt_at TEXT,
+  lease_owner TEXT, lease_expires_at TEXT, created_at TEXT NOT NULL, finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS runs_document_idx ON extraction_runs(document_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_idx ON extraction_runs(idempotency_key);
@@ -77,6 +78,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS model_profiles_owner_name_idx ON model_profile
 CREATE TABLE IF NOT EXISTS app_settings (
   owner_id TEXT PRIMARY KEY NOT NULL, selected_model_profile_id TEXT, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS document_jobs (
+  document_id TEXT PRIMARY KEY NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  owner_id TEXT NOT NULL DEFAULT 'local-demo', profile_id TEXT, status TEXT NOT NULL DEFAULT 'queued',
+  priority INTEGER NOT NULL DEFAULT 0, attempt INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT,
+  lease_owner TEXT, lease_expires_at TEXT, last_error TEXT, queued_at TEXT NOT NULL,
+  started_at TEXT, finished_at TEXT, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS document_jobs_queue_idx ON document_jobs(status, next_attempt_at, queued_at);
+CREATE INDEX IF NOT EXISTS document_jobs_owner_idx ON document_jobs(owner_id, status);
 `;
 
 const upgrades: Record<string, Record<string, string>> = {
@@ -100,6 +110,10 @@ const upgrades: Record<string, Record<string, string>> = {
     model_profile_id: "TEXT",
     attempt: "INTEGER NOT NULL DEFAULT 1",
     idempotency_key: "TEXT",
+    error_code: "TEXT",
+    next_attempt_at: "TEXT",
+    lease_owner: "TEXT",
+    lease_expires_at: "TEXT",
     finished_at: "TEXT",
   },
   questions: {
@@ -131,6 +145,36 @@ function initialize() {
     }
   }
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_idx ON extraction_runs(idempotency_key)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS runs_queue_idx ON extraction_runs(status, next_attempt_at)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_queue_idx ON document_jobs(status, next_attempt_at, queued_at)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_owner_idx ON document_jobs(owner_id, status)");
+  const migrationTime = new Date().toISOString();
+  sqlite.prepare(
+    `UPDATE extraction_runs SET status = 'queued', attempt = 0, error = NULL, error_code = NULL,
+       next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL, finished_at = NULL
+     WHERE status = 'failed' AND document_id IN (
+       SELECT d.id FROM documents d LEFT JOIN document_jobs j ON j.document_id = d.id
+       WHERE j.document_id IS NULL AND d.status IN ('extracting', 'failed')
+     )`,
+  ).run();
+  sqlite.prepare(
+    `INSERT OR IGNORE INTO document_jobs
+      (document_id, owner_id, profile_id, status, priority, attempt, queued_at, updated_at)
+     SELECT d.id, d.owner_id, NULL, 'queued', 0, 0, ?, ? FROM documents d
+     WHERE d.status IN ('extracting', 'failed')
+       AND EXISTS (SELECT 1 FROM pages p WHERE p.document_id = d.id)
+       AND EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id = d.id AND r.status <> 'complete')`,
+  ).run(migrationTime, migrationTime);
+  sqlite.prepare(
+    `UPDATE documents SET status = 'extracting', error = '历史任务已迁移到可靠队列，将从未完成页面继续', updated_at = ?
+     WHERE id IN (SELECT document_id FROM document_jobs WHERE status = 'queued' AND queued_at = ?)`,
+  ).run(migrationTime, migrationTime);
+  sqlite.prepare(
+    `UPDATE extraction_runs SET error = NULL, error_code = NULL, next_attempt_at = NULL,
+       lease_owner = NULL, lease_expires_at = NULL
+     WHERE status = 'complete' AND (error IS NOT NULL OR error_code IS NOT NULL OR next_attempt_at IS NOT NULL
+       OR lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL)`,
+  ).run();
   initialized = true;
 }
 

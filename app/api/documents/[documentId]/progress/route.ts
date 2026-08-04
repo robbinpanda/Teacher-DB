@@ -15,7 +15,8 @@ export async function GET(request: Request, context: { params: Promise<{ documen
   if (!document) return Response.json({ error: "文档不存在" }, { status: 404 });
   const pageRows = sqlite.prepare(
     `SELECT p.id AS pageId, p.page_number AS pageNumber, COALESCE(r.status, 'queued') AS status,
-            COALESCE(r.attempt, 0) AS attempt, r.error, r.created_at AS startedAt, r.finished_at AS finishedAt
+            COALESCE(r.attempt, 0) AS attempt, r.error, r.next_attempt_at AS nextAttemptAt,
+            r.created_at AS startedAt, r.finished_at AS finishedAt
        FROM pages p LEFT JOIN extraction_runs r
          ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
       WHERE p.document_id = ? ORDER BY p.page_number`,
@@ -27,5 +28,10 @@ export async function GET(request: Request, context: { params: Promise<{ documen
     result[page.status] = (result[page.status] ?? 0) + 1;
     return result;
   }, {} as Record<string, number>);
-  return Response.json({ document, counts, pages: pageRows }, { headers: { "cache-control": "no-store" } });
+  const job = sqlite.prepare(
+    `SELECT status, next_attempt_at AS nextAttemptAt, last_error AS lastError,
+       queued_at AS queuedAt, started_at AS startedAt, finished_at AS finishedAt
+     FROM document_jobs WHERE document_id = ?`,
+  ).get(documentId);
+  return Response.json({ document, job, counts, pages: pageRows }, { headers: { "cache-control": "no-store" } });
 }

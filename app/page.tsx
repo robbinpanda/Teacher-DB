@@ -3,6 +3,7 @@ import { ArrowRight, Clock3, FileStack, ScanText, Sparkles } from "lucide-react"
 import { UploadWorkbench } from "../components/UploadWorkbench";
 import { getDocuments } from "../lib/question-repository";
 import { headers } from "next/headers";
+import { kickExtractionQueue } from "../lib/extraction-queue";
 
 export const metadata = { title: "处理中心 · 拾题" };
 
@@ -10,6 +11,7 @@ export default async function Home() {
   const requestHeaders = await headers();
   const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
   const sourceDocuments = await getDocuments(ownerId);
+  void kickExtractionQueue();
   const nextReview = sourceDocuments.find((document) => document.status === "reviewing");
   return (
     <div className="page-shell dashboard">
@@ -41,12 +43,22 @@ export default async function Home() {
         <div className="section-title"><div><h2>最近处理的试卷</h2><p>从上传到落库的状态一目了然</p></div></div>
         <div className="document-list">
           {sourceDocuments.map((doc) => {
-            const progress = doc.questionCount ? Math.round((doc.approvedCount / doc.questionCount) * 100) : doc.status === "extracting" ? 42 : 0;
+            const recognitionProgress = doc.pageCount ? Math.round(doc.completedPageCount / doc.pageCount * 100) : 0;
+            const progress = doc.status === "reviewing" || doc.status === "complete"
+              ? (doc.questionCount ? Math.round((doc.approvedCount / doc.questionCount) * 100) : 100)
+              : recognitionProgress;
+            const queueLabel = doc.jobStatus === "retry_wait"
+              ? `网络退避 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
+              : doc.jobStatus === "queued"
+                ? `队列等待 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
+                : doc.jobStatus === "processing"
+                  ? `AI 识别 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
+                  : null;
             return (
               <Link href={doc.status === "complete" ? "/bank" : doc.status === "uploading" ? "/" : `/review/${doc.id}`} className="document-row card" key={doc.id}>
                 <span className={"document-icon " + doc.subject}>{doc.subject.slice(0, 1)}</span>
                 <div className="document-main"><strong>{doc.name}</strong><span><Clock3 size={12} /> {new Date(doc.createdAt).toLocaleString("zh-CN")}　·　{doc.pageCount} 页　·　{doc.grade}</span></div>
-                <div className="document-progress"><div><span>{doc.status === "uploading" ? "原卷预处理中" : doc.status === "extracting" ? "AI 识别中" : doc.status === "failed" ? "处理失败，可重试" : doc.status === "complete" ? "已入库" : "已审核 " + doc.approvedCount + "/" + doc.questionCount}</span><b>{progress}%</b></div><div className="progress"><span style={{ width: progress + "%" }} /></div></div>
+                <div className="document-progress"><div><span>{queueLabel ?? (doc.status === "uploading" ? "原卷预处理中" : doc.status === "extracting" ? `等待识别 · ${doc.completedPageCount}/${doc.pageCount} 页` : doc.status === "failed" ? `处理失败 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页` : doc.status === "complete" ? "已入库" : "已审核 " + doc.approvedCount + "/" + doc.questionCount)}</span><b>{progress}%</b></div><div className="progress"><span style={{ width: progress + "%" }} /></div></div>
                 <ArrowRight size={17} className="row-arrow" />
               </Link>
             );

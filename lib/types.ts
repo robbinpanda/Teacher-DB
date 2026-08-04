@@ -51,6 +51,12 @@ export type SourceDocument = {
   createdAt: string;
   questionCount: number;
   approvedCount: number;
+  completedPageCount: number;
+  failedPageCount: number;
+  retryWaitPageCount: number;
+  jobStatus?: string | null;
+  nextAttemptAt?: string | null;
+  lastError?: string | null;
 };
 
 export type QuestionSource = {
@@ -74,9 +80,10 @@ export type ReviewPage = {
   imageUrl: string;
   width: number;
   height: number;
-  extractionStatus: "queued" | "running" | "complete" | "failed";
+  extractionStatus: "queued" | "running" | "retry_wait" | "complete" | "failed";
   extractionAttempt: number;
   extractionError?: string | null;
+  nextAttemptAt?: string | null;
 };
 
 export type ReviewDocument = {
@@ -94,4 +101,7 @@ export type ReviewDocument = {
   approvedCount: number;
   completedPageCount: number;
   failedPageCount: number;
+  error?: string | null;
+  jobStatus?: string | null;
+  nextAttemptAt?: string | null;
 };

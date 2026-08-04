@@ -27,17 +27,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-async function runWithConcurrency<T>(items: T[], concurrency: number, operation: (item: T) => Promise<void>) {
-  let cursor = 0;
-  async function worker() {
-    while (cursor < items.length) {
-      const item = items[cursor++];
-      await operation(item);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-}
-
 function CropPreview({ bbox, imageUrl }: { bbox: BoundingBox; imageUrl: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -70,6 +59,12 @@ export function ReviewWorkspace({
   initialActiveId?: string;
 }) {
   const [questions, setQuestions] = useState(initialQuestions);
+  const [pageStates, setPageStates] = useState(pages);
+  const [job, setJob] = useState<{ status?: string | null; nextAttemptAt?: string | null; lastError?: string | null }>({
+    status: sourceDocument.jobStatus,
+    nextAttemptAt: sourceDocument.nextAttemptAt,
+    lastError: sourceDocument.error,
+  });
   const initialActive = initialQuestions.find((question) => question.id === initialActiveId) ?? initialQuestions[0];
   const [activeId, setActiveId] = useState(initialActive?.id ?? "");
   const [currentPage, setCurrentPage] = useState(initialActive?.page ?? pages[0]?.pageNumber ?? 1);
@@ -78,6 +73,7 @@ export function ReviewWorkspace({
   const [saveError, setSaveError] = useState("");
   const [finishing, setFinishing] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [newResultsAvailable, setNewResultsAvailable] = useState(false);
   const [newTag, setNewTag] = useState("");
   const pageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<null | { mode: "move" | "resize"; x: number; y: number; box: BoundingBox }>(null);
@@ -85,12 +81,42 @@ export function ReviewWorkspace({
   const activeAsset = active?.assets.find((asset) => asset.page === currentPage);
   const activeRegion = active?.regions.find((region) => region.page === currentPage) ?? active?.regions[0];
   const editableBox = activeAsset?.bbox ?? activeRegion?.bbox;
-  const currentPageInfo = pages.find((page) => page.pageNumber === currentPage) ?? pages[0];
+  const currentPageInfo = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates[0];
   const pageQuestions = questions.filter((question) => question.regions.some((region) => region.page === currentPage));
   const approvedCount = questions.filter((question) => question.status === "approved").length;
   const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
-  const incompletePages = pages.filter((page) => page.extractionStatus !== "complete");
-  const failedPages = pages.filter((page) => page.extractionStatus === "failed");
+  const incompletePages = pageStates.filter((page) => page.extractionStatus !== "complete");
+  const failedPages = pageStates.filter((page) => page.extractionStatus === "failed");
+  const initialCompletedRef = useRef(sourceDocument.completedPageCount);
+
+  useEffect(() => {
+    if (!incompletePages.length) return;
+    let cancelled = false;
+    const poll = async () => {
+      const response = await fetch(`/api/documents/${sourceDocument.id}/progress`, { cache: "no-store" }).catch(() => undefined);
+      if (!response?.ok || cancelled) return;
+      const result = await response.json() as {
+        job?: { status?: string; nextAttemptAt?: string | null; lastError?: string | null };
+        pages?: Array<{ pageId: string; pageNumber: number; status: ReviewPage["extractionStatus"]; attempt: number; error?: string | null; nextAttemptAt?: string | null }>;
+      };
+      setJob(result.job ?? {});
+      if (result.pages) {
+        const completed = result.pages.filter((page) => page.status === "complete").length;
+        setPageStates((items) => items.map((page) => {
+          const fresh = result.pages?.find((candidate) => candidate.pageId === page.id);
+          return fresh ? { ...page, extractionStatus: fresh.status, extractionAttempt: fresh.attempt, extractionError: fresh.error, nextAttemptAt: fresh.nextAttemptAt } : page;
+        }));
+        if (completed > initialCompletedRef.current) {
+          initialCompletedRef.current = completed;
+          if (!initialQuestions.length) window.location.reload();
+          else setNewResultsAvailable(true);
+        }
+      }
+    };
+    void poll();
+    const timer = window.setInterval(poll, 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [incompletePages.length, initialQuestions.length, sourceDocument.id]);
 
   async function addManualQuestion(pageNumber = currentPage) {
     setSaveError("");
@@ -113,24 +139,16 @@ export function ReviewWorkspace({
     setRetrying(true);
     setSaveError("");
     try {
-      await runWithConcurrency(incompletePages, 2, async (page) => {
-        const response = await fetch("/api/extract", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            documentId: sourceDocument.id,
-            pageId: page.id,
-            pageNumber: page.pageNumber,
-            fileName: sourceDocument.name,
-          }),
-        });
-        const result = await response.json().catch(() => ({})) as { error?: string };
-        if (!response.ok) throw new Error(result.error ?? `第 ${page.pageNumber} 页重新识别失败`);
+      const response = await fetch(`/api/documents/${sourceDocument.id}/queue`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ retry: true }),
       });
-      const finalize = await fetch(`/api/documents/${sourceDocument.id}/finalize`, { method: "POST" });
-      const finalizeResult = await finalize.json().catch(() => ({})) as { error?: string };
-      if (!finalize.ok) throw new Error(finalizeResult.error ?? "跨页题与答案合并失败");
-      window.location.reload();
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "重新加入识别队列失败");
+      setJob({ status: "queued", lastError: null, nextAttemptAt: null });
+      setPageStates((items) => items.map((page) => page.extractionStatus === "complete" ? page : { ...page, extractionStatus: "queued", extractionError: null, nextAttemptAt: null }));
+      setRetrying(false);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "重新识别失败");
       setRetrying(false);
@@ -141,14 +159,21 @@ export function ReviewWorkspace({
     return (
       <div className="page-shell">
         <Link href="/" className="btn"><ArrowLeft size={16} /> 返回</Link>
-        <section className="card empty-state">
-          <h1>{sourceDocument.name}</h1>
-          <p>当前文档已有原始页面，但还没有提取到可审核题目。可以手动补题，或回到上传流程重新提取。</p>
-          <div className="header-actions">
-            <button type="button" className="btn btn-primary" disabled={retrying} onClick={() => void retryExtraction()}><Sparkles size={15} /> {retrying ? "正在重新识别…" : "重新运行 AI 识别"}</button>
-            {currentPageInfo && <button type="button" className="btn" onClick={() => void addManualQuestion(currentPageInfo.pageNumber)}><Plus size={15} /> 手动补一道题</button>}
+        <section className="card extraction-empty">
+          {currentPageInfo && <div className="empty-page-preview"><NextImage src={currentPageInfo.imageUrl} alt="原始试卷首页" width={currentPageInfo.width} height={currentPageInfo.height} unoptimized priority /></div>}
+          <div className="empty-progress-panel">
+            <h1>{sourceDocument.name}</h1>
+            <p>原卷和分页图已保存。识别在服务端可靠队列中逐页执行，已完成的页面不会重新开始。</p>
+            <strong>页面识别 {pageStates.length - incompletePages.length} / {pageStates.length}</strong>
+            <div className="page-state-grid">{pageStates.map((page) => <span key={page.id} className={page.extractionStatus === "complete" ? "complete" : page.extractionStatus === "failed" ? "failed" : page.extractionStatus === "retry_wait" ? "retry" : ""}>第 {page.pageNumber} 页 · {page.extractionStatus === "complete" ? "完成" : page.extractionStatus === "running" ? "识别中" : page.extractionStatus === "retry_wait" ? "退避" : page.extractionStatus === "failed" ? "失败" : "排队"}</span>)}</div>
+            {job.status === "retry_wait" && job.nextAttemptAt && <p className="queue-notice">网络退避中，将在 {new Date(job.nextAttemptAt).toLocaleString()} 自动继续。</p>}
+            {(job.lastError || sourceDocument.error) && <p className="form-error">{job.lastError || sourceDocument.error}</p>}
+            <div className="header-actions">
+              <button type="button" className="btn btn-primary" disabled={retrying || ["queued", "processing"].includes(job.status ?? "")} onClick={() => void retryExtraction()}><Sparkles size={15} /> {retrying ? "正在加入队列…" : ["queued", "processing", "retry_wait"].includes(job.status ?? "") ? "可靠队列处理中" : "继续未完成页面"}</button>
+              {currentPageInfo && <button type="button" className="btn" onClick={() => void addManualQuestion(currentPageInfo.pageNumber)}><Plus size={15} /> 手动补一道题</button>}
+            </div>
+            {saveError && <p className="form-error">{saveError}</p>}
           </div>
-          {saveError && <p className="form-error">{saveError}</p>}
         </section>
       </div>
     );
@@ -222,8 +247,8 @@ export function ReviewWorkspace({
   }
 
   function switchPage(direction: -1 | 1) {
-    const index = pages.findIndex((page) => page.pageNumber === currentPage);
-    const next = pages[clamp(index + direction, 0, pages.length - 1)];
+    const index = pageStates.findIndex((page) => page.pageNumber === currentPage);
+    const next = pageStates[clamp(index + direction, 0, pageStates.length - 1)];
     if (!next) return;
     setCurrentPage(next.pageNumber);
     const firstQuestion = questions.find((question) => question.regions.some((region) => region.page === next.pageNumber));
@@ -259,10 +284,11 @@ export function ReviewWorkspace({
       <header className="review-topbar no-print">
         <div className="review-title">
           <Link href="/" className="icon-btn" aria-label="返回"><ArrowLeft size={18} /></Link>
-          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {pages.length} 页　·　发现 {questions.length} 道题　·　识别 {pages.length - incompletePages.length}/{pages.length} 页</span></div>
+          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {pageStates.length} 页　·　发现 {questions.length} 道题　·　识别 {pageStates.length - incompletePages.length}/{pageStates.length} 页</span></div>
         </div>
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
+          {newResultsAvailable && <button className="btn btn-small" type="button" onClick={() => window.location.reload()}><Sparkles size={14} /> 刷新新识别结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><Sparkles size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
           <button className="btn btn-small" type="button" onClick={() => void saveQuestion()}><Save size={14} /> 暂存当前题</button>
           <button className="btn btn-primary btn-small" type="button" disabled={finishing} onClick={() => void finishReview()}>{finishing ? "正在完成…" : "完成并入库"} <Check size={14} /></button>
@@ -285,7 +311,7 @@ export function ReviewWorkspace({
 
         <section className="source-panel">
           <div className="source-toolbar no-print">
-            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className={`pill ${currentPageInfo.extractionStatus === "complete" ? "green" : currentPageInfo.extractionStatus === "failed" ? "orange" : "gray"}`}>{currentPageInfo.extractionStatus === "complete" ? "识别完成" : currentPageInfo.extractionStatus === "failed" ? `识别失败 · 第 ${currentPageInfo.extractionAttempt} 次` : currentPageInfo.extractionStatus === "running" ? "识别中" : "等待识别"}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
+            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className={`pill ${currentPageInfo.extractionStatus === "complete" ? "green" : currentPageInfo.extractionStatus === "failed" ? "orange" : "gray"}`}>{currentPageInfo.extractionStatus === "complete" ? "识别完成" : currentPageInfo.extractionStatus === "failed" ? `识别失败 · 第 ${currentPageInfo.extractionAttempt} 次` : currentPageInfo.extractionStatus === "running" ? "识别中" : currentPageInfo.extractionStatus === "retry_wait" ? "网络退避中" : "等待识别"}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
             <div className="zoom-control"><button type="button" onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span>{zoom}%</span><button type="button" onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div>
           </div>
           <div className="page-stage">
@@ -323,7 +349,7 @@ export function ReviewWorkspace({
               )}
             </div>
           </div>
-          <div className="page-switch no-print"><button type="button" disabled={currentPage === pages[0]?.pageNumber} onClick={() => switchPage(-1)}><ChevronLeft size={15} /></button><span>第 {currentPage} 页 / 共 {pages.length} 页</span><button type="button" disabled={currentPage === pages.at(-1)?.pageNumber} onClick={() => switchPage(1)}><ChevronRight size={15} /></button></div>
+          <div className="page-switch no-print"><button type="button" disabled={currentPage === pageStates[0]?.pageNumber} onClick={() => switchPage(-1)}><ChevronLeft size={15} /></button><span>第 {currentPage} 页 / 共 {pageStates.length} 页</span><button type="button" disabled={currentPage === pageStates.at(-1)?.pageNumber} onClick={() => switchPage(1)}><ChevronRight size={15} /></button></div>
         </section>
 
         <aside className="editor-panel no-print">

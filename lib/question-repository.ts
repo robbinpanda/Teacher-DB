@@ -156,23 +156,25 @@ export async function getReviewData(documentId: string, ownerId: string) {
   const documentRow = sqlite.prepare(
     `SELECT d.id, d.name, d.subject, d.grade, d.source_year AS year,
             d.source_exam_type AS examType, d.source_region AS region, d.source_school AS school,
-            d.status, d.page_count AS pageCount,
+            d.status, d.error, d.page_count AS pageCount,
+            j.status AS jobStatus, j.next_attempt_at AS nextAttemptAt,
             COUNT(q.id) AS questionCount,
             COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approvedCount
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
+       LEFT JOIN document_jobs j ON j.document_id = d.id
       WHERE d.id = ? AND d.owner_id = ? GROUP BY d.id`,
   ).get(documentId, ownerId) as (Omit<ReviewDocument, "subject" | "grade"> & { subject: string | null; grade: string | null }) | undefined;
   if (!documentRow) return null;
   const pages = sqlite.prepare(
     `SELECT p.id, p.page_number AS pageNumber, p.storage_key AS storageKey, p.width, p.height,
             COALESCE(r.status, 'queued') AS extractionStatus, COALESCE(r.attempt, 0) AS extractionAttempt,
-            r.error AS extractionError
+            r.error AS extractionError, r.next_attempt_at AS nextAttemptAt
        FROM pages p LEFT JOIN extraction_runs r
          ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
       WHERE p.document_id = ? ORDER BY p.page_number`,
   ).all(documentId) as Array<{
     id: string; pageNumber: number; storageKey: string; width: number; height: number;
-    extractionStatus: ReviewPage["extractionStatus"]; extractionAttempt: number; extractionError: string | null;
+    extractionStatus: ReviewPage["extractionStatus"]; extractionAttempt: number; extractionError: string | null; nextAttemptAt: string | null;
   }>;
   const questionRows = sqlite.prepare(
     `${questionSelect} WHERE d.id = ? AND d.owner_id = ?
@@ -187,6 +189,7 @@ export async function getReviewData(documentId: string, ownerId: string) {
       extractionStatus: page.extractionStatus,
       extractionAttempt: page.extractionAttempt,
       extractionError: page.extractionError,
+      nextAttemptAt: page.nextAttemptAt,
     }));
   return {
     document: {
@@ -313,9 +316,14 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
     `SELECT d.id, d.name, COALESCE(d.subject, '未设置学科') AS subject,
             COALESCE(d.grade, '未设置年级') AS grade, d.page_count AS pageCount,
             d.status, d.created_at AS createdAt, COUNT(q.id) AS questionCount,
-            COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approvedCount
+            COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approvedCount,
+            (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'complete') AS completedPageCount,
+            (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'failed') AS failedPageCount,
+            (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'retry_wait') AS retryWaitPageCount,
+            j.status AS jobStatus, j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
-      WHERE d.owner_id = ? GROUP BY d.id ORDER BY d.created_at DESC LIMIT 30`,
+       LEFT JOIN document_jobs j ON j.document_id = d.id
+      WHERE d.owner_id = ? GROUP BY d.id ORDER BY d.created_at DESC LIMIT 100`,
   ).all(ownerId) as SourceDocument[];
   return rows;
 }

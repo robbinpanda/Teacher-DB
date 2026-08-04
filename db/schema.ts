@@ -50,10 +50,15 @@ export const extractionRuns = sqliteTable("extraction_runs", {
   idempotencyKey: text("idempotency_key"),
   rawJson: text("raw_json"),
   error: text("error"),
+  errorCode: text("error_code"),
+  nextAttemptAt: text("next_attempt_at"),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: text("lease_expires_at"),
   createdAt: text("created_at").notNull(),
   finishedAt: text("finished_at"),
 }, (table) => [
   index("runs_document_idx").on(table.documentId, table.createdAt),
+  index("runs_queue_idx").on(table.status, table.nextAttemptAt),
   uniqueIndex("runs_idempotency_idx").on(table.idempotencyKey),
 ]);
 
@@ -166,3 +171,23 @@ export const appSettings = sqliteTable("app_settings", {
   selectedModelProfileId: text("selected_model_profile_id"),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const documentJobs = sqliteTable("document_jobs", {
+  documentId: text("document_id").primaryKey().references(() => documents.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  profileId: text("profile_id"),
+  status: text("status").notNull().default("queued"),
+  priority: integer("priority").notNull().default(0),
+  attempt: integer("attempt").notNull().default(0),
+  nextAttemptAt: text("next_attempt_at"),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: text("lease_expires_at"),
+  lastError: text("last_error"),
+  queuedAt: text("queued_at").notNull(),
+  startedAt: text("started_at"),
+  finishedAt: text("finished_at"),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("document_jobs_queue_idx").on(table.status, table.nextAttemptAt, table.queuedAt),
+  index("document_jobs_owner_idx").on(table.ownerId, table.status),
+]);

@@ -9,7 +9,9 @@ import sharp from "sharp";
 export const runtime = "nodejs";
 
 async function modelTestImage() {
-  const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#ffffff" } }).png().toBuffer();
+  const png = await sharp({ create: { width: 256, height: 256, channels: 3, background: "#ffffff" } })
+    .composite([{ input: Buffer.from('<svg width="256" height="256"><text x="36" y="135" font-size="42">TEST 42</text></svg>') }])
+    .png().toBuffer();
   return `data:image/png;base64,${png.toString("base64")}`;
 }
 
@@ -26,9 +28,17 @@ export async function POST(request: Request) {
   const testedAt = now();
   try {
     const result = await callVisionModel({
-      ownerId, profileId: profile.id, system: "你是连通性测试助手。", text: "识别这张图片，并只回复 OK。", image: await modelTestImage(),
+      ownerId,
+      profileId: profile.id,
+      system: "你是视觉结构化输出连通性测试助手。只输出严格 JSON。",
+      text: "确认你能读取图片，并输出 {\"ok\":true,\"text\":\"你看到的短文本\"}。",
+      image: await modelTestImage(),
+      jsonMode: true,
     });
-    const message = result.content.trim().slice(0, 200);
+    const clean = result.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const parsed = JSON.parse(clean) as { ok?: boolean; text?: string };
+    if (parsed.ok !== true) throw new Error("模型可连接，但未按真实识别流程返回结构化 JSON");
+    const message = `真实识别协议测试通过：${String(parsed.text ?? "OK").slice(0, 120)}`;
     await db.update(modelProfiles).set({ lastTestStatus: "success", lastTestMessage: message, lastTestedAt: testedAt, updatedAt: testedAt }).where(eq(modelProfiles.id, profile.id));
     return Response.json({ ok: true, message, testedAt });
   } catch (error) {

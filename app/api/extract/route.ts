@@ -5,7 +5,7 @@ import { assets, documents, extractionRuns, pages, questions } from "../../../db
 import { resolveModelProfile } from "../../../lib/model-profiles";
 import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
-import { callVisionModel } from "../../../lib/vision-model";
+import { callVisionModel, ModelCallError } from "../../../lib/vision-model";
 import { contentTypeForKey, getFile } from "../../../lib/file-storage";
 
 export const runtime = "nodejs";
@@ -122,7 +122,15 @@ function parseJsonContent(content: string) {
   const fence = String.fromCharCode(96).repeat(3);
   if (clean.startsWith(fence)) clean = clean.slice(clean.indexOf("\n") + 1);
   if (clean.endsWith(fence)) clean = clean.slice(0, -3).trim();
-  return JSON.parse(clean);
+  try {
+    return JSON.parse(clean);
+  } catch (firstError) {
+    // 部分兼容网关不提供 JSON schema 模式，模型会把 LaTeX 的单反斜杠直接放进 JSON。
+    // 只修复未转义且不是引号/反斜杠转义的字符，再交回标准 JSON.parse 严格校验。
+    const repaired = clean.replace(/(?<!\\)\\(?!["\\])/g, "\\\\");
+    if (repaired === clean) throw firstError;
+    return JSON.parse(repaired);
+  }
 }
 
 export async function POST(request: Request) {
@@ -190,7 +198,8 @@ export async function POST(request: Request) {
      ON CONFLICT(idempotency_key) DO UPDATE SET
        id = excluded.id, model_profile_id = excluded.model_profile_id, provider = excluded.provider,
        model = excluded.model, status = 'running', attempt = extraction_runs.attempt + 1,
-       raw_json = NULL, error = NULL, created_at = excluded.created_at, finished_at = NULL`,
+       raw_json = NULL, error = NULL, error_code = NULL, next_attempt_at = NULL,
+       lease_owner = NULL, lease_expires_at = NULL, created_at = excluded.created_at, finished_at = NULL`,
   ).run(
     runId, documentId, payload.pageId ?? null, pageNumber, profile.id,
     profile.provider, profile.model, idempotencyKey, createdAt,
@@ -205,7 +214,8 @@ export async function POST(request: Request) {
       images: modelImages,
       jsonMode: true,
     });
-    const normalized = normalize(parseJsonContent(result.content), pageNumber, sourcePages.map((page) => page.pageNumber));
+    const parsedContent = parseJsonContent(result.content);
+    const normalized = normalize(parsedContent, pageNumber, sourcePages.map((page) => page.pageNumber));
     const extracted = normalized.questions;
     const finishedAt = now();
     sqliteTransaction((transaction) => {
@@ -251,10 +261,12 @@ export async function POST(request: Request) {
         ).run(update.answer, update.answer, update.analysis, update.analysis, update.confidence, finishedAt, documentId, update.number);
       }
       transaction.prepare(
-        "UPDATE extraction_runs SET status = 'complete', raw_json = ?, error = NULL, finished_at = ? WHERE idempotency_key = ?",
-      ).run(result.content, finishedAt, idempotencyKey);
+        `UPDATE extraction_runs SET status = 'complete', raw_json = ?, error = NULL, error_code = NULL,
+           next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL, finished_at = ?
+         WHERE idempotency_key = ?`,
+      ).run(JSON.stringify(parsedContent), finishedAt, idempotencyKey);
       transaction.prepare(
-        "UPDATE documents SET status = 'reviewing', error = NULL, updated_at = ? WHERE id = ?",
+        "UPDATE documents SET status = 'extracting', error = NULL, updated_at = ? WHERE id = ?",
       ).run(finishedAt, documentId);
     });
     return Response.json({
@@ -271,7 +283,13 @@ export async function POST(request: Request) {
       transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
         .run(message.slice(0, 4000), finishedAt, documentId);
     });
-    return Response.json({ error: message, runId }, { status: 502 });
+    return Response.json({
+      error: message,
+      runId,
+      code: error instanceof ModelCallError ? error.code : "extraction_error",
+      retryable: error instanceof ModelCallError ? error.retryable : true,
+      retryAfterMs: error instanceof ModelCallError ? error.retryAfterMs : undefined,
+    }, { status: 502 });
   }
 }
 

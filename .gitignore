@@ -44,6 +44,7 @@ next-env.d.ts
 /outputs/
 /tmp/
 /work/
+/.runtime/
 /data/
 /data.pre-restore-*/
 /backups/
