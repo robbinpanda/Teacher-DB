@@ -21,6 +21,8 @@ const systemPrompt = [
   "6. type 只能是 single、multiple、fill、answer。score 不确定时填 0。confidence 要反映文字与框选两者中较低的可信度。",
   "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联。跨页解析要合并为完整 analysis。",
   "8. 输出前逐题自检：region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。任一文字或框选不清楚时降低 confidence，不要猜测。",
+  "主页面没有题号或题目开头、只有下一页 region 的候选题必须丢弃；严禁为了保留它而补造默认 bbox。",
+  "number 只填写整道大题的阿拉伯数字题号；（1）、【小问1】、步骤讲解必须合并进所属大题，禁止单独创建为题目。",
   "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
   "JSON 格式：",
   "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95}]}",
@@ -45,6 +47,13 @@ function containsBox(container: BoundingBox, child: BoundingBox, tolerance = 0.7
     && child.y + child.height <= container.y + container.height + tolerance;
 }
 
+function hasExplicitBox(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const box = value as Partial<BoundingBox>;
+  return [box.x, box.y, box.width, box.height].every((part) => Number.isFinite(Number(part)))
+    && Number(box.width) > 0 && Number(box.height) > 0;
+}
+
 type AnswerUpdate = { number: string; answer: string; analysis: string; confidence: number };
 
 function normalize(raw: unknown, pageNumber: number, availablePages: number[]): { questions: Question[]; answerUpdates: AnswerUpdate[] } {
@@ -54,8 +63,10 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
   if (!Array.isArray(result?.questions) && !Array.isArray(result?.answerUpdates)) {
     throw new Error("模型结果缺少 questions 和 answerUpdates 数组");
   }
-  const normalizedQuestions: Question[] = items.map((value, index) => {
+  const normalizedQuestions = items.map((value, index): Question | null => {
     const item = value as Record<string, unknown>;
+    const questionNumber = String(item.number ?? index + 1).trim();
+    if (!/^\d+$/.test(questionNumber)) return null;
     const type = ["single", "multiple", "fill", "answer"].includes(String(item.type)) ? String(item.type) as QuestionType : "answer";
     const id = crypto.randomUUID();
     const rawRegions = Array.isArray(item.regions) ? item.regions : [];
@@ -64,6 +75,8 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
       return { page: Number(entry.page ?? pageNumber), bbox: safeBox(entry.bbox) };
     }).filter((region) => availablePages.includes(region.page));
     if (!regions.some((region) => region.page === pageNumber)) {
+      // 模型若只给出下一页 region，说明题目并非从主页面开始；不能伪造一个 0,0,10,10 主框。
+      if (!hasExplicitBox(item.bbox)) return null;
       regions.unshift({ page: pageNumber, bbox: safeBox(item.bbox) });
     }
     const uniqueRegions = regions.filter((region, regionIndex) => regions.findIndex((candidate) => candidate.page === region.page) === regionIndex);
@@ -86,7 +99,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
     const confidence = Math.max(0, Math.min(1, Number(item.confidence ?? 0)));
     return {
       id,
-      number: String(item.number ?? index + 1),
+      number: questionNumber,
       type,
       stem: String(item.stem ?? ""),
       options: Array.isArray(item.options) ? item.options.map((option) => {
@@ -104,7 +117,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
       status: confidence >= .92 && !assetGeometryNeedsReview ? "pending" : "needs_attention",
       score: Number(item.score ?? 0),
     };
-  });
+  }).filter((question): question is Question => question !== null);
   const answerUpdates = rawUpdates.map((value) => {
     const item = value as Record<string, unknown>;
     return {
@@ -221,34 +234,54 @@ export async function POST(request: Request) {
     sqliteTransaction((transaction) => {
       transaction.prepare("DELETE FROM questions WHERE document_id = ? AND page_number = ?").run(documentId, pageNumber);
       for (const question of extracted) {
-        transaction.prepare(
-          `INSERT INTO questions
-            (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json, status, confidence, score, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(
-          question.id, documentId, question.number, question.type, question.stem,
-          JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
-          JSON.stringify(question.bbox), question.status, question.confidence, question.score ?? 0, createdAt, createdAt,
-        );
+        const existingQuestion = transaction.prepare(
+          "SELECT id FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
+        ).get(documentId, question.number) as { id: string } | undefined;
+        const questionId = existingQuestion?.id ?? question.id;
+        if (existingQuestion) {
+          transaction.prepare(
+            `UPDATE questions SET
+               answer = CASE WHEN answer = '' AND ? <> '' THEN ? ELSE answer END,
+               analysis = CASE WHEN analysis = '' AND ? <> '' THEN ? ELSE analysis END,
+               confidence = MAX(confidence, ?), score = MAX(score, ?), updated_at = ?
+             WHERE id = ?`,
+          ).run(
+            question.answer, question.answer, question.analysis, question.analysis,
+            question.confidence, question.score ?? 0, createdAt, questionId,
+          );
+          question.id = questionId;
+        } else {
+          transaction.prepare(
+            `INSERT INTO questions
+              (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json, status, confidence, score, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            questionId, documentId, question.number, question.type, question.stem,
+            JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
+            JSON.stringify(question.bbox), question.status, question.confidence, question.score ?? 0, createdAt, createdAt,
+          );
+        }
         for (const [regionIndex, region] of question.regions.entries()) {
           const regionPage = sourcePages.find((page) => page.pageNumber === region.page);
           transaction.prepare(
             `INSERT INTO question_regions (id, question_id, page_id, page_number, bbox_json, position, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ).run(crypto.randomUUID(), question.id, regionPage?.id ?? null, region.page, JSON.stringify(region.bbox), regionIndex, createdAt);
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(question_id, page_number) DO UPDATE SET
+               page_id = excluded.page_id, bbox_json = excluded.bbox_json, position = excluded.position`,
+          ).run(crypto.randomUUID(), questionId, regionPage?.id ?? null, region.page, JSON.stringify(region.bbox), regionIndex, createdAt);
         }
         for (const asset of question.assets) {
           const assetPage = sourcePages.find((page) => page.pageNumber === asset.page);
           transaction.prepare(
             `INSERT INTO question_assets (id, question_id, page_id, kind, label, source_key, bbox_json, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(asset.id, question.id, assetPage?.id ?? null, asset.kind, asset.label, null, JSON.stringify(asset.bbox), createdAt);
+          ).run(asset.id, questionId, assetPage?.id ?? null, asset.kind, asset.label, null, JSON.stringify(asset.bbox), createdAt);
         }
         for (const tagName of question.tags) {
           transaction.prepare("INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?, ?, ?)").run(crypto.randomUUID(), tagName, createdAt);
           transaction.prepare(
             "INSERT OR IGNORE INTO question_tags (question_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
-          ).run(question.id, tagName);
+          ).run(questionId, tagName);
         }
       }
       for (const update of normalized.answerUpdates) {

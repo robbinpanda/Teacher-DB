@@ -81,6 +81,7 @@ export const questions = sqliteTable("questions", {
 }, (table) => [
   index("questions_document_page_idx").on(table.documentId, table.pageNumber),
   index("questions_type_status_idx").on(table.type, table.status),
+  uniqueIndex("questions_document_number_idx").on(table.documentId, table.number),
 ]);
 
 export const questionRegions = sqliteTable("question_regions", {

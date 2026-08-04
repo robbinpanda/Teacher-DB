@@ -26,11 +26,18 @@ const incompleteCheckpoints = sqlite.prepare(
 ).get().count;
 if (incompleteCheckpoints) throw new Error(`发现 ${incompleteCheckpoints} 个不完整的成功检查点`);
 
+const duplicateQuestionNumbers = sqlite.prepare(
+  `SELECT COUNT(*) AS count FROM (
+     SELECT document_id, number FROM questions GROUP BY document_id, number HAVING COUNT(*) > 1
+   )`,
+).get().count;
+if (duplicateQuestionNumbers) throw new Error(`发现 ${duplicateQuestionNumbers} 组重复题号`);
+
 const foreignKeyErrors = sqlite.prepare("PRAGMA foreign_key_check").all();
 if (foreignKeyErrors.length) throw new Error(`发现 ${foreignKeyErrors.length} 个外键错误`);
 
 const summary = sqlite.prepare(
   `SELECT status, COUNT(*) AS count FROM document_jobs GROUP BY status ORDER BY status`,
 ).all();
-console.log(JSON.stringify({ ok: true, processing, jobs: summary }, null, 2));
+console.log(JSON.stringify({ ok: true, processing, duplicateQuestionNumbers, jobs: summary }, null, 2));
 sqlite.close();

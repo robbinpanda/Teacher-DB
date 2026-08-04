@@ -175,6 +175,56 @@ function initialize() {
      WHERE status = 'complete' AND (error IS NOT NULL OR error_code IS NOT NULL OR next_attempt_at IS NOT NULL
        OR lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL)`,
   ).run();
+  const hasDuplicateQuestions = sqlite.prepare(
+    "SELECT 1 FROM questions GROUP BY document_id, number HAVING COUNT(*) > 1 LIMIT 1",
+  ).get();
+  if (hasDuplicateQuestions) {
+    sqlite.exec("DROP TABLE IF EXISTS temp._question_dedup");
+    sqlite.exec(
+    `CREATE TEMP TABLE _question_dedup AS
+     SELECT id,
+       FIRST_VALUE(id) OVER (
+         PARTITION BY document_id, number
+         ORDER BY
+           CASE WHEN bbox_json <> '{"x":0,"y":0,"width":10,"height":10}' THEN 0 ELSE 1 END,
+           CASE status WHEN 'approved' THEN 0 WHEN 'needs_attention' THEN 1 ELSE 2 END,
+           CASE WHEN bbox_json <> '{"x":0,"y":0,"width":10,"height":10}' THEN page_number ELSE -page_number END,
+           confidence DESC, created_at
+       ) AS keep_id
+     FROM questions`,
+  );
+    sqlite.exec(
+    `UPDATE questions AS keep SET
+       answer = CASE WHEN keep.answer = '' THEN COALESCE((
+         SELECT duplicate.answer FROM _question_dedup map
+         JOIN questions duplicate ON duplicate.id = map.id
+         WHERE map.keep_id = keep.id AND map.id <> map.keep_id AND duplicate.answer <> ''
+         ORDER BY LENGTH(duplicate.answer) DESC LIMIT 1
+       ), keep.answer) ELSE keep.answer END,
+       analysis = CASE WHEN keep.analysis = '' THEN COALESCE((
+         SELECT duplicate.analysis FROM _question_dedup map
+         JOIN questions duplicate ON duplicate.id = map.id
+         WHERE map.keep_id = keep.id AND map.id <> map.keep_id AND duplicate.analysis <> ''
+         ORDER BY LENGTH(duplicate.analysis) DESC LIMIT 1
+       ), keep.analysis) ELSE keep.analysis END,
+       score = MAX(keep.score, COALESCE((
+         SELECT MAX(duplicate.score) FROM _question_dedup map
+         JOIN questions duplicate ON duplicate.id = map.id
+         WHERE map.keep_id = keep.id
+       ), keep.score))
+     WHERE keep.id IN (SELECT keep_id FROM _question_dedup WHERE id <> keep_id)`,
+  );
+    sqlite.exec(
+    `INSERT OR IGNORE INTO question_tags(question_id, tag_id)
+     SELECT map.keep_id, qt.tag_id FROM _question_dedup map
+     JOIN question_tags qt ON qt.question_id = map.id
+     WHERE map.id <> map.keep_id`,
+  );
+    sqlite.exec("DELETE FROM questions WHERE id IN (SELECT id FROM _question_dedup WHERE id <> keep_id)");
+    sqlite.exec("DROP TABLE temp._question_dedup");
+  }
+  sqlite.exec("DELETE FROM questions WHERE status <> 'approved' AND number NOT GLOB '[0-9]*'");
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS questions_document_number_idx ON questions(document_id, number)");
   initialized = true;
 }
 

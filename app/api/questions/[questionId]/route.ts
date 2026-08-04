@@ -133,7 +133,12 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
     });
   } catch (error) {
     await Promise.allSettled(preparedAssets.map((prepared) => deleteFile(prepared.cropKey)));
-    return Response.json({ error: error instanceof Error ? error.message : "题目保存失败" }, { status: 500 });
+    const duplicateNumber = typeof error === "object" && error !== null && "code" in error
+      && String(error.code).includes("SQLITE_CONSTRAINT_UNIQUE");
+    return Response.json(
+      { error: duplicateNumber ? `题号 ${payload.number} 已存在，请使用唯一题号` : error instanceof Error ? error.message : "题目保存失败" },
+      { status: duplicateNumber ? 409 : 500 },
+    );
   }
   const retainedCropKeys = new Set(preparedAssets.map((prepared) => prepared.cropKey));
   await Promise.allSettled(previousAssets.filter((asset) => asset.cropKey && !retainedCropKeys.has(asset.cropKey)).map((asset) => deleteFile(asset.cropKey!)));

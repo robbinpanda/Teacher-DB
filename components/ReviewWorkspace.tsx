@@ -74,11 +74,13 @@ export function ReviewWorkspace({
   const [finishing, setFinishing] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [newResultsAvailable, setNewResultsAvailable] = useState(false);
+  const [boxMode, setBoxMode] = useState<"region" | "asset">("region");
   const [newTag, setNewTag] = useState("");
   const pageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<null | { mode: "move" | "resize"; x: number; y: number; box: BoundingBox }>(null);
   const active = questions.find((question) => question.id === activeId) ?? questions[0];
-  const activeAsset = active?.assets.find((asset) => asset.page === currentPage);
+  const pageAsset = active?.assets.find((asset) => asset.page === currentPage);
+  const activeAsset = boxMode === "asset" ? pageAsset : undefined;
   const activeRegion = active?.regions.find((region) => region.page === currentPage) ?? active?.regions[0];
   const editableBox = activeAsset?.bbox ?? activeRegion?.bbox;
   const currentPageInfo = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates[0];
@@ -242,6 +244,7 @@ export function ReviewWorkspace({
 
   function selectQuestion(question: QuestionWithSource) {
     setActiveId(question.id);
+    setBoxMode("region");
     if (!question.regions.some((region) => region.page === currentPage)) setCurrentPage(question.regions[0]?.page ?? question.page);
     setSaveError("");
   }
@@ -251,6 +254,7 @@ export function ReviewWorkspace({
     const next = pageStates[clamp(index + direction, 0, pageStates.length - 1)];
     if (!next) return;
     setCurrentPage(next.pageNumber);
+    setBoxMode("region");
     const firstQuestion = questions.find((question) => question.regions.some((region) => region.page === next.pageNumber));
     if (firstQuestion) setActiveId(firstQuestion.id);
   }
@@ -337,6 +341,16 @@ export function ReviewWorkspace({
                 ><span>Q{question.number}{question.regions.length > 1 ? ` · 跨${question.regions.length}页` : ""}</span></button>
                 );
               })}
+              {!activeAsset && activeRegion?.page === currentPage && (
+                <div
+                  className="region-edit-box"
+                  style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }}
+                  onPointerDown={(event) => beginDrag(event, "move")}
+                >
+                  <span><Crop size={11} /> 拖动题框</span>
+                  <button type="button" className="resize-handle" onPointerDown={(event) => beginDrag(event, "resize")} aria-label="缩放题目范围" />
+                </div>
+              )}
               {activeAsset && (
                 <div
                   className="asset-box"
@@ -362,13 +376,14 @@ export function ReviewWorkspace({
             <div className="cross-page-regions">
               <span>跨页题目范围</span>
               {active.regions.map((region) => (
-                <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => setCurrentPage(region.page)}>第 {region.page} 页</button>
+                <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => { setCurrentPage(region.page); setBoxMode("region"); }}>第 {region.page} 页</button>
               ))}
             </div>
           )}
 
           {editableBox && (
             <div className="crop-card">
+              {pageAsset && <div className="box-mode-tabs"><button type="button" className={boxMode === "region" ? "active" : ""} onClick={() => setBoxMode("region")}><Crop size={12} /> 题目范围</button><button type="button" className={boxMode === "asset" ? "active" : ""} onClick={() => setBoxMode("asset")}><ImageIcon size={12} /> 题图裁剪</button></div>}
               <div className="field-label"><span>{activeAsset ? <ImageIcon size={13} /> : <Crop size={13} />} {activeAsset ? "题图裁剪" : `第 ${currentPage} 页题目范围`}</span><b>可拖动调整</b></div>
               <CropPreview bbox={editableBox} imageUrl={currentPageInfo.imageUrl} />
               <div className="bbox-grid">
