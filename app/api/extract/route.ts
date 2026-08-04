@@ -3,6 +3,7 @@ import { getDb, getSqlite, sqliteTransaction } from "../../../db";
 import { ensureDatabase } from "../../../db/bootstrap";
 import { assets, documents, extractionRuns, pages, questions } from "../../../db/schema";
 import { resolveModelProfile } from "../../../lib/model-profiles";
+import { mergeContinuationText, mergeQuestionOptions } from "../../../lib/question-continuation";
 import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../lib/vision-model";
@@ -12,20 +13,20 @@ export const runtime = "nodejs";
 
 const systemPrompt = [
   "你是中文中学试卷的视觉结构化专家。只能抄录图中确实可见的内容，禁止凭常识补写模糊、被遮挡或不在图中的文字。",
-  "你会收到一张主页面，可能还会收到紧接着的下一页。只输出题号或题目开头位于主页面的题；下一页只用于补全跨页题目，禁止把从下一页才开始的新题重复输出。",
+  "你会收到一张主页面，可能还会收到紧接着的下一页。questions 输出题号或题目开头位于主页面的新题，以及提示中明确列出的、在主页面继续的已保存跨页题；禁止把从下一页才开始的新题重复输出。",
   "1. 将题干、选项、答案、解析严格分开。保留原有编号和语义顺序；页面没有答案或解析时使用空字符串。",
   "2. 行内和独立数学表达式全部转为 LaTeX，并用单个 $ 包裹。不要把普通中文、题号或选项字母放进 LaTeX。",
-  "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出主页面和下一页两个 regions，并把两页文字按阅读顺序合并为一份完整 stem/options/analysis；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。",
+  "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
   "4. bbox 必须贴合内容：包含题号、完整题干、选项、作答横线及属于该题的图注；排除页眉、页脚、密封线、装订线、空白页边和相邻题目。边缘可留 0.3%-0.8% 安全余量，不要使用整页大框。",
   "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
   "6. type 只能是 single、multiple、fill、answer。score 不确定时填 0。confidence 要反映文字与框选两者中较低的可信度。",
-  "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联。跨页解析要合并为完整 analysis。",
+  "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联，同时为答案或解析在本次实际可见的每一页输出 regions。跨页解析必须始终沿用同一题号，系统会逐页合并为完整 analysis。",
   "8. 输出前逐题自检：region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。任一文字或框选不清楚时降低 confidence，不要猜测。",
   "主页面没有题号或题目开头、只有下一页 region 的候选题必须丢弃；严禁为了保留它而补造默认 bbox。",
   "number 只填写整道大题的阿拉伯数字题号；（1）、【小问1】、步骤讲解必须合并进所属大题，禁止单独创建为题目。",
   "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
   "JSON 格式：",
-  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95}]}",
+  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95,\"score\":3}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
 ].join("\n");
 
 function safeBox(value: unknown): BoundingBox {
@@ -54,7 +55,21 @@ function hasExplicitBox(value: unknown) {
     && Number(box.width) > 0 && Number(box.height) > 0;
 }
 
-type AnswerUpdate = { number: string; answer: string; analysis: string; confidence: number };
+type ContinuationCandidate = {
+  number: string;
+  primaryPage: number;
+  lastPage: number;
+  stemTail: string;
+  analysisTail: string;
+};
+
+type AnswerUpdate = {
+  number: string;
+  answer: string;
+  analysis: string;
+  confidence: number;
+  regions: Array<{ page: number; bbox: BoundingBox }>;
+};
 
 function normalize(raw: unknown, pageNumber: number, availablePages: number[]): { questions: Question[]; answerUpdates: AnswerUpdate[] } {
   const result = raw as { questions?: unknown[]; answerUpdates?: unknown[] };
@@ -70,7 +85,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
     const type = ["single", "multiple", "fill", "answer"].includes(String(item.type)) ? String(item.type) as QuestionType : "answer";
     const id = crypto.randomUUID();
     const rawRegions = Array.isArray(item.regions) ? item.regions : [];
-    const regions = rawRegions.map((region) => {
+    const regions = rawRegions.filter((region) => hasExplicitBox((region as Record<string, unknown>).bbox)).map((region) => {
       const entry = region as Record<string, unknown>;
       return { page: Number(entry.page ?? pageNumber), bbox: safeBox(entry.bbox) };
     }).filter((region) => availablePages.includes(region.page));
@@ -120,13 +135,20 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
   }).filter((question): question is Question => question !== null);
   const answerUpdates = rawUpdates.map((value) => {
     const item = value as Record<string, unknown>;
+    const regions = (Array.isArray(item.regions) ? item.regions : [])
+      .filter((region) => hasExplicitBox((region as Record<string, unknown>).bbox)).map((region) => {
+      const entry = region as Record<string, unknown>;
+      return { page: Number(entry.page ?? pageNumber), bbox: safeBox(entry.bbox) };
+    }).filter((region) => availablePages.includes(region.page))
+      .filter((region, index, all) => all.findIndex((candidate) => candidate.page === region.page) === index);
     return {
       number: String(item.number ?? "").trim(),
       answer: String(item.answer ?? ""),
       analysis: String(item.analysis ?? ""),
       confidence: Math.max(0, Math.min(1, Number(item.confidence ?? 0))),
+      regions,
     };
-  }).filter((item) => item.number && (item.answer || item.analysis));
+  }).filter((item) => /^\d+$/.test(item.number) && (item.answer || item.analysis));
   return { questions: normalizedQuestions, answerUpdates };
 }
 
@@ -169,6 +191,7 @@ export async function POST(request: Request) {
     where: and(eq(pages.documentId, documentId), eq(pages.pageNumber, pageNumber + 1)),
   });
   const sourcePages = [ownedPage, ...(nextPage ? [nextPage] : [])];
+  const continuationCandidates = loadContinuationCandidates(documentId, pageNumber);
   const modelImages: Array<{ page: number; dataUrl: string }> = [];
   for (const sourcePage of sourcePages) {
     let dataUrl = sourcePage.id === ownedPage.id ? payload.image : undefined;
@@ -219,11 +242,14 @@ export async function POST(request: Request) {
   );
 
   try {
+    const continuationContext = continuationCandidates.length > 0
+      ? `已保存的跨页接力候选如下：${JSON.stringify(continuationCandidates)}。如果主页面内容确实是某候选的继续，必须沿用其 number。题干或选项的继续放入 questions；答案或解析的继续放入 answerUpdates。只输出本次新看到、尚未保存的文字，并为本次实际可见的每一页输出 regions。若内容并非候选的继续，不要输出该候选。`
+      : "当前没有已保存的跨页接力候选。";
     const result = await callVisionModel({
       ownerId,
       profileId: profile.id,
       system: systemPrompt,
-      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。只输出题号或题目开头位于第 ${pageNumber} 页的题。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
+      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。新题只输出题号或题目开头位于第 ${pageNumber} 页的题；已保存候选可以在确认连续时接力。${continuationContext} 页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
       images: modelImages,
       jsonMode: true,
     });
@@ -235,21 +261,47 @@ export async function POST(request: Request) {
       transaction.prepare("DELETE FROM questions WHERE document_id = ? AND page_number = ?").run(documentId, pageNumber);
       for (const question of extracted) {
         const existingQuestion = transaction.prepare(
-          "SELECT id FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
-        ).get(documentId, question.number) as { id: string } | undefined;
+          `SELECT id, stem, options_json AS optionsJson, answer, analysis, status, confidence
+             FROM questions WHERE document_id = ? AND number = ? LIMIT 1`,
+        ).get(documentId, question.number) as {
+          id: string;
+          stem: string;
+          optionsJson: string | null;
+          answer: string;
+          analysis: string;
+          status: Question["status"];
+          confidence: number;
+        } | undefined;
         const questionId = existingQuestion?.id ?? question.id;
         if (existingQuestion) {
+          const mergedStem = mergeContinuationText(existingQuestion.stem, question.stem);
+          const mergedOptions = mergeQuestionOptions(existingQuestion.optionsJson, question.options);
+          const mergedAnswer = mergeContinuationText(existingQuestion.answer, question.answer);
+          const mergedAnalysis = mergeContinuationText(existingQuestion.analysis, question.analysis);
+          const mergedConfidence = existingQuestion.confidence > 0
+            ? Math.min(existingQuestion.confidence, question.confidence)
+            : question.confidence;
+          const mergedStatus = existingQuestion.status === "approved"
+            ? "approved"
+            : existingQuestion.status === "needs_attention" || question.status === "needs_attention"
+              ? "needs_attention"
+              : "pending";
           transaction.prepare(
             `UPDATE questions SET
-               answer = CASE WHEN answer = '' AND ? <> '' THEN ? ELSE answer END,
-               analysis = CASE WHEN analysis = '' AND ? <> '' THEN ? ELSE analysis END,
-               confidence = MAX(confidence, ?), score = MAX(score, ?), updated_at = ?
+               stem = ?, options_json = ?, answer = ?, analysis = ?, status = ?,
+               confidence = ?, score = MAX(score, ?), updated_at = ?
              WHERE id = ?`,
           ).run(
-            question.answer, question.answer, question.analysis, question.analysis,
-            question.confidence, question.score ?? 0, createdAt, questionId,
+            mergedStem, JSON.stringify(mergedOptions), mergedAnswer, mergedAnalysis, mergedStatus,
+            mergedConfidence, question.score ?? 0, createdAt, questionId,
           );
           question.id = questionId;
+          question.stem = mergedStem;
+          question.options = mergedOptions;
+          question.answer = mergedAnswer;
+          question.analysis = mergedAnalysis;
+          question.status = mergedStatus;
+          question.confidence = mergedConfidence;
         } else {
           transaction.prepare(
             `INSERT INTO questions
@@ -283,15 +335,40 @@ export async function POST(request: Request) {
             "INSERT OR IGNORE INTO question_tags (question_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
           ).run(questionId, tagName);
         }
+        transaction.prepare("UPDATE question_regions SET position = page_number WHERE question_id = ?").run(questionId);
       }
       for (const update of normalized.answerUpdates) {
+        const target = transaction.prepare(
+          "SELECT id, answer, analysis, confidence, status FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
+        ).get(documentId, update.number) as {
+          id: string;
+          answer: string;
+          analysis: string;
+          confidence: number;
+          status: Question["status"];
+        } | undefined;
+        if (!target) continue;
+        const mergedAnswer = mergeContinuationText(target.answer, update.answer);
+        const mergedAnalysis = mergeContinuationText(target.analysis, update.analysis);
+        const mergedConfidence = target.confidence > 0
+          ? Math.min(target.confidence, update.confidence)
+          : update.confidence;
+        const mergedStatus = target.status === "approved"
+          ? "approved"
+          : mergedConfidence >= .92 ? target.status : "needs_attention";
         transaction.prepare(
-          `UPDATE questions SET
-             answer = CASE WHEN ? <> '' THEN ? ELSE answer END,
-             analysis = CASE WHEN ? <> '' THEN ? ELSE analysis END,
-             confidence = max(confidence, ?), updated_at = ?
-           WHERE document_id = ? AND number = ?`,
-        ).run(update.answer, update.answer, update.analysis, update.analysis, update.confidence, finishedAt, documentId, update.number);
+          `UPDATE questions SET answer = ?, analysis = ?, confidence = ?, status = ?, updated_at = ? WHERE id = ?`,
+        ).run(mergedAnswer, mergedAnalysis, mergedConfidence, mergedStatus, finishedAt, target.id);
+        for (const [regionIndex, region] of update.regions.entries()) {
+          const regionPage = sourcePages.find((page) => page.pageNumber === region.page);
+          transaction.prepare(
+            `INSERT INTO question_regions (id, question_id, page_id, page_number, bbox_json, position, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(question_id, page_number) DO UPDATE SET
+               page_id = excluded.page_id, bbox_json = excluded.bbox_json, position = excluded.position`,
+          ).run(crypto.randomUUID(), target.id, regionPage?.id ?? null, region.page, JSON.stringify(region.bbox), regionIndex, createdAt);
+        }
+        transaction.prepare("UPDATE question_regions SET position = page_number WHERE question_id = ?").run(target.id);
       }
       transaction.prepare(
         `UPDATE extraction_runs SET status = 'complete', raw_json = ?, error = NULL, error_code = NULL,
@@ -324,6 +401,46 @@ export async function POST(request: Request) {
       retryAfterMs: error instanceof ModelCallError ? error.retryAfterMs : undefined,
     }, { status: 502 });
   }
+}
+
+function loadContinuationCandidates(documentId: string, pageNumber: number): ContinuationCandidate[] {
+  if (pageNumber <= 1) return [];
+  const rows = getSqlite().prepare(
+    `SELECT q.number AS number, q.page_number AS primaryPage, q.stem AS stem,
+            q.analysis AS analysis, qr.page_number AS lastPage, qr.bbox_json AS regionBbox
+       FROM questions q
+       JOIN question_regions qr ON qr.question_id = q.id
+      WHERE q.document_id = ? AND q.page_number < ?
+        AND qr.page_number BETWEEN ? AND ?
+      ORDER BY qr.page_number DESC`,
+  ).all(documentId, pageNumber, pageNumber - 1, pageNumber) as Array<{
+    number: string;
+    primaryPage: number;
+    lastPage: number;
+    stem: string;
+    analysis: string;
+    regionBbox: string;
+  }>;
+  const byNumber = new Map<string, typeof rows[number]>();
+  for (const row of rows) {
+    const current = byNumber.get(row.number);
+    if (!current || row.lastPage > current.lastPage) byNumber.set(row.number, row);
+  }
+  const bottom = (row: typeof rows[number]) => {
+    try {
+      const box = JSON.parse(row.regionBbox) as BoundingBox;
+      return Number(box.y) + Number(box.height);
+    } catch { return -1; }
+  };
+  return Array.from(byNumber.values()).sort((left, right) =>
+    right.lastPage - left.lastPage || bottom(right) - bottom(left) || Number(right.number) - Number(left.number),
+  ).slice(0, 4).map((row) => ({
+    number: row.number,
+    primaryPage: row.primaryPage,
+    lastPage: row.lastPage,
+    stemTail: row.stem.slice(-1400),
+    analysisTail: row.analysis.slice(-900),
+  }));
 }
 
 async function loadPageQuestions(documentId: string, pageNumber: number): Promise<Question[]> {

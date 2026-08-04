@@ -14,6 +14,7 @@
     "restore": "node scripts/restore.mjs",
     "doctor": "node scripts/doctor.mjs",
     "queue:verify": "node scripts/verify-queue.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
