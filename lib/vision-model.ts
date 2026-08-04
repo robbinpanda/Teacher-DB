@@ -1,4 +1,5 @@
-import { chatCompletionsEndpoint, resolveModelProfile } from "./model-profiles";
+import { resolveModelProfile } from "./model-profiles";
+import { buildVisionHttpRequest, extractVisionResponseText, MODEL_PROTOCOL_LABELS } from "./model-protocols";
 
 type VisionCall = {
   ownerId: string;
@@ -21,25 +22,20 @@ export async function callVisionModel(input: VisionCall) {
         ? [{ page: 1, dataUrl: input.image }]
         : [];
     if (!images.length) throw new Error("模型调用缺少页面图像");
-    const userContent: Array<Record<string, unknown>> = [{ type: "text", text: input.text }];
-    for (const image of images) {
-      userContent.push({ type: "text", text: `下面是原试卷第 ${image.page} 页：` });
-      userContent.push({ type: "image_url", image_url: { url: image.dataUrl, detail: "high" } });
-    }
-    const body: Record<string, unknown> = {
+    const request = buildVisionHttpRequest({
+      protocol: profile.provider,
+      baseUrl: profile.baseUrl,
       model: profile.model,
-      reasoning_effort: "none",
-      temperature: 0,
-      messages: [
-        { role: "system", content: input.system },
-        { role: "user", content: userContent },
-      ],
-    };
-    if (input.jsonMode) body.response_format = { type: "json_object" };
-    const response = await fetch(chatCompletionsEndpoint(profile.baseUrl), {
+      apiKey: profile.apiKey,
+      system: input.system,
+      text: input.text,
+      images,
+      jsonMode: input.jsonMode,
+    });
+    const response = await fetch(request.endpoint, {
       method: "POST",
-      headers: { authorization: "Bearer " + profile.apiKey, "content-type": "application/json" },
-      body: JSON.stringify(body),
+      headers: request.headers,
+      body: JSON.stringify(request.body),
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -47,15 +43,19 @@ export async function callVisionModel(input: VisionCall) {
       if (/invalid thinking|only type=enabled|thinking mode.*required/i.test(detail)) {
         throw new Error(`模型 ${profile.displayName} 强制开启思考模式，与本项目固定 reasoning_effort=none 不兼容。请改用支持无推理模式的多模态模型。`);
       }
-      throw new Error(`模型 ${profile.displayName} 返回 HTTP ${response.status}：${detail}`);
+      throw new Error(`模型 ${profile.displayName} 通过 ${MODEL_PROTOCOL_LABELS[request.protocol]} 返回 HTTP ${response.status}：${detail}`);
     }
-    const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const content = result.choices?.[0]?.message?.content;
+    const result = await response.json() as unknown;
+    const content = extractVisionResponseText(request.protocol, result);
     if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
     return { content, profile };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(`模型调用超过 ${Math.round(profile.timeoutMs / 1000)} 秒，已安全中止`);
+    }
+    if (error instanceof TypeError) {
+      const cause = "cause" in error && error.cause instanceof Error ? `；${error.cause.message}` : "";
+      throw new Error(`无法连接模型 ${profile.displayName}（${MODEL_PROTOCOL_LABELS[profile.provider]}）：${error.message}${cause}`);
     }
     throw error;
   } finally {

@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Check, KeyRound, LoaderCircle, Plus, RefreshCw, ShieldCheck, Trash2, Wifi } from "lucide-react";
+import { MODEL_PROTOCOL_LABELS, MODEL_PROTOCOLS, type ModelProtocol } from "../lib/model-protocols";
 
 type Profile = {
   id: string;
   displayName: string;
+  provider: ModelProtocol;
   baseUrl: string;
   model: string;
   apiKeyMask: string | null;
@@ -23,7 +25,14 @@ export function ModelSettings() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
-  const [form, setForm] = useState({ displayName: "", baseUrl: "", model: "", apiKey: "", timeoutMs: 90000 });
+  const [form, setForm] = useState<ModelForm>({
+    displayName: "",
+    provider: "openai-chat-completions",
+    baseUrl: "",
+    model: "",
+    apiKey: "",
+    timeoutMs: 90000,
+  });
 
   async function load() {
     try {
@@ -82,7 +91,7 @@ export function ModelSettings() {
       });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "保存失败");
-      setForm({ displayName: "", baseUrl: "", model: "", apiKey: "", timeoutMs: 90000 });
+      setForm({ displayName: "", provider: "openai-chat-completions", baseUrl: "", model: "", apiKey: "", timeoutMs: 90000 });
       setMessage("模型配置已加密保存并设为默认");
       await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : "保存失败"); }
@@ -106,7 +115,7 @@ export function ModelSettings() {
   return (
     <div className="page-shell settings-page">
       <header className="page-header">
-        <div><span className="eyebrow"><KeyRound size={14} /> MULTIMODAL MODELS</span><h1>模型与密钥</h1><p>内置 MiMo 2.5 Free 自动使用 OpenCode 公共凭据，无需账号或 API Key；也可以接入其他 OpenAI 兼容多模态模型。识题与连通性测试均固定使用无推理模式。</p></div>
+        <div><span className="eyebrow"><KeyRound size={14} /> MULTIMODAL MODELS</span><h1>模型与密钥</h1><p>内置 MiMo 2.5 Free 自动使用 OpenCode 公共凭据；自定义模型支持 Chat Completions、OpenAI Responses 和 Anthropic Messages。识题与连通性测试均使用无推理模式。</p></div>
         <button className="btn" type="button" onClick={() => void load()}><RefreshCw size={15} /> 刷新</button>
       </header>
       {message && <div className="settings-message" role="status">{message}</div>}
@@ -121,7 +130,7 @@ export function ModelSettings() {
                     <span className="profile-radio">{selected === profile.id && <Check size={13} />}</span>
                     <span><strong>{profile.displayName}</strong><small>{profile.model} · {profile.baseUrl}</small></span>
                   </button>
-                  <div className="profile-meta"><span className="pill green">多模态</span>{profile.isManaged && <span className="pill gray">内置免费 · 无需账号</span>}<code>{profile.isManaged ? "公共凭据" : profile.apiKeyMask}</code></div>
+                  <div className="profile-meta"><span className="pill green">{MODEL_PROTOCOL_LABELS[profile.provider]}</span>{profile.isManaged && <span className="pill gray">内置免费 · 无需账号</span>}<code>{profile.isManaged ? "公共凭据" : profile.apiKeyMask}</code></div>
                   <div className="profile-actions">
                     <button className="btn btn-small" type="button" disabled={Boolean(busy) || !profile.apiKeyMask} onClick={() => void testProfile(profile.id)}>{busy === "test:" + profile.id ? <LoaderCircle className="spin" size={13} /> : <Wifi size={13} />} 测试</button>
                     {!profile.isManaged && <button className="icon-danger" title="删除" type="button" disabled={Boolean(busy)} onClick={() => void removeProfile(profile.id)}><Trash2 size={14} /></button>}
@@ -133,8 +142,9 @@ export function ModelSettings() {
           )}
         </div>
         <form className="card settings-card model-form" onSubmit={createProfile}>
-          <div className="section-title"><div><h2>添加自定义模型</h2><p>兼容 /chat/completions 的视觉模型</p></div><Plus size={18} /></div>
+          <div className="section-title"><div><h2>添加自定义模型</h2><p>选择模型服务实际支持的接口协议</p></div><Plus size={18} /></div>
           <label><span>显示名称</span><input required value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：校内 Qwen-VL" /></label>
+          <label><span>接口协议</span><select required value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as ModelProtocol })}>{MODEL_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{MODEL_PROTOCOL_LABELS[protocol]}</option>)}</select></label>
           <label><span>API Base URL</span><input required type="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
           <label><span>Model Name</span><input required value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="qwen-vl-max" /></label>
           <label><span>API Key</span><input required type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder="sk-…" /></label>
@@ -146,3 +156,12 @@ export function ModelSettings() {
     </div>
   );
 }
+
+type ModelForm = {
+  displayName: string;
+  provider: ModelProtocol;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  timeoutMs: number;
+};

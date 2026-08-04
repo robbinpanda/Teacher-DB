@@ -4,13 +4,14 @@ import { ensureDatabase } from "../db/bootstrap";
 import { appSettings, modelProfiles } from "../db/schema";
 import { decryptSecret, encryptSecret } from "./secret-box";
 import { now } from "./server";
+import { normalizeModelProtocol } from "./model-protocols";
 
 export const OPENCODE_MIMO_PROFILE_ID = "builtin-opencode-mimo-v2.5-free";
 export const OPENCODE_PUBLIC_API_KEY = "public";
 export const OPENCODE_PUBLIC_API_KEY_MASK = "public";
 export const OPENCODE_MIMO = {
   displayName: "OpenCode MiMo V2.5 Free",
-  provider: "openai-compatible",
+  provider: "openai-chat-completions",
   baseUrl: "https://opencode.ai/zen/v1",
   model: "mimo-v2.5-free",
   isManaged: true,
@@ -47,6 +48,9 @@ export async function ensureOwnerModelSettings(ownerId: string) {
     existingProfile.apiKeyMask !== OPENCODE_PUBLIC_API_KEY_MASK
     || !existingProfile.apiKeyCiphertext
     || !existingProfile.apiKeyIv
+    || existingProfile.provider !== OPENCODE_MIMO.provider
+    || existingProfile.baseUrl !== OPENCODE_MIMO.baseUrl
+    || existingProfile.model !== OPENCODE_MIMO.model
   ) {
     const encrypted = await encryptSecret(OPENCODE_PUBLIC_API_KEY);
     await db.update(modelProfiles).set({
@@ -96,12 +100,7 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
     throw new Error(profile.isManaged ? "OpenCode 公共凭据初始化失败" : "该模型配置缺少 API Key");
   }
   const apiKey = await decryptSecret(profile.apiKeyCiphertext, profile.apiKeyIv);
-  return { ...profile, apiKey };
-}
-
-export function chatCompletionsEndpoint(baseUrl: string) {
-  const normalized = baseUrl.trim().replace(/\/+$/, "");
-  return normalized.endsWith("/chat/completions") ? normalized : normalized + "/chat/completions";
+  return { ...profile, provider: normalizeModelProtocol(profile.provider), apiKey };
 }
 
 export function validateModelBaseUrl(value: string) {

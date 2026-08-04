@@ -1,6 +1,6 @@
 # 拾题 · 教师题库助手
 
-面向教师的本地优先题库工具。批量上传 PDF 试卷后，浏览器把原卷渲染成高清页面，再调用 OpenAI-compatible 多模态模型提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核、题库检索和组卷流程。为保证页面证据与原卷一致，当前产品范围只接收 PDF。
+面向教师的本地优先题库工具。批量上传 PDF 试卷后，浏览器把原卷渲染成高清页面，再调用多模态模型提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核、题库检索和组卷流程。为保证页面证据与原卷一致，当前产品范围只接收 PDF。
 
 ## 技术架构
 
@@ -8,7 +8,7 @@
 - `better-sqlite3` 本地 SQLite，启用 WAL、外键、5 秒忙等待和原子事务
 - `data/files` 保存原卷、逐页图和后续裁剪图；`SHITI_DATA_DIR` 可修改数据根目录
 - Drizzle schema 和 SQL 迁移描述数据结构，运行时会幂等建表和升级
-- OpenAI-compatible `/chat/completions` 多模态模型适配器
+- Chat Completions、OpenAI Responses、Anthropic Messages 三种多模态模型协议适配器
 - API Key 使用 AES-GCM 加密后存入 SQLite，接口只返回脱敏值
 
 项目不依赖 Cloudflare Sites、D1、R2、Vinext 或 Miniflare，可在 Windows、Linux、macOS、NAS 或普通 VPS 上运行。
@@ -20,9 +20,9 @@
 - 原卷/页面本地落盘，SHA-256 去重和页面校验
 - SQLite 自动建库与兼容升级
 - 内置 OpenCode MiMo V2.5 Free，自动使用 OpenCode 公共凭据，无需账号或个人 API Key
-- 自定义多模态 API Base URL、Model Name、API Key 和超时配置
+- 自定义接口协议、API Base URL、Model Name、API Key 和超时配置
 - AES-GCM 密钥加密、模型切换与真实图片连通性测试
-- 所有模型调用固定 `reasoning_effort: "none"`
+- Chat Completions 固定 `reasoning_effort: "none"`，Responses 固定 `reasoning.effort: "none"`，Anthropic Messages 不启用 thinking
 - 强制开启 Thinking、不能关闭推理的模型会在连接测试时明确判定为不兼容，不会偷偷启用推理
 - 每页抽题幂等键、尝试次数、原始响应、失败原因和事务入库
 - 题目 JSON、LaTeX、页面/题图坐标、置信度、标签和人工审核界面
@@ -39,6 +39,8 @@
 
 ## 本地运行
 
+Windows 用户可以直接双击项目根目录中的 `启动题库.cmd`。脚本会在首次运行时自动安装依赖，并在服务就绪后打开浏览器。
+
 1. 安装并启动：
 
        npm install
@@ -51,7 +53,7 @@
     npm run build
     npm start
 
-`npm run dev` 和 `npm start` 固定使用 3050；需要单独启动生产测试实例时可用 `npm run start:test`，它使用 8050。项目不会占用 3000 或 8010。
+`npm run dev` 和 `npm start` 固定使用 3050。项目不会占用 3000 或 8010。
 
 服务端 PDF 会自动寻找系统中的 Chrome、Edge 或 Chromium。自定义路径可设置 `CHROMIUM_EXECUTABLE_PATH`。
 
@@ -62,7 +64,8 @@
 进入“模型设置”：
 
 - MiMo V2.5 Free 已预填 endpoint、model id 和公共凭据 `public`，开箱即用；自定义模型仍需填写自己的 API Key。
-- 也可添加任何支持图片输入、兼容 `/chat/completions` 的模型。
+- 也可添加任何支持图片输入的 Chat Completions、OpenAI Responses 或 Anthropic Messages 模型；Base URL 可以填写版本根路径或完整协议 endpoint。
+- Chat Completions 和 Responses 使用 Bearer Token；Anthropic Messages 使用 `x-api-key` 和 `anthropic-version: 2023-06-01`。
 - 自定义 Base URL 必须为 HTTPS；仅 `localhost`/`127.0.0.1`/`::1` 允许 HTTP。
 - 应用不会向浏览器回传 API Key 明文。
 - 未配置 Key 时仍会保存原卷和分页图，并明确停在“等待模型配置”；配置完成后可从审核页重试，不需要重新上传。
@@ -71,15 +74,7 @@
 
 数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_regions、question_assets、tags、model_profiles、papers 和 paper_items。
 
-## 验证
-
-    npm test
-
-开发服务器运行时，还可以执行会自动创建并清理隔离数据的接口回归：
-
-    npm run test:runtime
-
-完整的本地健康检查：
+## 健康检查
 
     npm run doctor
 
