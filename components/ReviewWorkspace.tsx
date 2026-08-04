@@ -524,6 +524,7 @@ export function ReviewWorkspace({
 
           <label className="edit-field"><span>答案</span><input value={active.answer} onChange={(event) => patchActive({ answer: event.target.value })} /></label>
           <label className="edit-field"><span>解析</span><textarea rows={3} value={active.analysis} onChange={(event) => patchActive({ analysis: event.target.value })} /></label>
+          <div className="render-preview"><span>解析渲染预览</span>{active.analysis.trim() ? <MathText text={active.analysis} /> : <em>暂无解析内容</em>}</div>
 
           <div className="tag-editor">
             <span className="field-label"><Tag size={13} /> 标签</span>
