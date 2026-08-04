@@ -27,3 +27,18 @@ export function mergeQuestionOptions(existingJson: string | null, additions: Que
   }
   return Array.from(merged.values());
 }
+
+export function subquestionMarkers(text: string) {
+  const markers = new Set<string>();
+  for (const match of text.matchAll(/(?:[（(]\s*(\d{1,2})\s*[）)]|【\s*小问\s*(\d{1,2}))/g)) {
+    markers.add(match[1] ?? match[2]);
+  }
+  return markers;
+}
+
+export function hasIncompleteSubquestionAnalysis(stem: string, analysis: string) {
+  const expected = subquestionMarkers(stem);
+  const resolved = subquestionMarkers(analysis);
+  return expected.size >= 2 && resolved.size > 0
+    && Array.from(expected).some((marker) => !resolved.has(marker));
+}

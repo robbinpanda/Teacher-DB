@@ -3,7 +3,7 @@ import { getDb, getSqlite, sqliteTransaction } from "../../../db";
 import { ensureDatabase } from "../../../db/bootstrap";
 import { assets, documents, extractionRuns, pages, questions } from "../../../db/schema";
 import { resolveModelProfile } from "../../../lib/model-profiles";
-import { mergeContinuationText, mergeQuestionOptions } from "../../../lib/question-continuation";
+import { hasIncompleteSubquestionAnalysis, mergeContinuationText, mergeQuestionOptions } from "../../../lib/question-continuation";
 import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../lib/vision-model";
@@ -21,7 +21,10 @@ const systemPrompt = [
   "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
   "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。confidence 要反映文字与框选两者中较低的可信度。",
   "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联，同时为答案或解析在本次实际可见的每一页输出 regions。跨页解析必须始终沿用同一题号，系统会逐页合并为完整 analysis。",
-  "8. 输出前逐题自检：region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。任一文字或框选不清楚时降低 confidence，不要猜测。",
+  "7a. 大题完整性优先：一道大题包含（1）（2）或【小问1详解】【小问2详解】等多个小问时，必须把所有小问的题干、答案和解析合并到同一个顶层题号。看到【小问1详解】绝不表示大题结束；必须继续向下并检查下一页，直到出现下一个独立顶层阿拉伯数字题号或本卷结束。",
+  "7b. 主页面可能同时包含上一题的续页和下一题的开头。必须先找出页面上每个独立顶层题号的印刷位置，再按这些位置切分：页面顶部至下一个顶层题号之前属于已保存的跨页候选；新题 region 必须从它自己的顶层题号所在行开始。此时要同时输出前题续页和后题新题，两个 region 不得互换、重叠或错误覆盖页面顶部空白。",
+  "7c. 新题的主页面 region 必须实际包住它自己的可见顶层题号；只有提示中列出的跨页候选允许在续页 region 内没有题号。长题干或长解析不得配一个角落小框。若文字量与框面积明显不相称，必须重新检查框边界后再输出。",
+  "8. 输出前逐题自检：逐项核对题干中出现的每个（1）（2）等小问在 answer/analysis 中是否完整；逐页核对 region 从本题第一行到下一顶层题号前最后一行；region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。任一文字或框选不清楚时降低 confidence，不要猜测。",
   "主页面没有题号或题目开头、只有下一页 region 的候选题必须丢弃；严禁为了保留它而补造默认 bbox。",
   "number 只填写整道大题的阿拉伯数字题号；（1）、【小问1】、步骤讲解必须合并进所属大题，禁止单独创建为题目。",
   "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
@@ -89,11 +92,8 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
       const entry = region as Record<string, unknown>;
       return { page: Number(entry.page ?? pageNumber), bbox: safeBox(entry.bbox) };
     }).filter((region) => availablePages.includes(region.page));
-    if (!regions.some((region) => region.page === pageNumber)) {
-      // 模型若只给出下一页 region，说明题目并非从主页面开始；不能伪造一个 0,0,10,10 主框。
-      if (!hasExplicitBox(item.bbox)) return null;
-      regions.unshift({ page: pageNumber, bbox: safeBox(item.bbox) });
-    }
+    // 新题或明确的接力题都必须给出主页面 region；不再接受会产生角落小框的旧 bbox 回退格式。
+    if (!regions.some((region) => region.page === pageNumber)) return null;
     const uniqueRegions = regions.filter((region, regionIndex) => regions.findIndex((candidate) => candidate.page === region.page) === regionIndex);
     const primaryRegion = uniqueRegions.find((region) => region.page === pageNumber)!;
     const rawAssets = Array.isArray(item.assets) ? item.assets : [];
@@ -112,24 +112,32 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
       return !region || !containsBox(region.bbox, asset.bbox);
     });
     const confidence = Math.max(0, Math.min(1, Number(item.confidence ?? 0)));
+    const stem = String(item.stem ?? "");
+    const options = Array.isArray(item.options) ? item.options.map((option) => {
+      const entry = option as Record<string, unknown>;
+      return { key: String(entry.key ?? ""), content: String(entry.content ?? "") };
+    }) : undefined;
+    const answer = String(item.answer ?? "");
+    const analysis = String(item.analysis ?? "");
+    const visibleTextLength = [stem, ...(options ?? []).map((option) => option.content), answer, analysis].join("").replace(/\s/g, "").length;
+    const regionArea = uniqueRegions.reduce((sum, region) => sum + region.bbox.width * region.bbox.height, 0);
+    const geometryNeedsReview = visibleTextLength >= 160 && regionArea < 220;
+    const subquestionsNeedReview = hasIncompleteSubquestionAnalysis(stem, analysis);
     return {
       id,
       number: questionNumber,
       type,
-      stem: String(item.stem ?? ""),
-      options: Array.isArray(item.options) ? item.options.map((option) => {
-        const entry = option as Record<string, unknown>;
-        return { key: String(entry.key ?? ""), content: String(entry.content ?? "") };
-      }) : undefined,
-      answer: String(item.answer ?? ""),
-      analysis: String(item.analysis ?? ""),
+      stem,
+      options,
+      answer,
+      analysis,
       page: pageNumber,
       bbox: primaryRegion.bbox,
       regions: uniqueRegions,
       assets: normalizedAssets,
       tags: Array.isArray(item.tags) ? item.tags.map(String).slice(0, 8) : [],
       confidence,
-      status: confidence >= .92 && !assetGeometryNeedsReview ? "pending" : "needs_attention",
+      status: confidence >= .92 && !assetGeometryNeedsReview && !geometryNeedsReview && !subquestionsNeedReview ? "pending" : "needs_attention",
     };
   }).filter((question): question is Question => question !== null);
   const answerUpdates = rawUpdates.map((value) => {
@@ -242,13 +250,13 @@ export async function POST(request: Request) {
 
   try {
     const continuationContext = continuationCandidates.length > 0
-      ? `已保存的跨页接力候选如下：${JSON.stringify(continuationCandidates)}。如果主页面内容确实是某候选的继续，必须沿用其 number。题干或选项的继续放入 questions；答案或解析的继续放入 answerUpdates。只输出本次新看到、尚未保存的文字，并为本次实际可见的每一页输出 regions。若内容并非候选的继续，不要输出该候选。`
+      ? `已保存的跨页接力候选如下：${JSON.stringify(continuationCandidates)}。如果主页面顶部在出现新顶层题号之前仍是某候选的内容，必须先沿用其 number 输出这段续页，不能把它框给页面下方的新题。题干或选项的继续放入 questions；答案或解析的继续放入 answerUpdates。只输出本次新看到、尚未保存的文字，并为本次实际可见的每一页输出 regions。若内容并非候选的继续，不要输出该候选。`
       : "当前没有已保存的跨页接力候选。";
     const result = await callVisionModel({
       ownerId,
       profileId: profile.id,
       system: systemPrompt,
-      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。新题只输出题号或题目开头位于第 ${pageNumber} 页的题；已保存候选可以在确认连续时接力。${continuationContext} 页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
+      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。新题只输出题号或题目开头位于第 ${pageNumber} 页的题；已保存候选可以在确认连续时接力。${continuationContext} 本轮必须先做版面切分：逐页定位所有独立顶层题号；检查页面顶部是否为前题续页；检查每道含（1）（2）等小问的大题是否一直读取到全部小问解析结束。若主页面上方是前题续页、下方才出现新题号，必须分别给前题上半页 region 和新题下半页 region，新题框从其印刷题号行开始。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
       images: modelImages,
       jsonMode: true,
     });
@@ -338,9 +346,10 @@ export async function POST(request: Request) {
       }
       for (const update of normalized.answerUpdates) {
         const target = transaction.prepare(
-          "SELECT id, answer, analysis, confidence, status FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
+          "SELECT id, stem, answer, analysis, confidence, status FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
         ).get(documentId, update.number) as {
           id: string;
+          stem: string;
           answer: string;
           analysis: string;
           confidence: number;
@@ -352,9 +361,10 @@ export async function POST(request: Request) {
         const mergedConfidence = target.confidence > 0
           ? Math.min(target.confidence, update.confidence)
           : update.confidence;
+        const subquestionsNeedReview = hasIncompleteSubquestionAnalysis(target.stem, mergedAnalysis);
         const mergedStatus = target.status === "approved"
           ? "approved"
-          : mergedConfidence >= .92 ? target.status : "needs_attention";
+          : mergedConfidence >= .92 && !subquestionsNeedReview ? target.status : "needs_attention";
         transaction.prepare(
           `UPDATE questions SET answer = ?, analysis = ?, confidence = ?, status = ?, updated_at = ? WHERE id = ?`,
         ).run(mergedAnswer, mergedAnalysis, mergedConfidence, mergedStatus, finishedAt, target.id);
