@@ -74,6 +74,7 @@ export function ReviewWorkspace({
   const [saveError, setSaveError] = useState("");
   const [bulkAction, setBulkAction] = useState<"approve" | "remove" | null>(null);
   const [bulkNotice, setBulkNotice] = useState("");
+  const [showUnapprovedSummary, setShowUnapprovedSummary] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [newResultsAvailable, setNewResultsAvailable] = useState(false);
   const [boxMode, setBoxMode] = useState<"region" | "asset">("region");
@@ -91,6 +92,7 @@ export function ReviewWorkspace({
   const currentPageInfo = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates[0];
   const pageQuestions = questions.filter((question) => question.regions.some((region) => region.page === currentPage));
   const approvedCount = questions.filter((question) => question.status === "approved").length;
+  const unapprovedQuestions = questions.filter((question) => question.status !== "approved");
   const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
   const incompletePages = pageStates.filter((page) => page.extractionStatus !== "complete");
   const failedPages = pageStates.filter((page) => page.extractionStatus === "failed");
@@ -359,9 +361,11 @@ export function ReviewWorkspace({
       if (!response.ok) throw new Error(result.error ?? "批量操作失败");
       if (action === "approve_high_confidence") {
         setQuestions((items) => items.map((item) => item.confidence > .95 && item.status === "pending" ? { ...item, status: "approved" } : item));
+        setShowUnapprovedSummary(true);
         setBulkNotice(`已入库 ${result.changed ?? 0} 道高置信度题目${result.highConfidenceWarnings ? `；另有 ${result.highConfidenceWarnings} 道虽超过 95% 但存在完整性警告，未自动入库` : ""}`);
       } else {
         setQuestions((items) => items.map((item) => item.status === "approved" ? { ...item, status: "pending" } : item));
+        setShowUnapprovedSummary(false);
         setBulkNotice(`已将 ${result.changed ?? 0} 道题移出题库，题目和框选仍保留`);
       }
     } catch (error) {
@@ -397,6 +401,24 @@ export function ReviewWorkspace({
       <div className="review-body">
         <aside className="question-rail no-print">
           <div className="rail-title"><span>本页题目</span><b>{pageQuestions.length}</b></div>
+          {showUnapprovedSummary && (
+            <div className="unapproved-summary">
+              <small>{unapprovedQuestions.length ? `未入库 ${unapprovedQuestions.length} 道，点击题号定位（橙色需复核）` : "本试卷题目已全部入库"}</small>
+              {unapprovedQuestions.length > 0 && (
+                <div>
+                  {unapprovedQuestions.map((question) => (
+                    <button
+                      type="button"
+                      key={question.id}
+                      className={question.status === "needs_attention" ? "warning" : ""}
+                      title={question.status === "needs_attention" ? `第 ${question.number} 题存在识别或完整性警告` : `第 ${question.number} 题未达到自动入库条件`}
+                      onClick={() => selectQuestion(question)}
+                    >{question.number}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {pageQuestions.map((question) => (
             <button type="button" key={question.id} onClick={() => selectQuestion(question)} className={question.id === active.id ? "active" : ""}>
               <span className="question-number">{question.number}</span>
