@@ -13,6 +13,7 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
   const [title, setTitle] = useState("九年级数学专题训练卷");
   const [subtitle, setSubtitle] = useState("建议用时：90 分钟");
   const [showAnswers, setShowAnswers] = useState(false);
+  const [answerSpaces, setAnswerSpaces] = useState<Record<string, number>>({});
   const [paperId] = useState(() => crypto.randomUUID());
   const [saveState, setSaveState] = useState<"saving" | "saved" | "error">("saving");
   const [downloading, setDownloading] = useState(false);
@@ -28,7 +29,7 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
         const response = await fetch("/api/papers", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: paperId, title, subtitle, questionIds: ids, settings: { showAnswers } }),
+          body: JSON.stringify({ id: paperId, title, subtitle, questionIds: ids, settings: { showAnswers, answerSpaces } }),
         });
         if (!response.ok) throw new Error("保存失败");
         setSaveState("saved");
@@ -37,7 +38,12 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
       }
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [ids, paperId, showAnswers, subtitle, title]);
+  }, [answerSpaces, ids, paperId, showAnswers, subtitle, title]);
+
+  function updateAnswerSpace(questionId: string, height: number) {
+    setSaveState("saving");
+    setAnswerSpaces((current) => ({ ...current, [questionId]: Math.min(600, Math.max(80, Math.round(height / 10) * 10)) }));
+  }
 
   function move(index: number, offset: number) {
     const target = index + offset;
@@ -77,7 +83,7 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
       const saveResponse = await fetch("/api/papers", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: paperId, title, subtitle, questionIds: ids, settings: { showAnswers } }),
+        body: JSON.stringify({ id: paperId, title, subtitle, questionIds: ids, settings: { showAnswers, answerSpaces } }),
       });
       if (!saveResponse.ok) throw new Error("试卷保存失败，无法生成 PDF");
       setSaveState("saved");
@@ -119,14 +125,14 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
           <div className="paper-order-title"><span>题目顺序</span><b>拖动或使用箭头排序</b></div>
           <div className="paper-order">
             {selected.map((question, index) => (
-              <div key={question.id}><GripVertical size={14} /><span>{index + 1}</span><p><strong>{typeLabels[question.type]}</strong><small>{question.tags[0] || "未标注知识点"}</small></p><button type="button" onClick={() => move(index, -1)}><ArrowUp size={12} /></button><button type="button" onClick={() => move(index, 1)}><ArrowDown size={12} /></button><button type="button" onClick={() => { setSaveState("saving"); setIds((items) => items.filter((id) => id !== question.id)); }}><Trash2 size={12} /></button></div>
+              <div key={question.id}><GripVertical size={14} /><span>{index + 1}</span><p><strong>{typeLabels[question.type]}</strong><small>{question.tags[0] || "未标注知识点"}</small></p><button type="button" onClick={() => move(index, -1)}><ArrowUp size={12} /></button><button type="button" onClick={() => move(index, 1)}><ArrowDown size={12} /></button><button type="button" onClick={() => { setSaveState("saving"); setIds((items) => items.filter((id) => id !== question.id)); }}><Trash2 size={12} /></button>{question.type === "answer" && <label className="paper-space-control"><span>作答留白</span><input type="range" min="80" max="600" step="10" value={answerSpaces[question.id] ?? 180} onChange={(event) => updateAnswerSpace(question.id, Number(event.target.value))} /><input aria-label={`第 ${index + 1} 题作答留白高度`} type="number" min="80" max="600" step="10" value={answerSpaces[question.id] ?? 180} onChange={(event) => updateAnswerSpace(question.id, Number(event.target.value))} /><i>px</i></label>}</div>
             ))}
           </div>
           <Link href="/bank" className="btn add-from-bank">＋ 从题库继续选题</Link>
         </aside>
 
         <main className="paper-preview-wrap">
-          <PaperPrintable title={title} subtitle={subtitle} questions={selected} includeAnswers={showAnswers} />
+          <PaperPrintable title={title} subtitle={subtitle} questions={selected} includeAnswers={showAnswers} answerSpaces={answerSpaces} />
           {!selected.length && <Link className="btn btn-primary no-print" href="/bank">返回题库选题</Link>}
         </main>
       </div>

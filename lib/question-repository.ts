@@ -47,6 +47,8 @@ type AssetRow = {
   bboxJson: string;
   pageNumber: number | null;
   pageStorageKey: string | null;
+  pageWidth: number | null;
+  pageHeight: number | null;
 };
 
 type RegionRow = {
@@ -76,7 +78,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
   const assets = sqlite.prepare(
     `SELECT a.id, a.question_id AS questionId, a.kind, a.label, a.source_key AS sourceKey,
             a.crop_key AS cropKey, a.bbox_json AS bboxJson, p.page_number AS pageNumber,
-            p.storage_key AS pageStorageKey
+            p.storage_key AS pageStorageKey, p.width AS pageWidth, p.height AS pageHeight
        FROM question_assets a
        LEFT JOIN pages p ON p.id = a.page_id
       WHERE a.question_id IN (${placeholders(ids.length)})
@@ -96,16 +98,21 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
   ).all(...ids) as Array<{ questionId: string; name: string }>;
 
   return rows.map((row) => {
-    const questionAssets: QuestionAsset[] = assets.filter((asset) => asset.questionId === row.id).map((asset) => ({
-      id: asset.id,
-      kind: (["figure", "table", "graph"].includes(asset.kind) ? asset.kind : "figure") as QuestionAsset["kind"],
-      page: asset.pageNumber ?? row.pageNumber,
-      bbox: parseJson<BoundingBox>(asset.bboxJson, { x: 0, y: 0, width: 10, height: 10 }),
-      label: asset.label,
-      sourceKey: asset.sourceKey ?? asset.pageStorageKey,
-      cropKey: asset.cropKey,
-      url: fileUrl(asset.cropKey),
-    }));
+    const questionAssets: QuestionAsset[] = assets.filter((asset) => asset.questionId === row.id).map((asset) => {
+      const bbox = parseJson<BoundingBox>(asset.bboxJson, { x: 0, y: 0, width: 10, height: 10 });
+      return {
+        id: asset.id,
+        kind: (["figure", "table", "graph"].includes(asset.kind) ? asset.kind : "figure") as QuestionAsset["kind"],
+        page: asset.pageNumber ?? row.pageNumber,
+        bbox,
+        label: asset.label,
+        sourceKey: asset.sourceKey ?? asset.pageStorageKey,
+        cropKey: asset.cropKey,
+        url: fileUrl(asset.cropKey),
+        width: asset.pageWidth ? Math.max(1, Math.round(asset.pageWidth * bbox.width / 100)) : undefined,
+        height: asset.pageHeight ? Math.max(1, Math.round(asset.pageHeight * bbox.height / 100)) : undefined,
+      };
+    });
     const questionRegions = regions.filter((region) => region.questionId === row.id).map((region) => ({
       page: region.page,
       bbox: parseJson<BoundingBox>(region.bboxJson, { x: 0, y: 0, width: 10, height: 10 }),

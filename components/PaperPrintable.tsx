@@ -7,11 +7,13 @@ export function PaperPrintable({
   subtitle,
   questions,
   includeAnswers = false,
+  answerSpaces = {},
 }: {
   title: string;
   subtitle: string;
   questions: QuestionWithSource[];
   includeAnswers?: boolean;
+  answerSpaces?: Record<string, number>;
 }) {
   return (
     <article className="paper-sheet printable-paper">
@@ -23,9 +25,9 @@ export function PaperPrintable({
           <div className="paper-question-stem"><MathText text={question.stem} /></div>
           {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}>{option.key}．<MathText text={option.content} /></span>)}</div>}
           {question.assets.filter((asset) => asset.url).map((asset) => (
-            <Image key={asset.id} src={asset.url!} width={420} height={280} className="paper-crop-placeholder" alt={asset.label} unoptimized />
+            <Image key={asset.id} src={asset.url!} width={asset.width ?? 420} height={asset.height ?? 280} className="paper-crop-placeholder" alt={asset.label} unoptimized />
           ))}
-          {question.type === "fill" ? <div className="answer-line" /> : question.type === "answer" ? <div className="answer-space" /> : null}
+          {question.type === "fill" ? <div className="answer-line" /> : question.type === "answer" ? <div className="answer-space" style={{ height: answerSpaces[question.id] ?? 180 }} /> : null}
           {includeAnswers && <div className="paper-answer printable-answer"><strong>答案：</strong><MathText text={question.answer} /><br /><strong>解析：</strong><MathText text={question.analysis} /></div>}
         </section>
       ))}

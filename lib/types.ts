@@ -21,6 +21,8 @@ export type QuestionAsset = {
   sourceKey?: string | null;
   cropKey?: string | null;
   url?: string | null;
+  width?: number;
+  height?: number;
 };
 
 export type Question = {

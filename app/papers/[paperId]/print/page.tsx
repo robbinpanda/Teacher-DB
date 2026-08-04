@@ -19,9 +19,12 @@ export default async function PaperPrintPage({
   if (!claims) notFound();
   const paper = await getPaperPrintData(paperId, claims.ownerId);
   if (!paper) notFound();
+  const answerSpaces = paper.settings.answerSpaces && typeof paper.settings.answerSpaces === "object"
+    ? Object.fromEntries(Object.entries(paper.settings.answerSpaces).filter((entry): entry is [string, number] => typeof entry[1] === "number"))
+    : {};
   return (
     <main className="paper-print-root">
-      <PaperPrintable title={paper.title} subtitle={paper.subtitle} questions={paper.questions} includeAnswers={query.answers === "1"} />
+      <PaperPrintable title={paper.title} subtitle={paper.subtitle} questions={paper.questions} includeAnswers={query.answers === "1"} answerSpaces={answerSpaces} />
     </main>
   );
 }
