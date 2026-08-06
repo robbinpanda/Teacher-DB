@@ -23,39 +23,42 @@ function MetricControl({ label, value, min, max, step, unit, onChange }: { label
   return <label className="template-metric"><span>{label}<b>{value}{unit}</b></span><input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
-export function PaperBuilder({ questions, initialIds, templates: initialTemplates }: { questions: QuestionWithSource[]; initialIds: string[]; templates: PaperTemplate[] }) {
+export function PaperBuilder({ questions, initialIds, templates: initialTemplates, initialPaper }: { questions: QuestionWithSource[]; initialIds: string[]; templates: PaperTemplate[]; initialPaper?: { id: string; title: string; subtitle: string; settings: PaperSettings } }) {
   const scope = useEducationScope();
-  const inScope = useMemo(() => questions.filter((question) => question.source.subject === scope.subject && stageFromGrade(question.source.grade) === scope.stage), [questions, scope.stage, scope.subject]);
+  const paperSubject = initialPaper?.settings.subject ?? scope.subject;
+  const paperStage = initialPaper?.settings.stage ?? scope.stage;
+  const inScope = useMemo(() => questions.filter((question) => question.source.subject === paperSubject && stageFromGrade(question.source.grade) === paperStage), [paperStage, paperSubject, questions]);
   const initialQuestions = initialIds.length ? initialIds.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as QuestionWithSource[] : inScope.slice(0, 5);
   const [templates, setTemplates] = useState(initialTemplates);
-  const availableTemplates = useMemo(() => templates.filter((template) => (template.subject === "*" || template.subject === scope.subject) && (template.subject === "*" || template.stage === scope.stage)), [scope.stage, scope.subject, templates]);
-  const preferredTemplate = availableTemplates.find((template) => template.id === `preset-${scope.stage}-math-exam`) ?? availableTemplates[0] ?? initialTemplates[0];
-  const [templateId, setTemplateId] = useState(preferredTemplate?.id ?? "preset-homework");
+  const availableTemplates = useMemo(() => templates.filter((template) => (template.subject === "*" || template.subject === paperSubject) && (template.subject === "*" || template.stage === paperStage)), [paperStage, paperSubject, templates]);
+  const preferredTemplate = availableTemplates.find((template) => template.id === `preset-${paperStage}-math-exam`) ?? availableTemplates[0] ?? initialTemplates[0];
+  const [templateId, setTemplateId] = useState(initialPaper?.settings.templateId ?? preferredTemplate?.id ?? "preset-homework");
   const initialTemplate = initialTemplates.find((template) => template.id === templateId) ?? initialTemplates[0];
-  const [sections, setSections] = useState<PaperSection[]>(() => sectionsFromTemplate(initialTemplate, initialQuestions));
-  const [title, setTitle] = useState(`${stageLabel(scope.stage)}${scope.subject}练习卷`);
-  const [subtitle, setSubtitle] = useState("建议用时 90 分钟");
-  const [showAnswers, setShowAnswers] = useState(false);
-  const [notice, setNotice] = useState(initialTemplate.config.notice);
-  const [infoFields, setInfoFields] = useState(initialTemplate.config.infoFields);
-  const [compact, setCompact] = useState(initialTemplate.config.compact);
-  const [paperStyle, setPaperStyle] = useState<PaperStyleConfig>(() => paperStyleFromTemplate(initialTemplate));
+  const [sections, setSections] = useState<PaperSection[]>(() => initialPaper?.settings.sections ?? sectionsFromTemplate(initialTemplate, initialQuestions));
+  const [title, setTitle] = useState(initialPaper?.title ?? `${stageLabel(paperStage)}${paperSubject}练习卷`);
+  const [subtitle, setSubtitle] = useState(initialPaper?.subtitle ?? "建议用时 90 分钟");
+  const [showAnswers, setShowAnswers] = useState(initialPaper?.settings.showAnswers ?? false);
+  const [notice, setNotice] = useState(initialPaper?.settings.notice ?? initialTemplate.config.notice);
+  const [infoFields, setInfoFields] = useState(initialPaper?.settings.infoFields ?? initialTemplate.config.infoFields);
+  const [compact, setCompact] = useState(initialPaper?.settings.compact ?? initialTemplate.config.compact);
+  const [paperStyle, setPaperStyle] = useState<PaperStyleConfig>(() => initialPaper?.settings.style ?? paperStyleFromTemplate(initialTemplate));
   const [templateStudioOpen, setTemplateStudioOpen] = useState(false);
   const [studioTab, setStudioTab] = useState<"page" | "type" | "header" | "question" | "structure" | "latex">("page");
-  const [answerSpaces, setAnswerSpaces] = useState<Record<string, number>>({});
-  const [assetLayouts, setAssetLayouts] = useState<Record<string, PaperAssetLayout>>({});
-  const [paperId] = useState(() => crypto.randomUUID());
-  const [saveState, setSaveState] = useState<"saving" | "saved" | "error">("saving");
+  const [answerSpaces, setAnswerSpaces] = useState<Record<string, number>>(initialPaper?.settings.answerSpaces ?? {});
+  const [assetLayouts, setAssetLayouts] = useState<Record<string, PaperAssetLayout>>(initialPaper?.settings.assetLayouts ?? {});
+  const [paperId] = useState(() => initialPaper?.id ?? crypto.randomUUID());
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(initialPaper || initialQuestions.length ? "saving" : "idle");
   const [downloading, setDownloading] = useState(false);
   const [pdfError, setPdfError] = useState("");
   const [customName, setCustomName] = useState("");
   const [templateMessage, setTemplateMessage] = useState("");
   const ids = useMemo(() => orderedIds(sections), [sections]);
   const selected = useMemo(() => ids.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as QuestionWithSource[], [ids, questions]);
-  const settings: PaperSettings = useMemo(() => ({ templateId, subject: scope.subject, stage: scope.stage, showAnswers, answerSpaces, assetLayouts, sections, notice, infoFields, compact, style: paperStyle }), [answerSpaces, assetLayouts, compact, infoFields, notice, paperStyle, scope.stage, scope.subject, sections, showAnswers, templateId]);
+  const settings: PaperSettings = useMemo(() => ({ templateId, subject: paperSubject, stage: paperStage, showAnswers, answerSpaces, assetLayouts, sections, notice, infoFields, compact, style: paperStyle }), [answerSpaces, assetLayouts, compact, infoFields, notice, paperStage, paperStyle, paperSubject, sections, showAnswers, templateId]);
   const typeCount = new Set(selected.map((question) => question.type)).size;
 
   useEffect(() => {
+    if (!initialPaper && !ids.length) return;
     const timer = window.setTimeout(async () => {
       try {
         const scoreById = Object.fromEntries(sections.flatMap((section) => section.questionIds.map((id, index) => [id, section.scoreSequence?.[index] ?? section.defaultScore])));
@@ -65,14 +68,15 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
       } catch { setSaveState("error"); }
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [ids, paperId, sections, settings, subtitle, title]);
+  }, [ids, initialPaper, paperId, sections, settings, subtitle, title]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      const candidates = templates.filter((template) => (template.subject === "*" || template.subject === scope.subject) && (template.subject === "*" || template.stage === scope.stage));
+      if (initialPaper) return;
+      const candidates = templates.filter((template) => (template.subject === "*" || template.subject === paperSubject) && (template.subject === "*" || template.stage === paperStage));
       const currentValid = candidates.some((template) => template.id === templateId);
       if (currentValid) return;
-      const nextTemplate = candidates.find((template) => template.id === `preset-${scope.stage}-math-exam`) ?? candidates[0];
+      const nextTemplate = candidates.find((template) => template.id === `preset-${paperStage}-math-exam`) ?? candidates[0];
       if (!nextTemplate) return;
       setTemplateId(nextTemplate.id);
       setNotice(nextTemplate.config.notice);
@@ -80,11 +84,11 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
       setCompact(nextTemplate.config.compact);
       setPaperStyle(paperStyleFromTemplate(nextTemplate));
       setSections(sectionsFromTemplate(nextTemplate, selected));
-      setTitle(`${stageLabel(scope.stage)}${scope.subject}练习卷`);
+      setTitle(`${stageLabel(paperStage)}${paperSubject}练习卷`);
       setSaveState("saving");
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [scope.stage, scope.subject, selected, templateId, templates]);
+  }, [initialPaper, paperStage, paperSubject, selected, templateId, templates]);
 
   function applyTemplate(id: string) {
     const template = templates.find((item) => item.id === id);
@@ -131,7 +135,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   async function saveTemplate() {
     if (!customName.trim()) { setTemplateMessage("请先填写模板名称"); return; }
     const templateSections = sections.map((section) => ({ id: section.id, title: section.title, scoreDetail: section.scoreDetail, acceptedTypes: section.acceptedTypes, defaultScore: section.defaultScore, scoreSequence: section.scoreSequence }));
-    const response = await fetch("/api/paper-templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: customName, subject: scope.subject, stage: scope.stage, config: { notice, infoFields, compact, style: paperStyle, sections: templateSections } }) });
+    const response = await fetch("/api/paper-templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: customName, subject: paperSubject, stage: paperStage, config: { notice, infoFields, compact, style: paperStyle, sections: templateSections } }) });
     const result = await response.json().catch(() => ({})) as { error?: string; templates?: PaperTemplate[] };
     if (!response.ok) { setTemplateMessage(result.error ?? "模板保存失败"); return; }
     if (result.templates) setTemplates(result.templates);
@@ -151,11 +155,12 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   }
 
   let rowNumber = 0;
+  const visibleSaveState = !initialPaper && !ids.length ? "idle" : saveState;
   return (
     <div className="paper-builder">
       <header className="paper-topbar no-print">
-        <div><Link href="/bank" className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>组卷</strong><small>{stageLabel(scope.stage)} · {scope.subject}</small></span></div>
-        <div className={`paper-save-state ${saveState}`}><Check size={13} /> {saveState === "saving" ? "正在保存…" : saveState === "error" ? "保存失败" : "已自动保存"}</div>
+        <div><Link href={initialPaper ? "/papers" : "/bank"} className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>{initialPaper ? "编辑试卷" : "组卷"}</strong><small>{stageLabel(paperStage)} · {paperSubject}</small></span></div>
+        <Link href="/papers" title="打开试卷库" className={`paper-save-state ${visibleSaveState}`}><Check size={13} /> {visibleSaveState === "idle" ? "选题后存入试卷库" : visibleSaveState === "saving" ? "正在存入试卷库…" : visibleSaveState === "error" ? "保存失败" : "已存入试卷库"}</Link>
         <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏答案" : "答案预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={downloading} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading ? "正在生成…" : "下载 PDF"}</button></div>
       </header>
       <div className="paper-workspace">
@@ -215,7 +220,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
             {studioTab === "structure" && <div className="custom-template-save studio-save"><input placeholder="为完整模板命名" value={customName} onChange={(event) => setCustomName(event.target.value)} /><button type="button" onClick={() => void saveTemplate()}><Save size={13} /> 保存为模板</button></div>}
           </section>}
           <div className="paper-summary"><div><span>题目</span><strong>{selected.length}</strong></div><div><span>题型</span><strong>{typeCount}</strong></div><div><span>板块</span><strong>{sections.length}</strong></div></div>
-          <div className="smart-fill"><ListPlus size={17} /><div><strong>按当前范围补齐</strong><p>只从 {stageLabel(scope.stage)}{scope.subject}题库补题，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= 12 || ids.length >= inScope.length}>补齐</button></div>
+          <div className="smart-fill"><ListPlus size={17} /><div><strong>按当前范围补齐</strong><p>只从 {stageLabel(paperStage)}{paperSubject}题库补题，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= 12 || ids.length >= inScope.length}>补齐</button></div>
           {templateMessage && <p className="form-note">{templateMessage}</p>}{pdfError && <p className="form-error">{pdfError}</p>}
           <div className="paper-order-title"><span>题目与题图</span><b>可换板块、排序和调整题图</b></div>
           <div className="paper-order">

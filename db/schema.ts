@@ -137,15 +137,30 @@ export const questionTags = sqliteTable("question_tags", {
   index("question_tags_tag_idx").on(table.tagId),
 ]);
 
+export const paperFolders = sqliteTable("paper_folders", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  parentId: text("parent_id"),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("paper_folders_owner_parent_idx").on(table.ownerId, table.parentId),
+]);
+
 export const papers = sqliteTable("papers", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull().default("local-demo"),
+  folderId: text("folder_id").references(() => paperFolders.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   subtitle: text("subtitle"),
   settingsJson: text("settings_json").notNull().default("{}"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-}, (table) => [index("papers_owner_created_idx").on(table.ownerId, table.createdAt)]);
+}, (table) => [
+  index("papers_owner_created_idx").on(table.ownerId, table.createdAt),
+  index("papers_owner_folder_idx").on(table.ownerId, table.folderId, table.updatedAt),
+]);
 
 export const paperTemplates = sqliteTable("paper_templates", {
   id: text("id").primaryKey(),

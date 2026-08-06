@@ -9,6 +9,7 @@ import {
   ChevronDown,
   LibraryBig,
   FilePlus2,
+  FolderOpen,
   House,
   Settings2,
   SlidersHorizontal,
@@ -36,6 +37,7 @@ export function useEducationScope() {
 const navigation = [
   { href: "/", label: "工作台", icon: House },
   { href: "/bank", label: "题库", icon: LibraryBig },
+  { href: "/papers", label: "试卷库", icon: FolderOpen },
   { href: "/papers/new", label: "组卷", icon: FilePlus2 },
   { href: "/settings/models", label: "识别设置", icon: SlidersHorizontal },
 ];
@@ -152,7 +154,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <nav className="side-nav" aria-label="主导航">
             {navigation.map(({ href, label, icon: Icon }) => {
-              const active = href === "/" ? pathname === "/" || pathname.startsWith("/review") : pathname.startsWith(href);
+              const active = href === "/"
+                ? pathname === "/" || pathname.startsWith("/review")
+                : href === "/papers/new"
+                  ? pathname === href
+                  : href === "/papers"
+                    ? pathname === "/papers" || (/^\/papers\/[^/]+$/.test(pathname) && pathname !== "/papers/new")
+                    : pathname.startsWith(href);
               return <Link key={href} href={href} className={active ? "active" : ""}><Icon size={18} /><span>{label}</span></Link>;
             })}
           </nav>

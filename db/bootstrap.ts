@@ -61,8 +61,14 @@ CREATE TABLE IF NOT EXISTS question_tags (
   PRIMARY KEY(question_id, tag_id)
 );
 CREATE INDEX IF NOT EXISTS question_tags_tag_idx ON question_tags(tag_id);
+CREATE TABLE IF NOT EXISTS paper_folders (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', parent_id TEXT REFERENCES paper_folders(id) ON DELETE RESTRICT,
+  name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS paper_folders_owner_parent_idx ON paper_folders(owner_id, parent_id);
 CREATE TABLE IF NOT EXISTS papers (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', title TEXT NOT NULL, subtitle TEXT,
+  folder_id TEXT REFERENCES paper_folders(id) ON DELETE SET NULL,
   settings_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS papers_owner_created_idx ON papers(owner_id, created_at);
@@ -148,6 +154,7 @@ const upgrades: Record<string, Record<string, string>> = {
   },
   papers: {
     owner_id: "TEXT NOT NULL DEFAULT 'local-demo'",
+    folder_id: "TEXT REFERENCES paper_folders(id) ON DELETE SET NULL",
     subtitle: "TEXT",
     settings_json: "TEXT NOT NULL DEFAULT '{}'",
   },
@@ -169,6 +176,8 @@ function initialize() {
   sqlite.exec("CREATE INDEX IF NOT EXISTS runs_queue_idx ON extraction_runs(status, next_attempt_at)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_queue_idx ON document_jobs(status, next_attempt_at, queued_at)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_owner_idx ON document_jobs(owner_id, status)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS paper_folders_owner_parent_idx ON paper_folders(owner_id, parent_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS papers_owner_folder_idx ON papers(owner_id, folder_id, updated_at)");
   const migrationTime = new Date().toISOString();
   sqlite.prepare(
     `UPDATE extraction_runs SET status = 'queued', attempt = 0, error = NULL, error_code = NULL,
