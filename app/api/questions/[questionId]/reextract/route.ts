@@ -5,6 +5,8 @@ import { getFile } from "../../../../../lib/file-storage";
 import { requestOwner } from "../../../../../lib/server";
 import type { BoundingBox, QuestionType } from "../../../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../../../lib/vision-model";
+import { stageFromGrade } from "../../../../../lib/education-taxonomy";
+import { getTagCatalog } from "../../../../../lib/tag-catalog";
 
 export const runtime = "nodejs";
 
@@ -42,10 +44,10 @@ export async function POST(request: Request, context: { params: Promise<{ questi
   const payload = await request.json() as { regions?: RequestedRegion[]; profileId?: string };
   const sqlite = getSqlite();
   const question = sqlite.prepare(
-    `SELECT q.document_id AS documentId, q.number, q.type, d.source_removed_at AS sourceRemovedAt
+    `SELECT q.document_id AS documentId, q.number, q.type, d.subject, d.grade, d.source_removed_at AS sourceRemovedAt
        FROM questions q JOIN documents d ON d.id = q.document_id
       WHERE q.id = ? AND d.owner_id = ?`,
-  ).get(questionId, ownerId) as { documentId: string; number: string; type: string; sourceRemovedAt: string | null } | undefined;
+  ).get(questionId, ownerId) as { documentId: string; number: string; type: string; subject: string | null; grade: string | null; sourceRemovedAt: string | null } | undefined;
   if (!question) return Response.json({ error: "题目不存在" }, { status: 404 });
   if (question.sourceRemovedAt) {
     return Response.json({ error: "原试卷已删除，保留的题目无法重新识别或修改" }, { status: 409 });
@@ -61,6 +63,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     .sort((left, right) => left.page - right.page);
 
   try {
+    const allowedTags = (await getTagCatalog(ownerId, question.subject || "数学", stageFromGrade(question.grade))).map((item) => item.name);
     const images: Array<{ page: number; dataUrl: string }> = [];
     for (const region of uniqueRegions) {
       const page = sqlite.prepare(
@@ -91,8 +94,9 @@ export async function POST(request: Request, context: { params: Promise<{ questi
         "一道大题包含（1）（2）或【小问1详解】【小问2详解】时，必须读取并合并所有小问；【小问1详解】绝不代表整道大题结束，必须继续检查后续图片，直到下一独立顶层题号之前。",
         "输出前逐项核对题干中的每个小问编号在答案和解析中是否完整出现，不得只返回第一小问。",
         "严格区分题干、选项、答案和解析；没有答案或解析时返回空字符串。数学表达式使用单个 $ 包裹的 LaTeX。",
+        `tags 只能从下列允许标签中逐字选择 1-3 个，禁止自造标签：${JSON.stringify(allowedTags)}`,
         "只返回严格 JSON，不要 Markdown 或解释。",
-        "格式：{\"type\":\"single|multiple|fill|answer\",\"stem\":\"\",\"options\":[{\"key\":\"A\",\"content\":\"\"}],\"answer\":\"\",\"analysis\":\"\",\"tags\":[\"知识点\"],\"confidence\":0.95}",
+        "格式：{\"type\":\"single|multiple|fill|answer\",\"stem\":\"\",\"options\":[{\"key\":\"A\",\"content\":\"\"}],\"answer\":\"\",\"analysis\":\"\",\"tags\":[\"允许标签之一\"],\"confidence\":0.95}",
       ].join("\n"),
       text: `这是第 ${question.number} 题，原题型为 ${question.type}。请根据 ${uniqueRegions.length} 个已校正题框重新识别完整内容。`,
       images,
@@ -115,7 +119,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
         options: ["single", "multiple"].includes(type) ? options : [],
         answer: String(parsed.answer ?? "").trim(),
         analysis: String(parsed.analysis ?? "").trim(),
-        tags: Array.isArray(parsed.tags) ? parsed.tags.map(String).map((tag) => tag.trim()).filter(Boolean).slice(0, 8) : [],
+        tags: Array.isArray(parsed.tags) ? Array.from(new Set(parsed.tags.map(String).map((tag) => tag.trim()).filter((tag) => allowedTags.includes(tag)))).slice(0, 3) : [],
         confidence: Math.max(0, Math.min(1, Number(parsed.confidence ?? 0))),
       },
       provider: result.profile.provider,

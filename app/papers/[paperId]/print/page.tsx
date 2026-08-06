@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { PaperPrintable } from "../../../../components/PaperPrintable";
 import { verifyPaperExportToken } from "../../../../lib/paper-export-token";
 import { getPaperPrintData } from "../../../../lib/question-repository";
+import { normalizePaperSettings } from "../../../../lib/paper-templates";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "试卷 PDF · 拾题", robots: { index: false, follow: false } };
@@ -19,12 +20,10 @@ export default async function PaperPrintPage({
   if (!claims) notFound();
   const paper = await getPaperPrintData(paperId, claims.ownerId);
   if (!paper) notFound();
-  const answerSpaces = paper.settings.answerSpaces && typeof paper.settings.answerSpaces === "object"
-    ? Object.fromEntries(Object.entries(paper.settings.answerSpaces).filter((entry): entry is [string, number] => typeof entry[1] === "number"))
-    : {};
+  const settings = normalizePaperSettings(paper.settings, paper.questions);
   return (
     <main className="paper-print-root">
-      <PaperPrintable title={paper.title} subtitle={paper.subtitle} questions={paper.questions} includeAnswers={query.answers === "1"} answerSpaces={answerSpaces} />
+      <PaperPrintable title={paper.title} subtitle={paper.subtitle} questions={paper.questions} settings={settings} includeAnswers={query.answers === "1"} />
     </main>
   );
 }

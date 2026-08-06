@@ -116,6 +116,18 @@ export const tags = sqliteTable("tags", {
   createdAt: text("created_at").notNull(),
 }, (table) => [uniqueIndex("tags_name_idx").on(table.name)]);
 
+export const tagCatalog = sqliteTable("tag_catalog", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  subject: text("subject").notNull(),
+  stage: text("stage").notNull(),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("tag_catalog_scope_name_idx").on(table.ownerId, table.subject, table.stage, table.name),
+  index("tag_catalog_scope_idx").on(table.ownerId, table.subject, table.stage),
+]);
+
 export const questionTags = sqliteTable("question_tags", {
   questionId: text("question_id").notNull().references(() => questions.id, { onDelete: "cascade" }),
   tagId: text("tag_id").notNull().references(() => tags.id, { onDelete: "cascade" }),
@@ -133,6 +145,34 @@ export const papers = sqliteTable("papers", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [index("papers_owner_created_idx").on(table.ownerId, table.createdAt)]);
+
+export const paperTemplates = sqliteTable("paper_templates", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  name: text("name").notNull(),
+  subject: text("subject").notNull(),
+  stage: text("stage").notNull(),
+  kind: text("kind").notNull().default("custom"),
+  description: text("description").notNull().default(""),
+  configJson: text("config_json").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("paper_templates_owner_scope_idx").on(table.ownerId, table.subject, table.stage),
+  uniqueIndex("paper_templates_owner_name_idx").on(table.ownerId, table.name),
+]);
+
+export const answerImports = sqliteTable("answer_imports", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  sourceName: text("source_name").notNull(),
+  status: text("status").notNull().default("processing"),
+  resultJson: text("result_json"),
+  error: text("error"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("answer_imports_document_idx").on(table.documentId, table.createdAt)]);
 
 export const paperItems = sqliteTable("paper_items", {
   paperId: text("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),

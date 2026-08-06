@@ -11,6 +11,8 @@ import {
   ChevronRight,
   Crop,
   ImageIcon,
+  FileUp,
+  Info,
   LoaderCircle,
   Plus,
   Sparkles,
@@ -23,6 +25,9 @@ import {
 import { MathText } from "./MathText";
 import type { BoundingBox, Question, QuestionType, QuestionWithSource, ReviewDocument, ReviewPage } from "../lib/types";
 import { typeLabels } from "../lib/question-labels";
+import { stageFromGrade } from "../lib/education-taxonomy";
+import { answerImagesFromFile } from "../lib/client-answer-images";
+import type { TagCatalogEntry } from "../lib/tag-catalog";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -79,6 +84,16 @@ export function ReviewWorkspace({
   const [newResultsAvailable, setNewResultsAvailable] = useState(false);
   const [boxMode, setBoxMode] = useState<"region" | "asset">("region");
   const [newTag, setNewTag] = useState("");
+  const [tagCatalog, setTagCatalog] = useState<TagCatalogEntry[]>([]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [documentMeta, setDocumentMeta] = useState({
+    subject: sourceDocument.subject, grade: sourceDocument.grade, year: sourceDocument.year ? String(sourceDocument.year) : "",
+    examType: sourceDocument.examType ?? "", region: sourceDocument.region ?? "", school: sourceDocument.school ?? "",
+  });
+  const [detailMessage, setDetailMessage] = useState("");
+  const [answerImporting, setAnswerImporting] = useState(false);
+  const [answerImportMessage, setAnswerImportMessage] = useState("");
+  const answerInputRef = useRef<HTMLInputElement>(null);
   const [adjustedQuestionIds, setAdjustedQuestionIds] = useState<Set<string>>(() => new Set());
   const [reextractingId, setReextractingId] = useState<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -97,6 +112,14 @@ export function ReviewWorkspace({
   const incompletePages = pageStates.filter((page) => page.extractionStatus !== "complete");
   const failedPages = pageStates.filter((page) => page.extractionStatus === "failed");
   const initialCompletedRef = useRef(sourceDocument.completedPageCount);
+
+  useEffect(() => {
+    const params = new URLSearchParams({ subject: documentMeta.subject || "数学", stage: stageFromGrade(documentMeta.grade) });
+    fetch(`/api/tag-catalog?${params}`, { cache: "no-store" }).then(async (response) => {
+      const result = await response.json() as { tags?: TagCatalogEntry[] };
+      if (response.ok && result.tags) setTagCatalog(result.tags);
+    }).catch(() => undefined);
+  }, [documentMeta.grade, documentMeta.subject]);
 
   useEffect(() => {
     if (!incompletePages.length) return;
@@ -399,10 +422,59 @@ export function ReviewWorkspace({
     }
   }
 
-  function addTag() {
+  async function addTag() {
     const tag = newTag.trim();
-    if (tag && !active.tags.includes(tag)) patchActive({ tags: [...active.tags, tag] });
+    if (!tag) return;
+    if (!tagCatalog.some((item) => item.name === tag)) {
+      const response = await fetch("/api/tag-catalog", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subject: documentMeta.subject, stage: stageFromGrade(documentMeta.grade), name: tag }) });
+      const result = await response.json().catch(() => ({})) as { tags?: TagCatalogEntry[]; error?: string };
+      if (!response.ok) { setSaveError(result.error ?? "标签加入目录失败"); return; }
+      if (result.tags) setTagCatalog(result.tags);
+    }
+    if (!active.tags.includes(tag)) patchActive({ tags: [...active.tags, tag] });
     setNewTag("");
+  }
+
+  async function saveDocumentDetails() {
+    setDetailMessage("正在保存…");
+    const response = await fetch(`/api/documents/${sourceDocument.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...documentMeta, year: documentMeta.year ? Number(documentMeta.year) : null }) });
+    const result = await response.json().catch(() => ({})) as { error?: string };
+    setDetailMessage(response.ok ? "试卷详情已保存" : result.error ?? "保存失败");
+  }
+
+  async function importAnswers(files: FileList | null) {
+    if (!files?.length) return;
+    setAnswerImporting(true); setAnswerImportMessage("正在准备答案页…");
+    try {
+      let totalMatches = 0;
+      let lastMissing: string[] = [];
+      const warningParts: string[] = [];
+      for (const file of Array.from(files)) {
+        const images = await answerImagesFromFile(file);
+        let importId: string | undefined;
+        for (let index = 0; index < images.length; index += 4) {
+          const batch = images.slice(index, index + 4).map((dataUrl, offset) => ({ page: index + offset + 1, dataUrl }));
+          setAnswerImportMessage(`正在匹配 ${file.name}：${Math.min(index + 4, images.length)} / ${images.length} 页…`);
+          const response = await fetch(`/api/documents/${sourceDocument.id}/answers`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceName: file.name, images: batch, importId, final: index + 4 >= images.length }) });
+          const result = await response.json().catch(() => ({})) as { error?: string; importId?: string; matches?: Array<{ id: string; answer: string; analysis: string }>; missingNumbers?: string[]; unknownNumbers?: string[]; lowConfidenceNumbers?: string[]; unmatchedNotes?: string[] };
+          if (!response.ok) throw new Error(result.error ?? "答案匹配失败");
+          importId = result.importId;
+          totalMatches += result.matches?.length ?? 0;
+          lastMissing = result.missingNumbers ?? lastMissing;
+          if (result.unknownNumbers?.length) warningParts.push(`未找到题号 ${result.unknownNumbers.join("、")}`);
+          if (result.lowConfidenceNumbers?.length) warningParts.push(`题号 ${result.lowConfidenceNumbers.join("、")} 匹配置信度较低，请人工复核`);
+          if (result.unmatchedNotes?.length) warningParts.push(...result.unmatchedNotes);
+          if (result.matches?.length) setQuestions((items) => items.map((question) => {
+            const update = result.matches?.find((match) => match.id === question.id);
+            return update ? { ...question, answer: update.answer || question.answer, analysis: update.analysis || question.analysis } : question;
+          }));
+        }
+      }
+      const missingText = lastMissing.length ? `；仍缺答案：${lastMissing.slice(0, 18).join("、")}${lastMissing.length > 18 ? "…" : ""}` : "；全部已匹配";
+      const warningText = warningParts.length ? `；提示：${warningParts.slice(0, 3).join("；")}` : "";
+      setAnswerImportMessage(`已匹配 ${totalMatches} 条答案${missingText}${warningText}`);
+    } catch (error) { setAnswerImportMessage(error instanceof Error ? error.message : "答案导入失败"); }
+    finally { setAnswerImporting(false); if (answerInputRef.current) answerInputRef.current.value = ""; }
   }
 
   return (
@@ -414,6 +486,9 @@ export function ReviewWorkspace({
         </div>
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
+          <input ref={answerInputRef} hidden type="file" multiple accept="application/pdf,image/*" onChange={(event) => void importAnswers(event.target.files)} />
+          <button className="btn btn-small" type="button" disabled={answerImporting || approvedCount === 0} title={approvedCount === 0 ? "请先审核入库题目" : ""} onClick={() => answerInputRef.current?.click()}><FileUp size={14} /> {answerImporting ? "答案匹配中…" : "导入答案"}</button>
+          <button className="btn btn-small" type="button" onClick={() => setDetailsOpen((value) => !value)}><Info size={14} /> 试卷详情</button>
           {newResultsAvailable && <button className="btn btn-small" type="button" onClick={() => window.location.reload()}><Sparkles size={14} /> 刷新新识别结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><Sparkles size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
           {bulkNotice && <span className="bulk-notice">{bulkNotice}</span>}
@@ -421,6 +496,11 @@ export function ReviewWorkspace({
           <button className="btn btn-danger-soft btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("remove_all_from_bank")}><Trash2 size={14} /> {bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</button>
         </div>
       </header>
+
+      {(detailsOpen || answerImportMessage) && <div className="review-notice-panel no-print">
+        {detailsOpen && <div className="document-detail-editor"><label>学科<input value={documentMeta.subject} onChange={(event) => setDocumentMeta({ ...documentMeta, subject: event.target.value })} /></label><label>年级<input value={documentMeta.grade} onChange={(event) => setDocumentMeta({ ...documentMeta, grade: event.target.value })} /></label><label>年份<input type="number" value={documentMeta.year} onChange={(event) => setDocumentMeta({ ...documentMeta, year: event.target.value })} /></label><label>考试类型<input placeholder="如：中考 / 二模" value={documentMeta.examType} onChange={(event) => setDocumentMeta({ ...documentMeta, examType: event.target.value })} /></label><label>地区<input value={documentMeta.region} onChange={(event) => setDocumentMeta({ ...documentMeta, region: event.target.value })} /></label><label>学校<input value={documentMeta.school} onChange={(event) => setDocumentMeta({ ...documentMeta, school: event.target.value })} /></label><button type="button" className="btn btn-primary btn-small" onClick={() => void saveDocumentDetails()}>保存详情</button>{detailMessage && <span>{detailMessage}</span>}</div>}
+        {answerImportMessage && <p className={/失败|超过|无效/.test(answerImportMessage) ? "form-error" : "form-note"}>{answerImportMessage}</p>}
+      </div>}
 
       <div className="review-body">
         <aside className="question-rail no-print">
@@ -594,7 +674,8 @@ export function ReviewWorkspace({
           <div className="tag-editor">
             <span className="field-label"><Tag size={13} /> 标签</span>
             <div className="tag-list">{active.tags.map((tag) => <button key={tag} type="button" onClick={() => patchActive({ tags: active.tags.filter((item) => item !== tag) })}>{tag}<X size={11} /></button>)}</div>
-            <div className="tag-input"><input placeholder="输入标签后回车" value={newTag} onChange={(event) => setNewTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} /><button type="button" onClick={addTag}><Plus size={14} /></button></div>
+            <div className="tag-suggestions">{tagCatalog.filter((item) => !active.tags.includes(item.name)).slice(0, 12).map((item) => <button type="button" key={item.name} onClick={() => patchActive({ tags: [...active.tags, item.name] })}>{item.name}{!item.isPreset && <i>自定义</i>}</button>)}</div>
+            <div className="tag-input"><input list="controlled-tags" placeholder="选择标签，或输入新标签加入目录" value={newTag} onChange={(event) => setNewTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addTag(); } }} /><datalist id="controlled-tags">{tagCatalog.map((item) => <option key={item.name} value={item.name} />)}</datalist><button type="button" onClick={() => void addTag()}><Plus size={14} /></button></div>
           </div>
 
           {saveError && <p className="form-error">{saveError}</p>}

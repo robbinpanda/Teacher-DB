@@ -6,6 +6,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, FilePlus2, Fil
 import type { QuestionType, QuestionWithSource } from "../lib/types";
 import { typeLabels } from "../lib/question-labels";
 import { MathText } from "./MathText";
+import { useEducationScope } from "./AppShell";
 
 type BankStats = { total: number; approved: number; withAssets: number; papers: number };
 type Pagination = { page: number; pageSize: number; total: number; pageCount: number };
@@ -24,6 +25,7 @@ export function QuestionBank({
   availableTags: string[];
   sources: SourceFacet[];
 }) {
+  const { subject, stage } = useEducationScope();
   const [questions, setQuestions] = useState(initialQuestions);
   const [pagination, setPagination] = useState(initialPagination);
   const [query, setQuery] = useState("");
@@ -48,6 +50,8 @@ export function QuestionBank({
         if (type !== "all") params.set("type", type);
         if (activeTag !== "全部") params.set("tag", activeTag);
         if (source !== "全部") params.set("documentId", source);
+        params.set("subject", subject);
+        params.set("stage", stage);
         const response = await fetch(`/api/questions?${params}`, { signal: controller.signal });
         const result = await response.json().catch(() => ({})) as { questions?: QuestionWithSource[]; pagination?: Pagination; error?: string };
         if (!response.ok || !result.questions || !result.pagination) throw new Error(result.error ?? "题库查询失败");
@@ -61,7 +65,7 @@ export function QuestionBank({
       }
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [activeTag, page, query, source, type]);
+  }, [activeTag, page, query, source, stage, subject, type]);
 
   function toggle(question: QuestionWithSource) {
     setSelectedIds((items) => {

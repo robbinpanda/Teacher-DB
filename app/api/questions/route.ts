@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     documentId: url.searchParams.get("documentId") ?? undefined,
     subject: url.searchParams.get("subject") ?? undefined,
     grade: url.searchParams.get("grade") ?? undefined,
+    stage: url.searchParams.get("stage") ?? undefined,
     year,
     examType: url.searchParams.get("examType") ?? undefined,
     region: url.searchParams.get("region") ?? undefined,

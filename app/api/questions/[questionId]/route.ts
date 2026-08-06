@@ -3,6 +3,8 @@ import { getSqlite, sqliteTransaction } from "../../../../db";
 import { ensureDatabase } from "../../../../db/bootstrap";
 import { deleteFile, getFile, putFile } from "../../../../lib/file-storage";
 import { now, requestOwner } from "../../../../lib/server";
+import { stageFromGrade } from "../../../../lib/education-taxonomy";
+import { getTagCatalog } from "../../../../lib/tag-catalog";
 import type { BoundingBox, Question } from "../../../../lib/types";
 
 export const runtime = "nodejs";
@@ -25,10 +27,10 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   const ownerId = requestOwner(request);
   const sqlite = getSqlite();
   const ownedQuestion = sqlite.prepare(
-    `SELECT q.document_id AS documentId, d.source_removed_at AS sourceRemovedAt FROM questions q
+    `SELECT q.document_id AS documentId, d.subject, d.grade, d.source_removed_at AS sourceRemovedAt FROM questions q
        JOIN documents d ON d.id = q.document_id
       WHERE q.id = ? AND d.owner_id = ?`,
-  ).get(questionId, ownerId) as { documentId: string; sourceRemovedAt: string | null } | undefined;
+  ).get(questionId, ownerId) as { documentId: string; subject: string | null; grade: string | null; sourceRemovedAt: string | null } | undefined;
   if (!ownedQuestion) return Response.json({ error: "题目不存在" }, { status: 404 });
   if (ownedQuestion.sourceRemovedAt) {
     return Response.json({ error: "原试卷已删除，保留的题目只能查看和导出，无法继续修改" }, { status: 409 });
@@ -36,6 +38,10 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   if (!new Set(["pending", "approved", "needs_attention"]).has(payload.status)) {
     return Response.json({ error: "非法审核状态" }, { status: 400 });
   }
+  const tagNames = Array.from(new Set(payload.tags.map((tag) => tag.trim()).filter(Boolean)));
+  const allowedTags = new Set((await getTagCatalog(ownerId, ownedQuestion.subject || "数学", stageFromGrade(ownedQuestion.grade))).map((item) => item.name));
+  const unknownTags = tagNames.filter((tag) => !allowedTags.has(tag));
+  if (unknownTags.length) return Response.json({ error: `请先把标签加入当前学科标签库：${unknownTags.join("、")}` }, { status: 400 });
   const requestedRegions = payload.regions?.length ? payload.regions : [{ page: payload.page, bbox: payload.bbox }];
   const preparedRegions: Array<{ page: number; pageId: string; bbox: BoundingBox; position: number }> = [];
   try {
@@ -89,7 +95,6 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   }
 
   const timestamp = now();
-  const tagNames = Array.from(new Set(payload.tags.map((tag) => tag.trim()).filter(Boolean)));
   try {
     sqliteTransaction((transaction) => {
       transaction.prepare(

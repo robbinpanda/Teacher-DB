@@ -37,6 +37,11 @@
 - 已审核题库的服务端分页、题干/答案/标签/来源全文检索、题型与来源筛选，以及 JSON / Markdown 下载
 - 从题库选题、排序、智能补齐到 100 分、自动保存试卷、打印或保存 PDF
 - 由服务端 Chrome / Edge / Chromium 直接生成可下载 A4 PDF，可选择是否包含答案
+- 内置中考数学、高考数学、日常作业和课堂测试模板；试卷按选择、填空、解答等板块排版，并在板块标题旁显示分值规则
+- 教师可修改板块、分值、注意事项和考生信息栏并保存为个人模板；题图可在整卷预览中缩放、水平/垂直平移并自动显示题号图注
+- 全局小学/初中/高中与学科切换；模型只能从对应范围的预制或教师扩充标签目录中选标签
+- 已审核题目支持后补答案：导入 PDF 或图片后按题号和题干自动匹配，列出未匹配、低置信度和仍缺答案的题目
+- 上传前只选择全局学科/学段；年份、考试类型、地区、学校从卷头推测，并可在审核页“试卷详情”中随时修正
 - 页面和文档任务持久化为 queued / processing / retry_wait / complete / failed，记录尝试次数、下次重试时间、租约和错误
 - `/api/health`、`npm run doctor`、一致性备份、SHA-256 校验和可回滚恢复
 
@@ -80,7 +85,7 @@ Windows 生产模式也可使用：
 
 ## 数据与迁移
 
-数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_regions、question_assets、tags、model_profiles、papers 和 paper_items。
+数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_regions、question_assets、tags、tag_catalog、model_profiles、papers、paper_items、paper_templates 和 answer_imports。
 
 ## 健康检查
 

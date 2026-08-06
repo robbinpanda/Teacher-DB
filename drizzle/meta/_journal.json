@@ -15,6 +15,13 @@
       "when": 1785695360360,
       "tag": "0001_stale_shiva",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785950173540,
+      "tag": "0002_heavy_the_hood",
+      "breakpoints": true
     }
   ]
 }
