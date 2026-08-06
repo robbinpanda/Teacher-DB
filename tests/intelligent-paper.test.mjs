@@ -36,14 +36,18 @@ test("中考模板按题型分板块并应用标准分值", () => {
 });
 
 test("排版模板参数会被规范化并生成 LaTeX 页面语义", () => {
-  const style = normalizePaperStyle({ pageSize: "A3", orientation: "landscape", marginTop: 999, bodySize: 4, lineHeight: 2.2, columns: 2 });
+  const style = normalizePaperStyle({ pageSize: "A3", orientation: "landscape", marginTop: 999, bodySize: 4, lineHeight: 2.2, columns: 2, titleSize: 28, titleLineHeight: 1.4, titleMarginBottom: 7, titleItalic: true, questionNumberStyle: "chinese" });
   assert.equal(style.pageSize, "A3");
   assert.equal(style.orientation, "landscape");
   assert.equal(style.marginTop, 45);
   assert.equal(style.bodySize, 7);
   assert.equal(style.columns, 2);
+  assert.equal(style.titleItalic, true);
+  assert.equal(style.questionNumberStyle, "chinese");
   const latex = paperStyleToLatex(style);
   assert.match(latex, /a3paper,landscape/);
   assert.match(latex, /top=45mm/);
+  assert.match(latex, /fontsize\{28pt\}\{39\.20pt\}/);
+  assert.match(latex, /papertitlegap\}\{7mm\}/);
   assert.match(latex, /\\twocolumn/);
 });

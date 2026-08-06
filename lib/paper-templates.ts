@@ -34,17 +34,35 @@ export type PaperStyleConfig = {
   titleSize: number;
   titleWeight: 400 | 500 | 700;
   titleLetterSpacing: number;
+  titleLineHeight: number;
+  titleMarginBottom: number;
+  titleItalic: boolean;
+  titleUnderline: boolean;
   subtitleSize: number;
+  subtitleWeight: 400 | 500 | 700;
+  subtitleLetterSpacing: number;
   sectionTitleSize: number;
+  sectionTitleWeight: 400 | 500 | 700;
+  sectionHeadingGap: number;
+  sectionHeadingPadding: number;
   titleAlign: "left" | "center" | "right";
   headerStyle: "exam" | "classic" | "minimal" | "none";
+  headerDivider: "none" | "single" | "double";
+  headerBottomSpacing: number;
   headerLabel: string;
   infoStyle: "line" | "boxed";
+  candidateInfoSize: number;
+  candidateInfoGap: number;
   noticeStyle: "boxed" | "plain" | "hidden";
+  noticeMarginTop: number;
+  noticeMarginBottom: number;
   showBindingLine: boolean;
   bindingText: string;
   questionGap: number;
   sectionGap: number;
+  questionNumberStyle: "decimal" | "parenthesized" | "chinese";
+  questionNumberSize: number;
+  questionIndent: number;
   optionColumns: 1 | 2 | 4;
   scoreStyle: "inline" | "right" | "hidden";
   footerText: string;
@@ -104,17 +122,35 @@ export const defaultPaperStyle: PaperStyleConfig = {
   titleSize: 20,
   titleWeight: 700,
   titleLetterSpacing: 0.08,
+  titleLineHeight: 1.25,
+  titleMarginBottom: 2.5,
+  titleItalic: false,
+  titleUnderline: false,
   subtitleSize: 10.5,
+  subtitleWeight: 400,
+  subtitleLetterSpacing: 0,
   sectionTitleSize: 12,
+  sectionTitleWeight: 700,
+  sectionHeadingGap: 3.5,
+  sectionHeadingPadding: 1.3,
   titleAlign: "center",
   headerStyle: "classic",
+  headerDivider: "none",
+  headerBottomSpacing: 4,
   headerLabel: "",
   infoStyle: "line",
+  candidateInfoSize: 9.5,
+  candidateInfoGap: 6,
   noticeStyle: "boxed",
+  noticeMarginTop: 5,
+  noticeMarginBottom: 4,
   showBindingLine: false,
   bindingText: "学校__________ 班级__________ 姓名__________ 准考证号__________",
   questionGap: 6,
   sectionGap: 8,
+  questionNumberStyle: "decimal",
+  questionNumberSize: 10.5,
+  questionIndent: 6,
   optionColumns: 4,
   scoreStyle: "right",
   footerText: "拾题 · 教师题库助手生成",
@@ -132,6 +168,7 @@ const examPaperStyle: PaperStyleConfig = {
   titleSize: 22,
   sectionTitleSize: 12.5,
   headerStyle: "exam",
+  headerDivider: "single",
   headerLabel: "绝密★启用前",
   showBindingLine: true,
   questionGap: 7,
@@ -263,17 +300,35 @@ export function normalizePaperStyle(value: unknown): PaperStyleConfig {
     titleSize: numeric(style.titleSize, defaultPaperStyle.titleSize, 12, 42),
     titleWeight: style.titleWeight === 400 || style.titleWeight === 500 ? style.titleWeight : 700,
     titleLetterSpacing: numeric(style.titleLetterSpacing, defaultPaperStyle.titleLetterSpacing, -0.1, 0.5),
+    titleLineHeight: numeric(style.titleLineHeight, defaultPaperStyle.titleLineHeight, 0.9, 2.2),
+    titleMarginBottom: numeric(style.titleMarginBottom, defaultPaperStyle.titleMarginBottom, 0, 20),
+    titleItalic: Boolean(style.titleItalic),
+    titleUnderline: Boolean(style.titleUnderline),
     subtitleSize: numeric(style.subtitleSize, defaultPaperStyle.subtitleSize, 7, 20),
+    subtitleWeight: style.subtitleWeight === 500 || style.subtitleWeight === 700 ? style.subtitleWeight : 400,
+    subtitleLetterSpacing: numeric(style.subtitleLetterSpacing, defaultPaperStyle.subtitleLetterSpacing, -0.1, 0.5),
     sectionTitleSize: numeric(style.sectionTitleSize, defaultPaperStyle.sectionTitleSize, 8, 24),
+    sectionTitleWeight: style.sectionTitleWeight === 400 || style.sectionTitleWeight === 500 ? style.sectionTitleWeight : 700,
+    sectionHeadingGap: numeric(style.sectionHeadingGap, defaultPaperStyle.sectionHeadingGap, 0, 20),
+    sectionHeadingPadding: numeric(style.sectionHeadingPadding, defaultPaperStyle.sectionHeadingPadding, 0, 10),
     titleAlign: style.titleAlign === "left" || style.titleAlign === "right" ? style.titleAlign : "center",
     headerStyle: style.headerStyle === "exam" || style.headerStyle === "minimal" || style.headerStyle === "none" ? style.headerStyle : "classic",
+    headerDivider: style.headerDivider === "single" || style.headerDivider === "double" ? style.headerDivider : "none",
+    headerBottomSpacing: numeric(style.headerBottomSpacing, defaultPaperStyle.headerBottomSpacing, 0, 20),
     headerLabel: typeof style.headerLabel === "string" ? style.headerLabel.slice(0, 80) : defaultPaperStyle.headerLabel,
     infoStyle: style.infoStyle === "boxed" ? "boxed" : "line",
+    candidateInfoSize: numeric(style.candidateInfoSize, defaultPaperStyle.candidateInfoSize, 7, 18),
+    candidateInfoGap: numeric(style.candidateInfoGap, defaultPaperStyle.candidateInfoGap, 0, 20),
     noticeStyle: style.noticeStyle === "plain" || style.noticeStyle === "hidden" ? style.noticeStyle : "boxed",
+    noticeMarginTop: numeric(style.noticeMarginTop, defaultPaperStyle.noticeMarginTop, 0, 20),
+    noticeMarginBottom: numeric(style.noticeMarginBottom, defaultPaperStyle.noticeMarginBottom, 0, 20),
     showBindingLine: Boolean(style.showBindingLine),
     bindingText: typeof style.bindingText === "string" ? style.bindingText.slice(0, 160) : defaultPaperStyle.bindingText,
     questionGap: numeric(style.questionGap, defaultPaperStyle.questionGap, 0, 24),
     sectionGap: numeric(style.sectionGap, defaultPaperStyle.sectionGap, 0, 30),
+    questionNumberStyle: style.questionNumberStyle === "parenthesized" || style.questionNumberStyle === "chinese" ? style.questionNumberStyle : "decimal",
+    questionNumberSize: numeric(style.questionNumberSize, defaultPaperStyle.questionNumberSize, 7, 20),
+    questionIndent: numeric(style.questionIndent, defaultPaperStyle.questionIndent, 3, 20),
     optionColumns: style.optionColumns === 1 || style.optionColumns === 2 ? style.optionColumns : 4,
     scoreStyle: style.scoreStyle === "inline" || style.scoreStyle === "hidden" ? style.scoreStyle : "right",
     footerText: typeof style.footerText === "string" ? style.footerText.slice(0, 120) : defaultPaperStyle.footerText,
@@ -296,7 +351,8 @@ export function paperStyleToLatex(style: PaperStyleConfig) {
     `\\usepackage[${paper}${orientation},top=${style.marginTop}mm,right=${style.marginRight}mm,bottom=${style.marginBottom}mm,left=${style.marginLeft}mm]{geometry}`,
     `\\AtBeginDocument{\\fontsize{${style.bodySize}pt}{${baseline}pt}\\selectfont}`,
     `\\xeCJKsetup{CJKglue=\\hskip ${style.letterSpacing}em}`,
-    `\\newcommand{\\papertitlefont}{\\fontsize{${style.titleSize}pt}{${(style.titleSize * 1.25).toFixed(2)}pt}\\selectfont${titleWeight}}`,
+    `\\newcommand{\\papertitlefont}{\\fontsize{${style.titleSize}pt}{${(style.titleSize * style.titleLineHeight).toFixed(2)}pt}\\selectfont${titleWeight}${style.titleItalic ? "\\itshape" : ""}}`,
+    `\\newlength{\\papertitlegap}\\setlength{\\papertitlegap}{${style.titleMarginBottom}mm}`,
     `\\setlength{\\parskip}{${style.questionGap}mm}`,
     `\\setCJKmainfont{${/simhei|heiti/i.test(style.bodyFont) ? "SimHei" : "SimSun"}}`,
     columns,

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, Code2, Download, Eye, GripVertical, ImageIcon, LayoutTemplate, ListPlus, LoaderCircle, Plus, Save, Settings2, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronRight, Code2, Download, Eye, GripVertical, ImageIcon, LayoutTemplate, ListPlus, LoaderCircle, Plus, Save, Settings2, Trash2, X } from "lucide-react";
 import type { QuestionWithSource } from "../lib/types";
 import { stageFromGrade, stageLabel } from "../lib/education-taxonomy";
 import { defaultAssetLayout, paperStyleFromTemplate, paperStyleToLatex, sectionsFromTemplate, type PaperAssetLayout, type PaperSection, type PaperSettings, type PaperStyleConfig, type PaperTemplate } from "../lib/paper-templates";
@@ -90,6 +90,20 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
     return () => window.cancelAnimationFrame(frame);
   }, [initialPaper, paperStage, paperSubject, selected, templateId, templates]);
 
+  useEffect(() => {
+    if (!templateStudioOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTemplateStudioOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [templateStudioOpen]);
+
   function applyTemplate(id: string) {
     const template = templates.find((item) => item.id === id);
     if (!template) return;
@@ -132,14 +146,28 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
     setSaveState("saving");
   }
 
+  function openTemplateStudio() {
+    const activeTemplate = templates.find((template) => template.id === templateId);
+    if (!customName.trim()) setCustomName(activeTemplate?.isPreset === false ? activeTemplate.name : `${activeTemplate?.name ?? `${paperSubject}试卷`} · 自定义`);
+    setTemplateMessage("");
+    setTemplateStudioOpen(true);
+  }
+
   async function saveTemplate() {
-    if (!customName.trim()) { setTemplateMessage("请先填写模板名称"); return; }
+    if (!customName.trim()) { setTemplateMessage("请先填写模板名称"); return false; }
+    const activeTemplate = templates.find((template) => template.id === templateId);
     const templateSections = sections.map((section) => ({ id: section.id, title: section.title, scoreDetail: section.scoreDetail, acceptedTypes: section.acceptedTypes, defaultScore: section.defaultScore, scoreSequence: section.scoreSequence }));
-    const response = await fetch("/api/paper-templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: customName, subject: paperSubject, stage: paperStage, config: { notice, infoFields, compact, style: paperStyle, sections: templateSections } }) });
-    const result = await response.json().catch(() => ({})) as { error?: string; templates?: PaperTemplate[] };
-    if (!response.ok) { setTemplateMessage(result.error ?? "模板保存失败"); return; }
+    const response = await fetch("/api/paper-templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: activeTemplate?.isPreset === false ? activeTemplate.id : undefined, name: customName, subject: paperSubject, stage: paperStage, config: { notice, infoFields, compact, style: paperStyle, sections: templateSections } }) });
+    const result = await response.json().catch(() => ({})) as { id?: string; error?: string; templates?: PaperTemplate[] };
+    if (!response.ok) { setTemplateMessage(result.error ?? "模板保存失败"); return false; }
     if (result.templates) setTemplates(result.templates);
-    setCustomName(""); setTemplateMessage("自定义模板已保存");
+    if (result.id) setTemplateId(result.id);
+    setTemplateMessage("模板已保存并应用");
+    return true;
+  }
+
+  async function saveTemplateAndClose() {
+    if (await saveTemplate()) setTemplateStudioOpen(false);
   }
 
   async function downloadPdf() {
@@ -169,56 +197,85 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
           <label className="edit-field"><span>套用模板</span><select value={templateId} onChange={(event) => applyTemplate(event.target.value)}>{availableTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}{template.isPreset ? " · 预制" : " · 我的"}</option>)}</select></label>
           <label className="edit-field"><span>试卷标题</span><input value={title} onChange={(event) => { setTitle(event.target.value); setSaveState("saving"); }} /></label>
           <label className="edit-field"><span>副标题</span><input value={subtitle} onChange={(event) => { setSubtitle(event.target.value); setSaveState("saving"); }} /></label>
-          <button type="button" className={`template-studio-trigger${templateStudioOpen ? " active" : ""}`} aria-expanded={templateStudioOpen} onClick={() => setTemplateStudioOpen((open) => !open)}><span><LayoutTemplate size={17} /><i><strong>创建 / 编辑排版模板</strong><small>页面、字体、表头、题目样式与 LaTeX 参数</small></i></span><ChevronDown size={15} /></button>
-          {templateStudioOpen && <section className="template-studio">
-            <nav className="template-studio-tabs" aria-label="模板设置分类">
-              {([ ["page", "页面"], ["type", "字体"], ["header", "表头"], ["question", "题目"], ["structure", "结构"], ["latex", "LaTeX"] ] as const).map(([id, label]) => <button type="button" key={id} className={studioTab === id ? "active" : ""} onClick={() => setStudioTab(id)}>{label}</button>)}
-            </nav>
-            {studioTab === "page" && <div className="template-studio-panel">
-              <div className="template-control-grid"><label><span>纸张</span><select value={paperStyle.pageSize} onChange={(event) => patchPaperStyle({ pageSize: event.target.value as PaperStyleConfig["pageSize"] })}><option>A4</option><option>A3</option></select></label><label><span>方向</span><select value={paperStyle.orientation} onChange={(event) => patchPaperStyle({ orientation: event.target.value as PaperStyleConfig["orientation"] })}><option value="portrait">纵向</option><option value="landscape">横向</option></select></label><label><span>分栏</span><select value={paperStyle.columns} onChange={(event) => patchPaperStyle({ columns: Number(event.target.value) as 1 | 2 })}><option value="1">单栏</option><option value="2">双栏</option></select></label></div>
-              <p className="template-group-title">页边距</p>
-              <MetricControl label="上边距" value={paperStyle.marginTop} min={5} max={45} step={1} unit="mm" onChange={(marginTop) => patchPaperStyle({ marginTop })} />
-              <MetricControl label="下边距" value={paperStyle.marginBottom} min={5} max={45} step={1} unit="mm" onChange={(marginBottom) => patchPaperStyle({ marginBottom })} />
-              <MetricControl label="左边距" value={paperStyle.marginLeft} min={5} max={45} step={1} unit="mm" onChange={(marginLeft) => patchPaperStyle({ marginLeft })} />
-              <MetricControl label="右边距" value={paperStyle.marginRight} min={5} max={45} step={1} unit="mm" onChange={(marginRight) => patchPaperStyle({ marginRight })} />
-              <label className="template-toggle"><input type="checkbox" checked={paperStyle.showBindingLine} onChange={(event) => patchPaperStyle({ showBindingLine: event.target.checked })} /><span>显示密封 / 装订线<small>适用于中高考正式卷面</small></span></label>
-              {paperStyle.showBindingLine && <label className="template-wide-field"><span>装订线文字</span><input value={paperStyle.bindingText} onChange={(event) => patchPaperStyle({ bindingText: event.target.value })} /></label>}
-            </div>}
-            {studioTab === "type" && <div className="template-studio-panel">
-              <label className="template-wide-field"><span>正文字体</span><select value={paperStyle.bodyFont} onChange={(event) => patchPaperStyle({ bodyFont: event.target.value })}>{paperFonts.map((font) => <option value={font.value} key={font.value}>{font.label}</option>)}</select></label>
-              <MetricControl label="正文字号" value={paperStyle.bodySize} min={7} max={18} step={0.5} unit="pt" onChange={(bodySize) => patchPaperStyle({ bodySize })} />
-              <MetricControl label="行距" value={paperStyle.lineHeight} min={1} max={3} step={0.05} unit="×" onChange={(lineHeight) => patchPaperStyle({ lineHeight })} />
-              <MetricControl label="字间距" value={paperStyle.letterSpacing} min={-0.1} max={0.5} step={0.01} unit="em" onChange={(letterSpacing) => patchPaperStyle({ letterSpacing })} />
-              <p className="template-group-title">标题层级</p>
-              <label className="template-wide-field"><span>主标题字体</span><select value={paperStyle.titleFont} onChange={(event) => patchPaperStyle({ titleFont: event.target.value })}>{paperFonts.map((font) => <option value={font.value} key={font.value}>{font.label}</option>)}</select></label>
-              <MetricControl label="主标题字号" value={paperStyle.titleSize} min={12} max={42} step={1} unit="pt" onChange={(titleSize) => patchPaperStyle({ titleSize })} />
-              <MetricControl label="标题字间距" value={paperStyle.titleLetterSpacing} min={-0.1} max={0.5} step={0.01} unit="em" onChange={(titleLetterSpacing) => patchPaperStyle({ titleLetterSpacing })} />
-              <MetricControl label="副标题字号" value={paperStyle.subtitleSize} min={7} max={20} step={0.5} unit="pt" onChange={(subtitleSize) => patchPaperStyle({ subtitleSize })} />
-              <MetricControl label="大题标题字号" value={paperStyle.sectionTitleSize} min={8} max={24} step={0.5} unit="pt" onChange={(sectionTitleSize) => patchPaperStyle({ sectionTitleSize })} />
-              <div className="template-control-grid"><label><span>标题粗细</span><select value={paperStyle.titleWeight} onChange={(event) => patchPaperStyle({ titleWeight: Number(event.target.value) as PaperStyleConfig["titleWeight"] })}><option value="400">常规</option><option value="500">中等</option><option value="700">粗体</option></select></label><label><span>标题对齐</span><select value={paperStyle.titleAlign} onChange={(event) => patchPaperStyle({ titleAlign: event.target.value as PaperStyleConfig["titleAlign"] })}><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label></div>
-            </div>}
-            {studioTab === "header" && <div className="template-studio-panel">
-              <div className="template-control-grid"><label><span>表头形式</span><select value={paperStyle.headerStyle} onChange={(event) => patchPaperStyle({ headerStyle: event.target.value as PaperStyleConfig["headerStyle"] })}><option value="exam">正式考试</option><option value="classic">标准</option><option value="minimal">简洁</option><option value="none">无表头</option></select></label><label><span>信息栏</span><select value={paperStyle.infoStyle} onChange={(event) => patchPaperStyle({ infoStyle: event.target.value as PaperStyleConfig["infoStyle"] })}><option value="line">横线式</option><option value="boxed">方格式</option></select></label><label><span>注意事项</span><select value={paperStyle.noticeStyle} onChange={(event) => patchPaperStyle({ noticeStyle: event.target.value as PaperStyleConfig["noticeStyle"] })}><option value="boxed">边框</option><option value="plain">无边框</option><option value="hidden">隐藏</option></select></label></div>
-              {paperStyle.headerStyle === "exam" && <label className="template-wide-field"><span>卷首标识</span><input value={paperStyle.headerLabel} placeholder="如：绝密★启用前" onChange={(event) => patchPaperStyle({ headerLabel: event.target.value })} /></label>}
-              <label className="template-wide-field"><span>考生信息栏（顿号分隔）</span><input value={infoFields.join("、")} onChange={(event) => setInfoFields(event.target.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean))} /></label>
-              <label className="template-wide-field"><span>注意事项</span><textarea rows={4} value={notice} onChange={(event) => setNotice(event.target.value)} /></label>
-              <label className="template-wide-field"><span>页脚文字</span><input value={paperStyle.footerText} onChange={(event) => patchPaperStyle({ footerText: event.target.value })} /></label>
-              <label className="template-toggle"><input type="checkbox" checked={paperStyle.showPageNumber} onChange={(event) => patchPaperStyle({ showPageNumber: event.target.checked })} /><span>显示页码</span></label>
-            </div>}
-            {studioTab === "question" && <div className="template-studio-panel">
-              <MetricControl label="题目间距" value={paperStyle.questionGap} min={0} max={24} step={1} unit="mm" onChange={(questionGap) => patchPaperStyle({ questionGap })} />
-              <MetricControl label="大题间距" value={paperStyle.sectionGap} min={0} max={30} step={1} unit="mm" onChange={(sectionGap) => patchPaperStyle({ sectionGap })} />
-              <div className="template-control-grid"><label><span>选项排列</span><select value={paperStyle.optionColumns} onChange={(event) => patchPaperStyle({ optionColumns: Number(event.target.value) as PaperStyleConfig["optionColumns"] })}><option value="1">每行 1 项</option><option value="2">每行 2 项</option><option value="4">每行 4 项</option></select></label><label><span>分值位置</span><select value={paperStyle.scoreStyle} onChange={(event) => patchPaperStyle({ scoreStyle: event.target.value as PaperStyleConfig["scoreStyle"] })}><option value="right">题目右侧</option><option value="inline">题干末尾</option><option value="hidden">隐藏</option></select></label></div>
-              <label className="template-toggle"><input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} /><span>紧凑排版<small>减少默认作答留白，适合日常练习</small></span></label>
-            </div>}
-            {studioTab === "latex" && <div className="template-studio-panel template-latex-panel"><div className="latex-heading"><Code2 size={16} /><span><strong>LaTeX 参数映射</strong><small>当前可视化参数会同步形成可移植的排版语义</small></span></div><pre>{paperStyleToLatex(paperStyle)}</pre><p>公式仍使用 LaTeX 语法；页面与字体参数同时驱动浏览器预览和 PDF 打印。</p></div>}
-            {studioTab === "structure" && <div className="template-studio-panel"><p className="template-panel-note">定义大题标题、分值规则和题型归属。模板保存后可重复用于任何试卷。</p><div className="paper-section-editor">
-              {sections.map((section) => <div key={section.id}><input aria-label="板块标题" value={section.title} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, title: event.target.value } : item))} /><input aria-label="板块分值说明" value={section.scoreDetail} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, scoreDetail: event.target.value } : item))} /><label>默认每题 <input type="number" min="0" max="100" value={section.defaultScore} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, defaultScore: Number(event.target.value) } : item))} /> 分</label></div>)}
-              <button type="button" className="text-button" onClick={() => setSections((items) => [...items, { id: crypto.randomUUID(), title: `${items.length + 1}、自定义板块`, scoreDetail: "请填写分值说明", acceptedTypes: ["single", "multiple", "fill", "answer"], defaultScore: 5, questionIds: [] }])}><Plus size={13} /> 添加板块</button>
-            </div></div>}
-            {studioTab !== "structure" && <div className="custom-template-save studio-save"><input placeholder="为这套排版命名" value={customName} onChange={(event) => setCustomName(event.target.value)} /><button type="button" onClick={() => void saveTemplate()}><Save size={13} /> 保存为模板</button></div>}
-            {studioTab === "structure" && <div className="custom-template-save studio-save"><input placeholder="为完整模板命名" value={customName} onChange={(event) => setCustomName(event.target.value)} /><button type="button" onClick={() => void saveTemplate()}><Save size={13} /> 保存为模板</button></div>}
-          </section>}
+          <button type="button" className={`template-studio-trigger${templateStudioOpen ? " active" : ""}`} aria-expanded={templateStudioOpen} onClick={openTemplateStudio}><span><LayoutTemplate size={17} /><i><strong>模板排版设置</strong><small>偶尔调整一次，保存后持续复用</small></i></span><ChevronRight size={15} /></button>
+          {templateStudioOpen && <><button type="button" className="template-studio-backdrop" aria-label="关闭模板编辑器" onClick={() => setTemplateStudioOpen(false)} /><section className="template-studio" role="dialog" aria-modal="true" aria-labelledby="template-studio-title">
+            <header className="template-studio-head"><div><span><LayoutTemplate size={18} /></span><div><h2 id="template-studio-title">模板排版设置</h2><p>精细调整一次，保存后可直接套用到之后的试卷</p></div></div><button type="button" aria-label="关闭模板编辑器" onClick={() => setTemplateStudioOpen(false)}><X size={18} /></button></header>
+            <div className="template-studio-body">
+              <nav className="template-studio-tabs" aria-label="模板设置分类">
+                {([ ["page", "页面布局"], ["type", "文字标题"], ["header", "卷首信息"], ["question", "题目样式"], ["structure", "大题结构"], ["latex", "LaTeX"] ] as const).map(([id, label]) => <button type="button" key={id} className={studioTab === id ? "active" : ""} onClick={() => setStudioTab(id)}>{label}<ChevronRight size={13} /></button>)}
+              </nav>
+              <div className="template-studio-controls">
+                {studioTab === "page" && <div className="template-studio-panel">
+                  <div className="template-panel-heading"><strong>页面布局</strong><span>纸张、方向、分栏与留白</span></div>
+                  <div className="template-control-grid"><label><span>纸张</span><select value={paperStyle.pageSize} onChange={(event) => patchPaperStyle({ pageSize: event.target.value as PaperStyleConfig["pageSize"] })}><option>A4</option><option>A3</option></select></label><label><span>方向</span><select value={paperStyle.orientation} onChange={(event) => patchPaperStyle({ orientation: event.target.value as PaperStyleConfig["orientation"] })}><option value="portrait">纵向</option><option value="landscape">横向</option></select></label><label><span>分栏</span><select value={paperStyle.columns} onChange={(event) => patchPaperStyle({ columns: Number(event.target.value) as 1 | 2 })}><option value="1">单栏</option><option value="2">双栏</option></select></label></div>
+                  <p className="template-group-title">页边距</p>
+                  <MetricControl label="上边距" value={paperStyle.marginTop} min={5} max={45} step={1} unit="mm" onChange={(marginTop) => patchPaperStyle({ marginTop })} />
+                  <MetricControl label="下边距" value={paperStyle.marginBottom} min={5} max={45} step={1} unit="mm" onChange={(marginBottom) => patchPaperStyle({ marginBottom })} />
+                  <MetricControl label="左边距" value={paperStyle.marginLeft} min={5} max={45} step={1} unit="mm" onChange={(marginLeft) => patchPaperStyle({ marginLeft })} />
+                  <MetricControl label="右边距" value={paperStyle.marginRight} min={5} max={45} step={1} unit="mm" onChange={(marginRight) => patchPaperStyle({ marginRight })} />
+                  <label className="template-toggle"><input type="checkbox" checked={paperStyle.showBindingLine} onChange={(event) => patchPaperStyle({ showBindingLine: event.target.checked })} /><span>显示密封 / 装订线<small>适用于中高考正式卷面</small></span></label>
+                  {paperStyle.showBindingLine && <label className="template-wide-field"><span>装订线文字</span><input value={paperStyle.bindingText} onChange={(event) => patchPaperStyle({ bindingText: event.target.value })} /></label>}
+                </div>}
+                {studioTab === "type" && <div className="template-studio-panel">
+                  <div className="template-panel-heading"><strong>文字与标题</strong><span>正文、主标题、副标题和大题标题分别设置</span></div>
+                  <p className="template-group-title">正文</p>
+                  <label className="template-wide-field"><span>正文字体</span><select value={paperStyle.bodyFont} onChange={(event) => patchPaperStyle({ bodyFont: event.target.value })}>{paperFonts.map((font) => <option value={font.value} key={font.value}>{font.label}</option>)}</select></label>
+                  <MetricControl label="正文字号" value={paperStyle.bodySize} min={7} max={18} step={0.5} unit="pt" onChange={(bodySize) => patchPaperStyle({ bodySize })} />
+                  <MetricControl label="正文行距" value={paperStyle.lineHeight} min={1} max={3} step={0.05} unit="×" onChange={(lineHeight) => patchPaperStyle({ lineHeight })} />
+                  <MetricControl label="正文字间距" value={paperStyle.letterSpacing} min={-0.1} max={0.5} step={0.01} unit="em" onChange={(letterSpacing) => patchPaperStyle({ letterSpacing })} />
+                  <p className="template-group-title">主标题</p>
+                  <label className="template-wide-field"><span>主标题字体</span><select value={paperStyle.titleFont} onChange={(event) => patchPaperStyle({ titleFont: event.target.value })}>{paperFonts.map((font) => <option value={font.value} key={font.value}>{font.label}</option>)}</select></label>
+                  <div className="template-control-grid"><label><span>粗细</span><select value={paperStyle.titleWeight} onChange={(event) => patchPaperStyle({ titleWeight: Number(event.target.value) as PaperStyleConfig["titleWeight"] })}><option value="400">常规</option><option value="500">中等</option><option value="700">粗体</option></select></label><label><span>对齐</span><select value={paperStyle.titleAlign} onChange={(event) => patchPaperStyle({ titleAlign: event.target.value as PaperStyleConfig["titleAlign"] })}><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label></div>
+                  <div className="template-inline-toggles"><label><input type="checkbox" checked={paperStyle.titleItalic} onChange={(event) => patchPaperStyle({ titleItalic: event.target.checked })} /> 斜体</label><label><input type="checkbox" checked={paperStyle.titleUnderline} onChange={(event) => patchPaperStyle({ titleUnderline: event.target.checked })} /> 下划线</label></div>
+                  <MetricControl label="主标题字号" value={paperStyle.titleSize} min={12} max={42} step={1} unit="pt" onChange={(titleSize) => patchPaperStyle({ titleSize })} />
+                  <MetricControl label="主标题行高" value={paperStyle.titleLineHeight} min={0.9} max={2.2} step={0.05} unit="×" onChange={(titleLineHeight) => patchPaperStyle({ titleLineHeight })} />
+                  <MetricControl label="主标题字间距" value={paperStyle.titleLetterSpacing} min={-0.1} max={0.5} step={0.01} unit="em" onChange={(titleLetterSpacing) => patchPaperStyle({ titleLetterSpacing })} />
+                  <MetricControl label="标题下方间距" value={paperStyle.titleMarginBottom} min={0} max={20} step={0.5} unit="mm" onChange={(titleMarginBottom) => patchPaperStyle({ titleMarginBottom })} />
+                  <p className="template-group-title">副标题</p>
+                  <div className="template-control-grid"><label><span>粗细</span><select value={paperStyle.subtitleWeight} onChange={(event) => patchPaperStyle({ subtitleWeight: Number(event.target.value) as PaperStyleConfig["subtitleWeight"] })}><option value="400">常规</option><option value="500">中等</option><option value="700">粗体</option></select></label></div>
+                  <MetricControl label="副标题字号" value={paperStyle.subtitleSize} min={7} max={20} step={0.5} unit="pt" onChange={(subtitleSize) => patchPaperStyle({ subtitleSize })} />
+                  <MetricControl label="副标题字间距" value={paperStyle.subtitleLetterSpacing} min={-0.1} max={0.5} step={0.01} unit="em" onChange={(subtitleLetterSpacing) => patchPaperStyle({ subtitleLetterSpacing })} />
+                  <p className="template-group-title">大题标题</p>
+                  <div className="template-control-grid"><label><span>粗细</span><select value={paperStyle.sectionTitleWeight} onChange={(event) => patchPaperStyle({ sectionTitleWeight: Number(event.target.value) as PaperStyleConfig["sectionTitleWeight"] })}><option value="400">常规</option><option value="500">中等</option><option value="700">粗体</option></select></label></div>
+                  <MetricControl label="大题标题字号" value={paperStyle.sectionTitleSize} min={8} max={24} step={0.5} unit="pt" onChange={(sectionTitleSize) => patchPaperStyle({ sectionTitleSize })} />
+                  <MetricControl label="大题标题下方间距" value={paperStyle.sectionHeadingGap} min={0} max={20} step={0.5} unit="mm" onChange={(sectionHeadingGap) => patchPaperStyle({ sectionHeadingGap })} />
+                  <MetricControl label="标题分隔线内距" value={paperStyle.sectionHeadingPadding} min={0} max={10} step={0.5} unit="mm" onChange={(sectionHeadingPadding) => patchPaperStyle({ sectionHeadingPadding })} />
+                </div>}
+                {studioTab === "header" && <div className="template-studio-panel">
+                  <div className="template-panel-heading"><strong>卷首信息</strong><span>标题区、考生信息和注意事项的结构与留白</span></div>
+                  <div className="template-control-grid"><label><span>表头形式</span><select value={paperStyle.headerStyle} onChange={(event) => patchPaperStyle({ headerStyle: event.target.value as PaperStyleConfig["headerStyle"] })}><option value="exam">正式考试</option><option value="classic">标准</option><option value="minimal">简洁</option><option value="none">无表头</option></select></label><label><span>分隔线</span><select value={paperStyle.headerDivider} onChange={(event) => patchPaperStyle({ headerDivider: event.target.value as PaperStyleConfig["headerDivider"] })}><option value="none">无</option><option value="single">单线</option><option value="double">双线</option></select></label><label><span>信息栏</span><select value={paperStyle.infoStyle} onChange={(event) => patchPaperStyle({ infoStyle: event.target.value as PaperStyleConfig["infoStyle"] })}><option value="line">横线式</option><option value="boxed">方格式</option></select></label></div>
+                  {paperStyle.headerStyle === "exam" && <label className="template-wide-field"><span>卷首标识</span><input value={paperStyle.headerLabel} placeholder="如：绝密★启用前" onChange={(event) => patchPaperStyle({ headerLabel: event.target.value })} /></label>}
+                  <MetricControl label="标题区下方间距" value={paperStyle.headerBottomSpacing} min={0} max={20} step={0.5} unit="mm" onChange={(headerBottomSpacing) => patchPaperStyle({ headerBottomSpacing })} />
+                  <MetricControl label="考生信息字号" value={paperStyle.candidateInfoSize} min={7} max={18} step={0.5} unit="pt" onChange={(candidateInfoSize) => patchPaperStyle({ candidateInfoSize })} />
+                  <MetricControl label="副标题与信息栏间距" value={paperStyle.candidateInfoGap} min={0} max={20} step={0.5} unit="mm" onChange={(candidateInfoGap) => patchPaperStyle({ candidateInfoGap })} />
+                  <label className="template-wide-field"><span>考生信息栏（顿号分隔）</span><input value={infoFields.join("、")} onChange={(event) => setInfoFields(event.target.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean))} /></label>
+                  <p className="template-group-title">注意事项</p>
+                  <label className="template-wide-field"><span>显示形式</span><select value={paperStyle.noticeStyle} onChange={(event) => patchPaperStyle({ noticeStyle: event.target.value as PaperStyleConfig["noticeStyle"] })}><option value="boxed">边框</option><option value="plain">无边框</option><option value="hidden">隐藏</option></select></label>
+                  <MetricControl label="注意事项上间距" value={paperStyle.noticeMarginTop} min={0} max={20} step={0.5} unit="mm" onChange={(noticeMarginTop) => patchPaperStyle({ noticeMarginTop })} />
+                  <MetricControl label="注意事项下间距" value={paperStyle.noticeMarginBottom} min={0} max={20} step={0.5} unit="mm" onChange={(noticeMarginBottom) => patchPaperStyle({ noticeMarginBottom })} />
+                  <label className="template-wide-field"><span>注意事项内容</span><textarea rows={4} value={notice} onChange={(event) => setNotice(event.target.value)} /></label>
+                  <label className="template-wide-field"><span>页脚文字</span><input value={paperStyle.footerText} onChange={(event) => patchPaperStyle({ footerText: event.target.value })} /></label>
+                  <label className="template-toggle"><input type="checkbox" checked={paperStyle.showPageNumber} onChange={(event) => patchPaperStyle({ showPageNumber: event.target.checked })} /><span>显示页码</span></label>
+                </div>}
+                {studioTab === "question" && <div className="template-studio-panel">
+                  <div className="template-panel-heading"><strong>题目样式</strong><span>题号、题目留白、选项与分值</span></div>
+                  <div className="template-control-grid"><label><span>题号格式</span><select value={paperStyle.questionNumberStyle} onChange={(event) => patchPaperStyle({ questionNumberStyle: event.target.value as PaperStyleConfig["questionNumberStyle"] })}><option value="decimal">1.</option><option value="parenthesized">（1）</option><option value="chinese">一、</option></select></label><label><span>选项排列</span><select value={paperStyle.optionColumns} onChange={(event) => patchPaperStyle({ optionColumns: Number(event.target.value) as PaperStyleConfig["optionColumns"] })}><option value="1">每行 1 项</option><option value="2">每行 2 项</option><option value="4">每行 4 项</option></select></label><label><span>分值位置</span><select value={paperStyle.scoreStyle} onChange={(event) => patchPaperStyle({ scoreStyle: event.target.value as PaperStyleConfig["scoreStyle"] })}><option value="right">题目右侧</option><option value="inline">题干末尾</option><option value="hidden">隐藏</option></select></label></div>
+                  <MetricControl label="题号字号" value={paperStyle.questionNumberSize} min={7} max={20} step={0.5} unit="pt" onChange={(questionNumberSize) => patchPaperStyle({ questionNumberSize })} />
+                  <MetricControl label="题号占位宽度" value={paperStyle.questionIndent} min={3} max={20} step={0.5} unit="mm" onChange={(questionIndent) => patchPaperStyle({ questionIndent })} />
+                  <MetricControl label="题目间距" value={paperStyle.questionGap} min={0} max={24} step={1} unit="mm" onChange={(questionGap) => patchPaperStyle({ questionGap })} />
+                  <MetricControl label="大题间距" value={paperStyle.sectionGap} min={0} max={30} step={1} unit="mm" onChange={(sectionGap) => patchPaperStyle({ sectionGap })} />
+                  <label className="template-toggle"><input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} /><span>紧凑排版<small>减少默认作答留白，适合日常练习</small></span></label>
+                </div>}
+                {studioTab === "latex" && <div className="template-studio-panel template-latex-panel"><div className="template-panel-heading"><strong>LaTeX 参数映射</strong><span>可视化参数自动转换为可移植的排版语义</span></div><div className="latex-heading"><Code2 size={16} /><span><strong>实时生成</strong><small>页面与字体参数同时驱动浏览器预览和 PDF 打印</small></span></div><pre>{paperStyleToLatex(paperStyle)}</pre><p>公式内容仍使用 LaTeX 语法，模板设置负责控制整张试卷的版面。</p></div>}
+                {studioTab === "structure" && <div className="template-studio-panel"><div className="template-panel-heading"><strong>大题结构</strong><span>定义标题、分值规则和题型归属</span></div><p className="template-panel-note">模板保存后可重复用于任何试卷。</p><div className="paper-section-editor">
+                  {sections.map((section) => <div key={section.id}><input aria-label="板块标题" value={section.title} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, title: event.target.value } : item))} /><input aria-label="板块分值说明" value={section.scoreDetail} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, scoreDetail: event.target.value } : item))} /><label>默认每题 <input type="number" min="0" max="100" value={section.defaultScore} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, defaultScore: Number(event.target.value) } : item))} /> 分</label></div>)}
+                  <button type="button" className="text-button" onClick={() => setSections((items) => [...items, { id: crypto.randomUUID(), title: `${items.length + 1}、自定义板块`, scoreDetail: "请填写分值说明", acceptedTypes: ["single", "multiple", "fill", "answer"], defaultScore: 5, questionIds: [] }])}><Plus size={13} /> 添加板块</button>
+                </div></div>}
+              </div>
+              <aside className="template-studio-preview"><header><span>实时预览</span><small>{selected.length > 5 ? "展示前 5 题" : "调整立即生效"}</small></header><div><PaperPrintable title={title} subtitle={subtitle} questions={selected.slice(0, 5)} settings={settings} includeAnswers={showAnswers} /></div></aside>
+            </div>
+            <footer className="template-studio-footer"><label><span>模板名称</span><input placeholder="为这套模板命名" value={customName} onChange={(event) => setCustomName(event.target.value)} /></label><div>{templateMessage && <span className="template-studio-message">{templateMessage}</span>}<button type="button" className="btn" onClick={() => setTemplateStudioOpen(false)}>关闭</button><button type="button" className="btn btn-primary" onClick={() => void saveTemplateAndClose()}><Save size={14} /> 保存并应用</button></div></footer>
+          </section></>}
           <div className="paper-summary"><div><span>题目</span><strong>{selected.length}</strong></div><div><span>题型</span><strong>{typeCount}</strong></div><div><span>板块</span><strong>{sections.length}</strong></div></div>
           <div className="smart-fill"><ListPlus size={17} /><div><strong>按当前范围补齐</strong><p>只从 {stageLabel(paperStage)}{paperSubject}题库补题，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= 12 || ids.length >= inScope.length}>补齐</button></div>
           {templateMessage && <p className="form-note">{templateMessage}</p>}{pdfError && <p className="form-error">{pdfError}</p>}
