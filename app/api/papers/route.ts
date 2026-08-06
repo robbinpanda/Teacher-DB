@@ -11,6 +11,7 @@ export async function POST(request: Request) {
     title?: string;
     subtitle?: string;
     questionIds?: string[];
+    scores?: Record<string, number>;
     settings?: Record<string, unknown>;
   };
   const id = payload.id?.trim() || crypto.randomUUID();
@@ -42,7 +43,8 @@ export async function POST(request: Request) {
     transaction.prepare("DELETE FROM paper_items WHERE paper_id = ?").run(id);
     const insert = transaction.prepare("INSERT INTO paper_items (paper_id, question_id, position, score) VALUES (?, ?, ?, ?)");
     questionIds.forEach((questionId, position) => {
-      insert.run(id, questionId, position, 0);
+      const score = Math.max(0, Math.min(100, Math.round(Number(payload.scores?.[questionId]) || 0)));
+      insert.run(id, questionId, position, score);
     });
   });
   return Response.json({ id, saved: true, updatedAt: timestamp }, { status: existing ? 200 : 201 });

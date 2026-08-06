@@ -233,6 +233,7 @@ export type QuestionSearchOptions = {
   documentId?: string;
   subject?: string;
   grade?: string;
+  stage?: string;
   year?: number;
   examType?: string;
   region?: string;
@@ -256,6 +257,9 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
   if (options.documentId) { clauses.push("d.id = ?"); params.push(options.documentId); }
   if (options.subject) { clauses.push("d.subject = ?"); params.push(options.subject); }
   if (options.grade) { clauses.push("d.grade = ?"); params.push(options.grade); }
+  if (options.stage === "primary") clauses.push("d.grade NOT LIKE '%初%' AND d.grade NOT LIKE '%高%' AND d.grade NOT LIKE '%七%' AND d.grade NOT LIKE '%八%' AND d.grade NOT LIKE '%九%'");
+  if (options.stage === "middle") clauses.push("(d.grade LIKE '%初%' OR d.grade LIKE '%七%' OR d.grade LIKE '%八%' OR d.grade LIKE '%九%')");
+  if (options.stage === "high") clauses.push("(d.grade LIKE '%高一%' OR d.grade LIKE '%高二%' OR d.grade LIKE '%高三%' OR d.grade LIKE '%高中%')");
   if (options.year) { clauses.push("d.source_year = ?"); params.push(options.year); }
   if (options.examType) { clauses.push("d.source_exam_type = ?"); params.push(options.examType); }
   if (options.region) { clauses.push("d.source_region = ?"); params.push(options.region); }
