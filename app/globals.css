@@ -247,12 +247,12 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* Intelligent paper suite */
-.education-switcher { margin: 14px 12px 6px; padding: 10px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: rgba(255,255,255,.06); }
-.education-switcher > span { display: block; margin-bottom: 7px; color: #adbbb4; font-size: 9px; }
-.education-switcher > div { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; }
-.education-switcher button { border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 5px 2px; background: transparent; color: #c7d2cd; font-size: 9px; cursor: pointer; }
-.education-switcher button.active { border-color: #8cc8aa; background: #d9f1e4; color: #164d36; font-weight: 800; }
-.education-switcher select { width: 100%; margin-top: 6px; border: 1px solid rgba(255,255,255,.14); border-radius: 6px; padding: 6px 7px; background: #263d34; color: white; font-size: 10px; }
+.education-switcher { margin: 10px 4px 18px; padding: 12px; border: 1px solid rgba(217,243,99,.16); border-radius: 13px; background: linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.035)); box-shadow: inset 0 1px rgba(255,255,255,.06), 0 10px 24px rgba(4,20,17,.12); }
+.scope-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-bottom: 10px; }.scope-heading span { color: #8fa49e; font-size: 9px; letter-spacing: .04em; }.scope-heading strong { color: #f1f6f4; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.stage-switch { display: grid; grid-template-columns: repeat(3,1fr); gap: 3px; padding: 3px; border: 1px solid rgba(255,255,255,.055); border-radius: 9px; background: rgba(3,20,16,.28); }
+.stage-switch button { min-height: 29px; border: 0; border-radius: 7px; padding: 0 3px; background: transparent; color: #9eb0aa; font-size: 10px; font-weight: 600; cursor: pointer; transition: color .15s ease, background .15s ease, box-shadow .15s ease; }
+.stage-switch button:hover { color: white; background: rgba(255,255,255,.07); }.stage-switch button.active { background: #d9f363; color: #15352e; font-weight: 800; box-shadow: 0 3px 10px rgba(0,0,0,.18); }.stage-switch button:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+.subject-switch { position: relative; height: 36px; margin-top: 8px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 0 9px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(255,255,255,.055); color: #8fa49e; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }.subject-switch:hover { border-color: rgba(217,243,99,.25); background: rgba(255,255,255,.075); }.subject-switch:focus-within { border-color: #d9f363; box-shadow: 0 0 0 3px rgba(217,243,99,.1); }.subject-switch > span { font-size: 9px; }.subject-switch select { min-width: 0; width: 100%; height: 100%; appearance: none; border: 0; outline: 0; padding: 0; background: transparent; color: white; font-size: 11px; font-weight: 700; cursor: pointer; }.subject-switch select option { color: var(--ink); background: white; }.subject-switch svg { pointer-events: none; color: #aebdb8; }
 .upload-scope-note { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; padding: 9px 11px; border: 1px solid #cde1d6; border-radius: 8px; background: #f2f8f4; }
 .upload-scope-note b { color: var(--green); font-size: 10px; white-space: nowrap; }.upload-scope-note span { color: var(--muted); font-size: 9px; line-height: 1.5; }
 

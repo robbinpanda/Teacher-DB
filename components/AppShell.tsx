@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
+  ChevronDown,
   LibraryBig,
   FilePlus2,
   House,
@@ -70,11 +71,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span><strong>拾题</strong><small>试卷工作台</small></span>
           </Link>
           <div className="education-switcher" aria-label="教学范围">
-            <span>当前教学范围</span>
-            <div>{educationStages.map((item) => <button type="button" key={item.value} className={stage === item.value ? "active" : ""} onClick={() => scope.setStage(item.value)}>{item.label}</button>)}</div>
-            <select aria-label="学科" value={subject} onChange={(event) => scope.setSubject(event.target.value)}>
-              {subjects.map((item) => <option key={item}>{item}</option>)}
-            </select>
+            <div className="scope-heading">
+              <span>教学范围</span>
+              <strong>{educationStages.find((item) => item.value === stage)?.label} · {subject}</strong>
+            </div>
+            <div className="stage-switch" role="group" aria-label="学段">
+              {educationStages.map((item) => (
+                <button
+                  type="button"
+                  key={item.value}
+                  className={stage === item.value ? "active" : ""}
+                  aria-pressed={stage === item.value}
+                  onClick={() => scope.setStage(item.value)}
+                >{item.label}</button>
+              ))}
+            </div>
+            <label className="subject-switch">
+              <span>学科</span>
+              <select aria-label="学科" value={subject} onChange={(event) => scope.setSubject(event.target.value)}>
+                {subjects.map((item) => <option key={item}>{item}</option>)}
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
+            </label>
           </div>
           <nav className="side-nav" aria-label="主导航">
             {navigation.map(({ href, label, icon: Icon }) => {
