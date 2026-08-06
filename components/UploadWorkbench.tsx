@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, FileText, LoaderCircle, ShieldCheck, UploadCloud } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, Gauge, LoaderCircle, ShieldCheck, UploadCloud } from "lucide-react";
 import { educationStages } from "../lib/education-taxonomy";
+import { DEFAULT_UPLOAD_CONCURRENCY, mapWithConcurrency, MAX_UPLOAD_CONCURRENCY, normalizeUploadConcurrency } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
 
 type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "waiting_model" | "done" | "error";
@@ -42,19 +43,6 @@ async function renderPdf(
   }
 }
 
-async function mapWithConcurrency<T, R>(items: T[], concurrency: number, operation: (item: T, index: number) => Promise<R>) {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  async function worker() {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await operation(items[index], index);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-  return results;
-}
-
 async function fetchWithBackoff(url: string, init: RequestInit, attempts = 5) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -77,6 +65,8 @@ export function UploadWorkbench() {
   const { subject, stage } = useEducationScope();
   const inputRef = useRef<HTMLInputElement>(null);
   const [tasks, setTasks] = useState<UploadTask[]>([]);
+  const [concurrency, setConcurrency] = useState(DEFAULT_UPLOAD_CONCURRENCY);
+  const [batchActive, setBatchActive] = useState(false);
   const sourceMeta = { subject, grade: educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级", sourceYear: "", sourceExamType: "", sourceRegion: "", sourceSchool: "" };
   const working = tasks.some((task) => ["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
 
@@ -192,13 +182,19 @@ export function UploadWorkbench() {
   }
 
   async function processFiles(files: File[]) {
-    if (!files.length) return;
+    if (!files.length || batchActive) return;
+    setBatchActive(true);
     const metadata = { ...sourceMeta };
-    const queued = files.slice(0, 50).map((file) => ({ id: crypto.randomUUID(), file }));
+    const batchConcurrency = normalizeUploadConcurrency(concurrency);
+    const queued = files.slice(0, 100).map((file) => ({ id: crypto.randomUUID(), file }));
     setTasks((items) => [...queued.map((item) => ({
       id: item.id, fileName: item.file.name, stage: "idle" as Stage, message: "等待处理…", pageCount: 0, completedPages: 0,
     })), ...items]);
-    await mapWithConcurrency(queued, 2, (item) => processFile(item.file, item.id, metadata));
+    try {
+      await mapWithConcurrency(queued, batchConcurrency, (item) => processFile(item.file, item.id, metadata));
+    } finally {
+      setBatchActive(false);
+    }
   }
 
   function onDrop(event: React.DragEvent<HTMLDivElement>) {
@@ -210,13 +206,22 @@ export function UploadWorkbench() {
     <div className="upload-card card">
       <div className="section-title upload-title"><div><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
       <div className="upload-scope-note"><b>{educationStages.find((item) => item.value === stage)?.label} · {subject}</b><span>年份、考试类型、地区和学校会从卷面标题自动推测，可在试卷详情中随时修改。</span></div>
+      <section className="upload-concurrency" aria-label="批量处理设置">
+        <div className="upload-concurrency-copy"><span><Gauge size={16} /></span><div><strong>同时处理试卷</strong><small>控制 PDF 渲染、分页上传和入队并发；普通电脑建议 2–4 份</small></div></div>
+        <div className="upload-concurrency-inputs">
+          <input aria-label="并发处理数量滑杆" type="range" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrency} disabled={batchActive} onChange={(event) => setConcurrency(normalizeUploadConcurrency(event.target.value))} />
+          <label><input aria-label="并发处理数量" type="number" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrency} disabled={batchActive} onChange={(event) => setConcurrency(normalizeUploadConcurrency(event.target.value))} /><span>份</span></label>
+        </div>
+        <p>{batchActive ? `当前批次已锁定为 ${concurrency} 份并发` : `下一批最多同时处理 ${concurrency} 份；单批最多选择 100 份`}</p>
+      </section>
       <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div
         className={"drop-zone " + (working ? "working " : "")}
         onDragOver={(event) => event.preventDefault()}
-        onDrop={onDrop}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inputRef.current?.click(); } }}
+        onDrop={(event) => { if (batchActive) event.preventDefault(); else onDrop(event); }}
+        onClick={() => { if (!batchActive) inputRef.current?.click(); }}
+        onKeyDown={(event) => { if (!batchActive && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inputRef.current?.click(); } }}
+        aria-disabled={batchActive}
         role="button"
         tabIndex={0}
       >
