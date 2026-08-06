@@ -75,7 +75,7 @@ export function ModelSettings() {
       });
       const result = await response.json() as { message?: string; error?: string };
       if (!response.ok) throw new Error(result.error ?? "连接失败");
-      setMessage("多模态连接成功：" + (result.message ?? "OK"));
+      setMessage("识别服务连接成功：" + (result.message ?? "OK"));
       await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : "连接失败"); }
     finally { setBusy(""); }
@@ -115,7 +115,7 @@ export function ModelSettings() {
   return (
     <div className="page-shell settings-page">
       <header className="page-header">
-        <div><span className="eyebrow"><KeyRound size={14} /> MULTIMODAL MODELS</span><h1>模型与密钥</h1><p>内置 MiMo 2.5 Free 自动使用 OpenCode 公共凭据；自定义模型支持 Chat Completions、OpenAI Responses 和 Anthropic Messages。识题与连通性测试均使用无推理模式。</p></div>
+        <div><span className="eyebrow"><KeyRound size={14} /> 识别服务</span><h1>识别设置</h1><p>管理试卷识别所使用的服务与密钥。连接测试不会保存试卷内容。</p></div>
         <button className="btn" type="button" onClick={() => void load()}><RefreshCw size={15} /> 刷新</button>
       </header>
       {message && <div className="settings-message" role="status">{message}</div>}

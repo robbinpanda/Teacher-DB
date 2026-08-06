@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, Eye, GripVertical, ImageIcon, LoaderCircle, Plus, Save, Settings2, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, Eye, GripVertical, ImageIcon, ListPlus, LoaderCircle, Plus, Save, Settings2, Trash2 } from "lucide-react";
 import type { QuestionWithSource } from "../lib/types";
 import { stageFromGrade, stageLabel } from "../lib/education-taxonomy";
 import { defaultAssetLayout, sectionsFromTemplate, type PaperAssetLayout, type PaperSection, type PaperSettings, type PaperTemplate } from "../lib/paper-templates";
@@ -134,9 +134,9 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   return (
     <div className="paper-builder">
       <header className="paper-topbar no-print">
-        <div><Link href="/bank" className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>智能组卷</strong><small>{stageLabel(scope.stage)} · {scope.subject}</small></span></div>
+        <div><Link href="/bank" className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>组卷</strong><small>{stageLabel(scope.stage)} · {scope.subject}</small></span></div>
         <div className={`paper-save-state ${saveState}`}><Check size={13} /> {saveState === "saving" ? "正在保存…" : saveState === "error" ? "保存失败" : "已自动保存"}</div>
-        <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => setShowAnswers(!showAnswers)}><Eye size={14} /> {showAnswers ? "隐藏答案" : "答案预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={downloading} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading ? "生成中…" : "下载 PDF"}</button></div>
+        <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏答案" : "答案预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={downloading} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading ? "正在生成…" : "下载 PDF"}</button></div>
       </header>
       <div className="paper-workspace">
         <aside className="paper-settings no-print">
@@ -148,7 +148,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
           <label className="edit-field"><span>考生信息栏（顿号分隔）</span><input value={infoFields.join("、")} onChange={(event) => setInfoFields(event.target.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean))} /></label>
           <label className="paper-checkbox"><input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} /> 紧凑排版</label>
           <div className="paper-summary"><div><span>题目</span><strong>{selected.length}</strong></div><div><span>题型</span><strong>{typeCount}</strong></div><div><span>板块</span><strong>{sections.length}</strong></div></div>
-          <div className="smart-fill"><Sparkles size={17} /><div><strong>按当前学科智能补齐</strong><p>只从 {stageLabel(scope.stage)}{scope.subject}题库补题。</p></div><button type="button" onClick={smartFill}>补齐</button></div>
+          <div className="smart-fill"><ListPlus size={17} /><div><strong>按当前范围补齐</strong><p>只从 {stageLabel(scope.stage)}{scope.subject}题库补题，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= 12 || ids.length >= inScope.length}>补齐</button></div>
           <div className="paper-section-editor">
             {sections.map((section) => <div key={section.id}><input aria-label="板块标题" value={section.title} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, title: event.target.value } : item))} /><input aria-label="板块分值说明" value={section.scoreDetail} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, scoreDetail: event.target.value } : item))} /><label>默认每题 <input type="number" min="0" max="100" value={section.defaultScore} onChange={(event) => setSections((items) => items.map((item) => item.id === section.id ? { ...item, defaultScore: Number(event.target.value) } : item))} /> 分</label></div>)}
             <button type="button" className="text-button" onClick={() => setSections((items) => [...items, { id: crypto.randomUUID(), title: `${items.length + 1}、自定义板块`, scoreDetail: "请填写分值说明", acceptedTypes: ["single", "multiple", "fill", "answer"], defaultScore: 5, questionIds: [] }])}><Plus size={13} /> 添加板块</button>

@@ -3,7 +3,7 @@ import { getApprovedQuestions } from "../../../lib/question-repository";
 import { headers } from "next/headers";
 import { getPaperTemplates } from "../../../lib/paper-template-repository";
 
-export const metadata = { title: "智能组卷 · 拾题" };
+export const metadata = { title: "组卷 · 拾题" };
 
 export default async function NewPaperPage({ searchParams }: { searchParams: Promise<{ ids?: string }> }) {
   const query = await searchParams;

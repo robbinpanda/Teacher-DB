@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { BookOpen, Boxes, FilePlus2, LayoutDashboard, Settings, Sparkles } from "lucide-react";
+import {
+  BookOpen,
+  LibraryBig,
+  FilePlus2,
+  House,
+  SlidersHorizontal,
+} from "lucide-react";
 import { educationStages, subjects, type EducationStage } from "../lib/education-taxonomy";
 
 type EducationScopeValue = {
@@ -25,10 +31,10 @@ export function useEducationScope() {
 }
 
 const navigation = [
-  { href: "/", label: "处理中心", icon: LayoutDashboard },
-  { href: "/bank", label: "我的题库", icon: Boxes },
-  { href: "/papers/new", label: "智能组卷", icon: FilePlus2 },
-  { href: "/settings/models", label: "模型设置", icon: Settings },
+  { href: "/", label: "工作台", icon: House },
+  { href: "/bank", label: "题库", icon: LibraryBig },
+  { href: "/papers/new", label: "组卷", icon: FilePlus2 },
+  { href: "/settings/models", label: "识别设置", icon: SlidersHorizontal },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -61,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside className="sidebar">
           <Link href="/" className="brand">
             <span className="brand-mark"><BookOpen size={21} strokeWidth={2.2} /></span>
-            <span><strong>拾题</strong><small>教师题库助手</small></span>
+            <span><strong>拾题</strong><small>试卷工作台</small></span>
           </Link>
           <div className="education-switcher" aria-label="教学范围">
             <span>当前教学范围</span>
@@ -76,16 +82,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               return <Link key={href} href={href} className={active ? "active" : ""}><Icon size={18} /><span>{label}</span></Link>;
             })}
           </nav>
-          <div className="sidebar-card">
-            <Sparkles size={17} />
-            <strong>受控知识标签</strong>
-            <p>模型只会从当前学科、学段的标签库中选择，教师可按需扩充。</p>
-            <span>{educationStages.find((item) => item.value === stage)?.label} · {subject}</span>
-          </div>
-          <div className="sidebar-foot">
-            <Link href="/settings/models" className="settings-link"><Settings size={17} /> 模型与存储设置</Link>
-            <div className="user-row"><span className="avatar">林</span><span><strong>林老师</strong><small>{subject}教研组</small></span></div>
-          </div>
         </aside>
         <main className="app-main">{children}</main>
       </div>

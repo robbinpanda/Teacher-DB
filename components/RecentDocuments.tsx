@@ -48,7 +48,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
             : doc.jobStatus === "queued"
               ? `队列等待 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
               : doc.jobStatus === "processing"
-                ? `AI 识别 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
+                ? `正在识别 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
                 : null;
           const href = doc.status === "complete" ? "/bank" : doc.status === "uploading" ? "/" : `/review/${doc.id}`;
           return (

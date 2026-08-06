@@ -15,7 +15,7 @@ import {
   Info,
   LoaderCircle,
   Plus,
-  Sparkles,
+  RefreshCw,
   Tag,
   Trash2,
   X,
@@ -201,7 +201,7 @@ export function ReviewWorkspace({
             {job.status === "retry_wait" && job.nextAttemptAt && <p className="queue-notice">网络退避中，将在 {new Date(job.nextAttemptAt).toLocaleString()} 自动继续。</p>}
             {(job.lastError || sourceDocument.error) && <p className="form-error">{job.lastError || sourceDocument.error}</p>}
             <div className="header-actions">
-              <button type="button" className="btn btn-primary" disabled={retrying || ["queued", "processing"].includes(job.status ?? "")} onClick={() => void retryExtraction()}><Sparkles size={15} /> {retrying ? "正在加入队列…" : ["queued", "processing", "retry_wait"].includes(job.status ?? "") ? "可靠队列处理中" : "继续未完成页面"}</button>
+              <button type="button" className="btn btn-primary" disabled={retrying || ["queued", "processing"].includes(job.status ?? "")} onClick={() => void retryExtraction()}><RefreshCw size={15} /> {retrying ? "正在加入队列…" : ["queued", "processing", "retry_wait"].includes(job.status ?? "") ? "可靠队列处理中" : "继续未完成页面"}</button>
               {currentPageInfo && <button type="button" className="btn" onClick={() => void addManualQuestion(currentPageInfo.pageNumber)}><Plus size={15} /> 手动补一道题</button>}
             </div>
             {saveError && <p className="form-error">{saveError}</p>}
@@ -489,8 +489,8 @@ export function ReviewWorkspace({
           <input ref={answerInputRef} hidden type="file" multiple accept="application/pdf,image/*" onChange={(event) => void importAnswers(event.target.files)} />
           <button className="btn btn-small" type="button" disabled={answerImporting || approvedCount === 0} title={approvedCount === 0 ? "请先审核入库题目" : ""} onClick={() => answerInputRef.current?.click()}><FileUp size={14} /> {answerImporting ? "答案匹配中…" : "导入答案"}</button>
           <button className="btn btn-small" type="button" onClick={() => setDetailsOpen((value) => !value)}><Info size={14} /> 试卷详情</button>
-          {newResultsAvailable && <button className="btn btn-small" type="button" onClick={() => window.location.reload()}><Sparkles size={14} /> 刷新新识别结果</button>}
-          {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><Sparkles size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
+          {newResultsAvailable && <button className="btn btn-small" type="button" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新识别结果</button>}
+          {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
           {bulkNotice && <span className="bulk-notice">{bulkNotice}</span>}
           <button className="btn btn-primary btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("approve_high_confidence")}><Check size={14} /> {bulkAction === "approve" ? "批量入库中…" : "一键入库 >95%（无警告）"}</button>
           <button className="btn btn-danger-soft btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("remove_all_from_bank")}><Trash2 size={14} /> {bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</button>
@@ -589,7 +589,7 @@ export function ReviewWorkspace({
 
         <aside className="editor-panel no-print">
           <div className="editor-head">
-            <div><span className="eyebrow"><Sparkles size={12} /> AI 提取结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
+            <div><span className="eyebrow">识别结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
             <span className={"confidence " + (active.confidence < .9 ? "medium" : "")}>{Math.round(active.confidence * 100)}% 置信度</span>
           </div>
 
@@ -632,7 +632,7 @@ export function ReviewWorkspace({
                   disabled={reextractingId === active.id}
                   onClick={() => void reextractQuestion()}
                 >
-                  {reextractingId === active.id ? <LoaderCircle size={14} className="spin" /> : <Sparkles size={14} />}
+                  {reextractingId === active.id ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
                   {reextractingId === active.id
                     ? "正在按新题框识别…"
                     : regionAdjusted
