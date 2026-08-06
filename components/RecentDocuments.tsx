@@ -2,16 +2,87 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { AlertTriangle, ArrowRight, Clock3, FileX2, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowRight, Clock3, FileX2, LoaderCircle, RefreshCw, Trash2, X } from "lucide-react";
 import type { SourceDocument } from "../lib/types";
+
+type DocumentGroup = "preprocessing" | "pending_review" | "reviewed";
+
+const groupMeta: Array<{ id: DocumentGroup; title: string; description: string }> = [
+  { id: "preprocessing", title: "AI 预处理中", description: "上传、排队、识别、退避或已暂停的试卷" },
+  { id: "pending_review", title: "待审核", description: "AI 已完成识别，等待人工逐题确认" },
+  { id: "reviewed", title: "已人工审核", description: "全部题目已经人工确认并入库" },
+];
+
+function documentGroup(document: SourceDocument): DocumentGroup {
+  if (document.status === "complete"
+    || (document.status === "reviewing" && document.questionCount > 0 && document.approvedCount === document.questionCount)) {
+    return "reviewed";
+  }
+  if (document.status === "reviewing") return "pending_review";
+  return "preprocessing";
+}
 
 export function RecentDocuments({ initialDocuments }: { initialDocuments: SourceDocument[] }) {
   const router = useRouter();
   const [documents, setDocuments] = useState(initialDocuments);
   const [target, setTarget] = useState<SourceDocument | null>(null);
   const [deletingMode, setDeletingMode] = useState<"with_questions" | "source_only" | null>(null);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState("");
+  const [listError, setListError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      if (document.hidden) return;
+      try {
+        const response = await fetch("/api/documents", { cache: "no-store" });
+        const result = await response.json().catch(() => ({})) as { documents?: SourceDocument[]; error?: string };
+        if (!response.ok || !result.documents) throw new Error(result.error ?? "无法更新试卷状态");
+        if (!cancelled) {
+          setDocuments(result.documents);
+          setListError("");
+        }
+      } catch (caught) {
+        if (!cancelled) setListError(caught instanceof Error ? caught.message : "无法更新试卷状态");
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    const onVisibilityChange = () => { if (!document.hidden) void refresh(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+
+  async function retryDocument(document: SourceDocument) {
+    setRetryingIds((ids) => new Set(ids).add(document.id));
+    setListError("");
+    try {
+      const response = await fetch(`/api/documents/${encodeURIComponent(document.id)}/queue`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ retry: true }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "重新加入识别队列失败");
+      setDocuments((items) => items.map((item) => item.id === document.id
+        ? { ...item, status: "extracting", jobStatus: "queued", jobAttempt: 0, nextAttemptAt: null, lastError: null, failedPageCount: 0 }
+        : item));
+    } catch (caught) {
+      setListError(caught instanceof Error ? caught.message : "重试失败");
+    } finally {
+      setRetryingIds((ids) => {
+        const next = new Set(ids);
+        next.delete(document.id);
+        return next;
+      });
+    }
+  }
 
   async function removeDocument(mode: "with_questions" | "source_only") {
     if (!target) return;
@@ -35,36 +106,67 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
     }
   }
 
+  function renderDocument(doc: SourceDocument) {
+    const recognitionProgress = doc.pageCount ? Math.round(doc.completedPageCount / doc.pageCount * 100) : 0;
+    const reviewed = documentGroup(doc) === "reviewed";
+    const progress = doc.status === "reviewing" || reviewed
+      ? (doc.questionCount ? Math.round(doc.approvedCount / doc.questionCount * 100) : 0)
+      : recognitionProgress;
+    const retrying = retryingIds.has(doc.id);
+    const paused = doc.jobStatus === "failed";
+    const queueLabel = paused
+      ? `已暂停 · 连续失败 ${doc.jobAttempt ?? 8} 次`
+      : doc.jobStatus === "retry_wait"
+        ? `退避中${doc.nextAttemptAt ? ` · ${new Date(doc.nextAttemptAt).toLocaleTimeString("zh-CN")} 自动继续` : ""}`
+        : doc.jobStatus === "queued"
+          ? `队列等待 · 已识别 ${doc.completedPageCount}/${doc.pageCount} 页`
+          : doc.jobStatus === "processing"
+            ? `AI 识别 · 已完成 ${doc.completedPageCount}/${doc.pageCount} 页`
+            : null;
+    const statusLabel = queueLabel ?? (doc.status === "uploading"
+      ? "原卷页面预处理中"
+      : doc.status === "extracting"
+        ? `等待识别 · ${doc.completedPageCount}/${doc.pageCount} 页`
+        : doc.status === "failed"
+          ? `处理已暂停 · 已完成 ${doc.completedPageCount}/${doc.pageCount} 页`
+          : reviewed
+            ? `已人工审核 ${doc.approvedCount}/${doc.questionCount}`
+            : `待审核 · 已确认 ${doc.approvedCount}/${doc.questionCount}`);
+    const href = doc.status === "uploading" ? "/" : `/review/${doc.id}`;
+    return (
+      <div className={`document-row-wrap ${paused ? "paused" : ""}`} key={doc.id}>
+        <Link href={href} className="document-row card">
+          <span className={`document-icon ${doc.subject}`}>{doc.subject.slice(0, 1)}</span>
+          <div className="document-main"><strong>{doc.name}</strong><span><Clock3 size={12} /> {new Date(doc.createdAt).toLocaleString("zh-CN")} · {doc.pageCount} 页 · {doc.grade}</span></div>
+          <div className="document-progress" title={doc.lastError ?? undefined}><div><span>{statusLabel}</span><b>{progress}%</b></div><div className="progress"><span style={{ width: `${progress}%` }} /></div></div>
+          <ArrowRight size={17} className="row-arrow" />
+        </Link>
+        <div className="document-actions">
+          {paused && <button type="button" className="document-retry" disabled={retrying} title="重新识别未完成页面" aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
+          <button type="button" className="document-delete" title="删除试卷" aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="document-list">
-        {documents.map((doc) => {
-          const recognitionProgress = doc.pageCount ? Math.round(doc.completedPageCount / doc.pageCount * 100) : 0;
-          const progress = doc.status === "reviewing" || doc.status === "complete"
-            ? (doc.questionCount ? Math.round(doc.approvedCount / doc.questionCount * 100) : 100)
-            : recognitionProgress;
-          const queueLabel = doc.jobStatus === "retry_wait"
-            ? `网络退避 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
-            : doc.jobStatus === "queued"
-              ? `队列等待 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
-              : doc.jobStatus === "processing"
-                ? `正在识别 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页`
-                : null;
-          const href = doc.status === "complete" ? "/bank" : doc.status === "uploading" ? "/" : `/review/${doc.id}`;
+      {listError && <p className="form-error recent-refresh-error"><AlertTriangle size={14} /> {listError}</p>}
+      <div className="document-groups" aria-live="polite">
+        {groupMeta.map((group) => {
+          const items = documents.filter((document) => documentGroup(document) === group.id);
           return (
-            <div className="document-row-wrap" key={doc.id}>
-              <Link href={href} className="document-row card">
-                <span className={`document-icon ${doc.subject}`}>{doc.subject.slice(0, 1)}</span>
-                <div className="document-main"><strong>{doc.name}</strong><span><Clock3 size={12} /> {new Date(doc.createdAt).toLocaleString("zh-CN")} · {doc.pageCount} 页 · {doc.grade}</span></div>
-                <div className="document-progress"><div><span>{queueLabel ?? (doc.status === "uploading" ? "原卷预处理中" : doc.status === "extracting" ? `等待识别 · ${doc.completedPageCount}/${doc.pageCount} 页` : doc.status === "failed" ? `处理失败 · 已保存 ${doc.completedPageCount}/${doc.pageCount} 页` : doc.status === "complete" ? "已入库" : `已审核 ${doc.approvedCount}/${doc.questionCount}`)}</span><b>{progress}%</b></div><div className="progress"><span style={{ width: `${progress}%` }} /></div></div>
-                <ArrowRight size={17} className="row-arrow" />
-              </Link>
-              <button type="button" className="document-delete" title="删除试卷" aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
-            </div>
+            <section className="document-group" key={group.id}>
+              <div className="document-group-title"><div><h3>{group.title}</h3><p>{group.description}</p></div><span>{items.length}</span></div>
+              <div className="document-list">
+                {items.map(renderDocument)}
+                {!items.length && <div className="document-group-empty">暂无试卷</div>}
+              </div>
+            </section>
           );
         })}
-        {!documents.length && <div className="card empty-state"><h3>还没有处理记录</h3><p>在上方上传第一份 PDF 试卷。</p></div>}
       </div>
+      {!documents.length && <div className="card empty-state"><h3>还没有处理记录</h3><p>在上方上传第一份 PDF 试卷。</p></div>}
 
       {target && (
         <div className="delete-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingMode) setTarget(null); }}>

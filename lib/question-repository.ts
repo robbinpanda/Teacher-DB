@@ -26,6 +26,7 @@ type QuestionRow = {
   pageNumber: number;
   bboxJson: string;
   status: string;
+  needsHumanReview: number | null;
   confidence: number;
   documentName: string;
   subject: string | null;
@@ -132,7 +133,12 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       assets: questionAssets,
       tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
       confidence: row.confidence,
-      status: (["pending", "approved", "needs_attention"].includes(row.status) ? row.status : "pending") as Question["status"],
+      needsHumanReview: row.needsHumanReview !== 0,
+      status: row.status === "approved"
+        ? "approved"
+        : row.needsHumanReview !== 0
+          ? "needs_attention"
+          : "pending",
       source: {
         documentId: row.documentId,
         documentName: row.documentName,
@@ -151,7 +157,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
 const questionSelect = `
   SELECT q.id, q.document_id AS documentId, q.number, q.type, q.stem,
          q.options_json AS optionsJson, q.answer, q.analysis, q.page_number AS pageNumber,
-         q.bbox_json AS bboxJson, q.status, q.confidence,
+         q.bbox_json AS bboxJson, q.status, q.needs_human_review AS needsHumanReview, q.confidence,
          d.name AS documentName, d.subject, d.grade, d.source_year AS sourceYear,
          d.source_exam_type AS sourceExamType, d.source_region AS sourceRegion,
          d.source_school AS sourceSchool, d.source_removed_at AS sourceRemovedAt
@@ -331,7 +337,8 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
             (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'complete') AS completedPageCount,
             (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'failed') AS failedPageCount,
             (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'retry_wait') AS retryWaitPageCount,
-            j.status AS jobStatus, j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError
+            j.status AS jobStatus, j.attempt AS jobAttempt,
+            j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
        LEFT JOIN document_jobs j ON j.document_id = d.id
       WHERE d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id ORDER BY d.created_at DESC LIMIT 100`,

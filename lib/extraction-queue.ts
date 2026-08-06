@@ -4,9 +4,9 @@ import { getSqlite, sqliteTransaction } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
 import { resolveModelProfile } from "./model-profiles";
 import { now } from "./server";
+import { MAX_EXTRACTION_ATTEMPTS, retryDelayMs, shouldPauseExtraction } from "./extraction-retry";
 
 const MAX_ACTIVE_DOCUMENTS = 2;
-const MAX_PAGE_ATTEMPTS = 8;
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 25_000;
 
@@ -38,13 +38,6 @@ declare global {
 
 function futureIso(delayMs: number) {
   return new Date(Date.now() + delayMs).toISOString();
-}
-
-export function retryDelayMs(attempt: number, requestedMs?: number) {
-  if (requestedMs && requestedMs > 0) return Math.min(requestedMs, 30 * 60_000);
-  const steps = [5, 15, 30, 60, 120, 300, 600, 900];
-  const seconds = steps[Math.min(Math.max(attempt - 1, 0), steps.length - 1)];
-  return seconds * 1000 + Math.floor(Math.random() * Math.min(5000, seconds * 200));
 }
 
 function schedulePump(delayMs = 0) {
@@ -94,6 +87,8 @@ export async function enqueueDocumentExtraction(input: {
            attempt = CASE WHEN status = 'failed' THEN 0 ELSE attempt END
          WHERE document_id = ? AND status <> 'complete'`,
       ).run(input.documentId);
+      transaction.prepare("UPDATE document_jobs SET attempt = 0 WHERE document_id = ?")
+        .run(input.documentId);
     }
     transaction.prepare(
       `INSERT INTO document_jobs
@@ -258,7 +253,7 @@ async function processJob(job: JobRow & { workerId: string }) {
       if (response.ok) continue;
       const failure = await response.json() as ExtractionFailure;
       const attempt = run.attempt + 1;
-      const retryable = failure.retryable !== false && attempt < MAX_PAGE_ATTEMPTS;
+      const retryable = failure.retryable !== false && !shouldPauseExtraction(attempt);
       const timestamp = now();
       const message = (failure.error ?? "页面识别失败").slice(0, 4000);
       if (retryable) {
@@ -296,11 +291,33 @@ async function processJob(job: JobRow & { workerId: string }) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "队列工作进程异常";
     const timestamp = now();
-    getSqlite().prepare(
-      `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
-         lease_expires_at = NULL, last_error = ?, updated_at = ?
-       WHERE document_id = ? AND lease_owner = ?`,
-    ).run(futureIso(retryDelayMs(1)), message.slice(0, 4000), timestamp, job.documentId, job.workerId);
+    const attempt = job.attempt + 1;
+    const paused = shouldPauseExtraction(attempt);
+    sqliteTransaction((transaction) => {
+      if (paused) {
+        transaction.prepare(
+          `UPDATE extraction_runs SET status = 'failed', error = ?, error_code = 'worker_error',
+             next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL, finished_at = ?
+           WHERE document_id = ? AND status <> 'complete'`,
+        ).run(message.slice(0, 4000), timestamp, job.documentId);
+        transaction.prepare(
+          `UPDATE document_jobs SET status = 'failed', next_attempt_at = NULL, lease_owner = NULL,
+             lease_expires_at = NULL, last_error = ?, finished_at = ?, updated_at = ?
+           WHERE document_id = ? AND lease_owner = ?`,
+        ).run(message.slice(0, 4000), timestamp, timestamp, job.documentId, job.workerId);
+        transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
+          .run(`连续 ${MAX_EXTRACTION_ATTEMPTS} 次处理失败，任务已暂停：${message}`.slice(0, 4000), timestamp, job.documentId);
+      } else {
+        const nextAttemptAt = futureIso(retryDelayMs(attempt));
+        transaction.prepare(
+          `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
+             lease_expires_at = NULL, last_error = ?, updated_at = ?
+           WHERE document_id = ? AND lease_owner = ?`,
+        ).run(nextAttemptAt, message.slice(0, 4000), timestamp, job.documentId, job.workerId);
+        transaction.prepare("UPDATE documents SET status = 'extracting', error = ?, updated_at = ? WHERE id = ?")
+          .run(`处理异常，将在 ${nextAttemptAt} 自动重试：${message}`.slice(0, 4000), timestamp, job.documentId);
+      }
+    });
   } finally {
     clearInterval(beat);
   }

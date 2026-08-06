@@ -17,7 +17,7 @@ if errorlevel 1 (
   goto :failed
 )
 
-where npm >nul 2>nul
+where npm.cmd >nul 2>nul
 if errorlevel 1 (
   echo [ERROR] npm was not found. Reinstall Node.js with npm included.
   goto :failed
@@ -44,10 +44,11 @@ if not errorlevel 1 (
   goto :finished
 )
 
-if not exist "node_modules\next\dist\bin\next" (
+node -e "require('next/package.json');require('better-sqlite3');" >nul 2>nul
+if errorlevel 1 (
   echo [SETUP] Installing project dependencies. Keep the network connected.
   echo.
-  call npm install
+  call npm.cmd ci
   if errorlevel 1 (
     echo.
     echo [ERROR] Dependency installation failed. Check the network and try again.
@@ -63,7 +64,7 @@ echo [INFO] Keep this window open. Close it to stop the app.
 echo.
 
 start "" /b powershell.exe -NoProfile -WindowStyle Hidden -Command "$url='http://localhost:3050'; for($i=0;$i -lt 120;$i++){ try { $response=Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2; if($response.StatusCode -ge 200){ Start-Process $url; exit } } catch {}; Start-Sleep -Seconds 1 }"
-call npm run dev
+call npm.cmd run dev
 
 echo.
 echo [INFO] The app has stopped.

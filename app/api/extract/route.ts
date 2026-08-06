@@ -3,7 +3,7 @@ import { getDb, getSqlite, sqliteTransaction } from "../../../db";
 import { ensureDatabase } from "../../../db/bootstrap";
 import { assets, documents, extractionRuns, pages, questions } from "../../../db/schema";
 import { resolveModelProfile } from "../../../lib/model-profiles";
-import { hasIncompleteSubquestionAnalysis, mergeContinuationText, mergeQuestionOptions } from "../../../lib/question-continuation";
+import { mergeContinuationText, mergeQuestionOptions } from "../../../lib/question-continuation";
 import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../lib/vision-model";
@@ -11,6 +11,7 @@ import { contentTypeForKey, getFile } from "../../../lib/file-storage";
 import { resolveExtractionPage } from "../../../lib/extraction-pages";
 import { stageFromGrade } from "../../../lib/education-taxonomy";
 import { getTagCatalog } from "../../../lib/tag-catalog";
+import { modelNeedsHumanReview } from "../../../lib/model-review";
 
 export const runtime = "nodejs";
 
@@ -22,17 +23,18 @@ const systemPrompt = [
   "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；page 必须填写提示中的原卷真实页码（例如主页面为第9页时写9，绝不能按输入图片顺序写1）；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
   "4. bbox 必须贴合内容：包含题号、完整题干、选项、作答横线及属于该题的图注；排除页眉、页脚、密封线、装订线、空白页边和相邻题目。边缘可留 0.3%-0.8% 安全余量，不要使用整页大框。",
   "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
-  "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。tags 只能从用户提示给出的允许标签中选择 1-3 个，禁止创造近义标签或临时标签。confidence 要反映文字与框选两者中较低的可信度。",
+  "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。tags 只能从用户提示给出的允许标签中选择 1-3 个，禁止创造近义标签或临时标签。confidence 要反映文字与框选两者中较低的可信度，但仅用于展示，绝不能用它决定是否需要人工核查。",
   "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联，同时为答案或解析在本次实际可见的每一页输出 regions。跨页解析必须始终沿用同一题号，系统会逐页合并为完整 analysis。",
   "7a. 大题完整性优先：一道大题包含（1）（2）或【小问1详解】【小问2详解】等多个小问时，必须把所有小问的题干、答案和解析合并到同一个顶层题号。看到【小问1详解】绝不表示大题结束；必须继续向下并检查下一页，直到出现下一个独立顶层阿拉伯数字题号或本卷结束。",
   "7b. 主页面可能同时包含上一题的续页和下一题的开头。必须先找出页面上每个独立顶层题号的印刷位置，再按这些位置切分：页面顶部至下一个顶层题号之前属于已保存的跨页候选；新题 region 必须从它自己的顶层题号所在行开始。此时要同时输出前题续页和后题新题，两个 region 不得互换、重叠或错误覆盖页面顶部空白。",
   "7c. 新题的主页面 region 必须实际包住它自己的可见顶层题号；只有提示中列出的跨页候选允许在续页 region 内没有题号。长题干或长解析不得配一个角落小框。若文字量与框面积明显不相称，必须重新检查框边界后再输出。",
-  "8. 输出前逐题自检：逐项核对题干中出现的每个（1）（2）等小问在 answer/analysis 中是否完整；逐页核对 region 从本题第一行到下一顶层题号前最后一行；region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。任一文字或框选不清楚时降低 confidence，不要猜测。",
+  "8. 输出前逐题自检：逐项核对题干中出现的每个（1）（2）等小问在 answer/analysis 中是否完整；逐页核对 region 从本题第一行到下一顶层题号前最后一行；region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。",
+  "8a. questions 和 answerUpdates 中都必须输出布尔字段 needsHumanReview。只要存在文字模糊、内容缺失、答案解析不完整、题型或框选存疑等任何问题，就输出 true；只有确认完整且无需再次人工核查时才输出 false。不确定时必须输出 true，禁止省略或输出字符串。",
   "主页面没有题号或题目开头、只有下一页 region 的候选题必须丢弃；严禁为了保留它而补造默认 bbox。",
   "number 只填写整道大题的阿拉伯数字题号；（1）、【小问1】、步骤讲解必须合并进所属大题，禁止单独创建为题目。",
   "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
   "JSON 格式：",
-  "{\"documentMeta\":{\"subject\":\"数学\",\"grade\":\"九年级\",\"year\":2026,\"examType\":\"二模\",\"region\":\"上海市徐汇区\",\"school\":\"\"},\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"允许标签之一\"],\"confidence\":0.95}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
+  "{\"documentMeta\":{\"subject\":\"数学\",\"grade\":\"九年级\",\"year\":2026,\"examType\":\"二模\",\"region\":\"上海市徐汇区\",\"school\":\"\"},\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"允许标签之一\"],\"confidence\":0.95,\"needsHumanReview\":false}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"needsHumanReview\":false,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
 ].join("\n");
 
 function safeBox(value: unknown): BoundingBox {
@@ -45,13 +47,6 @@ function safeBox(value: unknown): BoundingBox {
     width: Math.max(1, Math.min(100 - x, Number(box?.width ?? 10))),
     height: Math.max(1, Math.min(100 - y, Number(box?.height ?? 10))),
   };
-}
-
-function containsBox(container: BoundingBox, child: BoundingBox, tolerance = 0.75) {
-  return child.x >= container.x - tolerance
-    && child.y >= container.y - tolerance
-    && child.x + child.width <= container.x + container.width + tolerance
-    && child.y + child.height <= container.y + container.height + tolerance;
 }
 
 function hasExplicitBox(value: unknown) {
@@ -74,6 +69,7 @@ type AnswerUpdate = {
   answer: string;
   analysis: string;
   confidence: number;
+  needsHumanReview: boolean;
   regions: Array<{ page: number; bbox: BoundingBox }>;
 };
 
@@ -111,10 +107,6 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
         bbox: safeBox(entry.bbox),
       };
     }).filter((asset) => availablePages.includes(asset.page));
-    const assetGeometryNeedsReview = normalizedAssets.length !== rawAssets.length || normalizedAssets.some((asset) => {
-      const region = uniqueRegions.find((candidate) => candidate.page === asset.page);
-      return !region || !containsBox(region.bbox, asset.bbox);
-    });
     const confidence = Math.max(0, Math.min(1, Number(item.confidence ?? 0)));
     const stem = String(item.stem ?? "");
     const options = Array.isArray(item.options) ? item.options.map((option) => {
@@ -123,10 +115,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
     }) : undefined;
     const answer = String(item.answer ?? "");
     const analysis = String(item.analysis ?? "");
-    const visibleTextLength = [stem, ...(options ?? []).map((option) => option.content), answer, analysis].join("").replace(/\s/g, "").length;
-    const regionArea = uniqueRegions.reduce((sum, region) => sum + region.bbox.width * region.bbox.height, 0);
-    const geometryNeedsReview = visibleTextLength >= 160 && regionArea < 220;
-    const subquestionsNeedReview = hasIncompleteSubquestionAnalysis(stem, analysis);
+    const needsHumanReview = modelNeedsHumanReview(item.needsHumanReview);
     return {
       id,
       number: questionNumber,
@@ -141,7 +130,8 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
       assets: normalizedAssets,
       tags: Array.isArray(item.tags) ? Array.from(new Set(item.tags.map(String).filter((tag) => allowed.has(tag)))).slice(0, 3) : [],
       confidence,
-      status: confidence >= .92 && !assetGeometryNeedsReview && !geometryNeedsReview && !subquestionsNeedReview ? "pending" : "needs_attention",
+      needsHumanReview,
+      status: needsHumanReview ? "needs_attention" : "pending",
     };
   }).filter((question): question is Question => question !== null);
   const answerUpdates = rawUpdates.map((value) => {
@@ -157,6 +147,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
       answer: String(item.answer ?? ""),
       analysis: String(item.analysis ?? ""),
       confidence: Math.max(0, Math.min(1, Number(item.confidence ?? 0))),
+      needsHumanReview: modelNeedsHumanReview(item.needsHumanReview),
       regions,
     };
   }).filter((item) => /^\d+$/.test(item.number) && (item.answer || item.analysis));
@@ -274,7 +265,8 @@ export async function POST(request: Request) {
       transaction.prepare("DELETE FROM questions WHERE document_id = ? AND page_number = ?").run(documentId, pageNumber);
       for (const question of extracted) {
         const existingQuestion = transaction.prepare(
-          `SELECT id, stem, options_json AS optionsJson, answer, analysis, status, confidence
+          `SELECT id, stem, options_json AS optionsJson, answer, analysis, status,
+                  needs_human_review AS needsHumanReview, confidence
              FROM questions WHERE document_id = ? AND number = ? LIMIT 1`,
         ).get(documentId, question.number) as {
           id: string;
@@ -283,6 +275,7 @@ export async function POST(request: Request) {
           answer: string;
           analysis: string;
           status: Question["status"];
+          needsHumanReview: number | null;
           confidence: number;
         } | undefined;
         const questionId = existingQuestion?.id ?? question.id;
@@ -294,18 +287,17 @@ export async function POST(request: Request) {
           const mergedConfidence = existingQuestion.confidence > 0
             ? Math.min(existingQuestion.confidence, question.confidence)
             : question.confidence;
+          const mergedNeedsHumanReview = existingQuestion.needsHumanReview !== 0 || question.needsHumanReview;
           const mergedStatus = existingQuestion.status === "approved"
             ? "approved"
-            : existingQuestion.status === "needs_attention" || question.status === "needs_attention"
-              ? "needs_attention"
-              : "pending";
+            : mergedNeedsHumanReview ? "needs_attention" : "pending";
           transaction.prepare(
             `UPDATE questions SET
-               stem = ?, options_json = ?, answer = ?, analysis = ?, status = ?,
+               stem = ?, options_json = ?, answer = ?, analysis = ?, status = ?, needs_human_review = ?,
                confidence = ?, score = 0, updated_at = ?
              WHERE id = ?`,
           ).run(
-            mergedStem, JSON.stringify(mergedOptions), mergedAnswer, mergedAnalysis, mergedStatus,
+            mergedStem, JSON.stringify(mergedOptions), mergedAnswer, mergedAnalysis, mergedStatus, mergedNeedsHumanReview ? 1 : 0,
             mergedConfidence, createdAt, questionId,
           );
           question.id = questionId;
@@ -314,16 +306,17 @@ export async function POST(request: Request) {
           question.answer = mergedAnswer;
           question.analysis = mergedAnalysis;
           question.status = mergedStatus;
+          question.needsHumanReview = mergedNeedsHumanReview;
           question.confidence = mergedConfidence;
         } else {
           transaction.prepare(
             `INSERT INTO questions
-              (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json, status, confidence, score, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json, status, needs_human_review, confidence, score, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).run(
             questionId, documentId, question.number, question.type, question.stem,
             JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
-            JSON.stringify(question.bbox), question.status, question.confidence, 0, createdAt, createdAt,
+            JSON.stringify(question.bbox), question.status, question.needsHumanReview ? 1 : 0, question.confidence, 0, createdAt, createdAt,
           );
         }
         for (const [regionIndex, region] of question.regions.entries()) {
@@ -352,13 +345,14 @@ export async function POST(request: Request) {
       }
       for (const update of normalized.answerUpdates) {
         const target = transaction.prepare(
-          "SELECT id, stem, answer, analysis, confidence, status FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
+          "SELECT id, stem, answer, analysis, needs_human_review AS needsHumanReview, confidence, status FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
         ).get(documentId, update.number) as {
           id: string;
           stem: string;
           answer: string;
           analysis: string;
           confidence: number;
+          needsHumanReview: number | null;
           status: Question["status"];
         } | undefined;
         if (!target) continue;
@@ -367,13 +361,13 @@ export async function POST(request: Request) {
         const mergedConfidence = target.confidence > 0
           ? Math.min(target.confidence, update.confidence)
           : update.confidence;
-        const subquestionsNeedReview = hasIncompleteSubquestionAnalysis(target.stem, mergedAnalysis);
+        const mergedNeedsHumanReview = target.needsHumanReview !== 0 || update.needsHumanReview;
         const mergedStatus = target.status === "approved"
           ? "approved"
-          : mergedConfidence >= .92 && !subquestionsNeedReview ? target.status : "needs_attention";
+          : mergedNeedsHumanReview ? "needs_attention" : "pending";
         transaction.prepare(
-          `UPDATE questions SET answer = ?, analysis = ?, confidence = ?, status = ?, updated_at = ? WHERE id = ?`,
-        ).run(mergedAnswer, mergedAnalysis, mergedConfidence, mergedStatus, finishedAt, target.id);
+          `UPDATE questions SET answer = ?, analysis = ?, needs_human_review = ?, confidence = ?, status = ?, updated_at = ? WHERE id = ?`,
+        ).run(mergedAnswer, mergedAnalysis, mergedNeedsHumanReview ? 1 : 0, mergedConfidence, mergedStatus, finishedAt, target.id);
         for (const [regionIndex, region] of update.regions.entries()) {
           const regionPage = sourcePages.find((page) => page.pageNumber === region.page);
           transaction.prepare(
@@ -512,6 +506,7 @@ async function loadPageQuestions(documentId: string, pageNumber: number): Promis
     })),
     tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
     confidence: row.confidence,
-    status: row.status as Question["status"],
+    needsHumanReview: row.needsHumanReview !== false,
+    status: row.status === "approved" ? "approved" : row.needsHumanReview !== false ? "needs_attention" : "pending",
   }));
 }

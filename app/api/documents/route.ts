@@ -1,9 +1,10 @@
 import { getDb } from "../../../db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { ensureDatabase } from "../../../db/bootstrap";
-import { documents, questions } from "../../../db/schema";
+import { documents } from "../../../db/schema";
 import { now, requestOwner } from "../../../lib/server";
 import { putFile } from "../../../lib/file-storage";
+import { getDocuments } from "../../../lib/question-repository";
 
 export const runtime = "nodejs";
 
@@ -15,17 +16,8 @@ function hex(bytes: ArrayBuffer) {
 }
 
 export async function GET(request: Request) {
-  await ensureDatabase();
-  const ownerId = requestOwner(request);
-  const db = getDb();
-  const rows = await db.select().from(documents).where(eq(documents.ownerId, ownerId)).orderBy(desc(documents.createdAt));
-  const counts = await db.select({ documentId: questions.documentId }).from(questions);
-  return Response.json({
-    documents: rows.map((document) => ({
-      ...document,
-      questionCount: counts.filter((item) => item.documentId === document.id).length,
-    })),
-  });
+  const rows = await getDocuments(requestOwner(request));
+  return Response.json({ documents: rows }, { headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(request: Request) {

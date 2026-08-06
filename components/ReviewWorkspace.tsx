@@ -16,6 +16,7 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
+  Sparkles,
   Tag,
   Trash2,
   X,
@@ -341,7 +342,7 @@ export function ReviewWorkspace({
       });
       const result = await response.json().catch(() => ({})) as {
         error?: string;
-        recognition?: Pick<Question, "type" | "stem" | "options" | "answer" | "analysis" | "tags" | "confidence">;
+        recognition?: Pick<Question, "type" | "stem" | "options" | "answer" | "analysis" | "tags" | "confidence" | "needsHumanReview">;
       };
       if (!response.ok || !result.recognition) throw new Error(result.error ?? "重新识别失败");
       const recognition = result.recognition;
@@ -354,7 +355,7 @@ export function ReviewWorkspace({
         regions: target.regions,
         page: target.regions[0]?.page ?? target.page,
         bbox: target.regions[0]?.bbox ?? target.bbox,
-        status: "pending",
+        status: recognition.needsHumanReview ? "needs_attention" : "pending",
       };
       const saveResponse = await fetch(`/api/questions/${encodeURIComponent(target.id)}`, {
         method: "PUT",
@@ -393,9 +394,9 @@ export function ReviewWorkspace({
     if (firstQuestion) setActiveId(firstQuestion.id);
   }
 
-  async function runBulkAction(action: "approve_high_confidence" | "remove_all_from_bank") {
+  async function runBulkAction(action: "approve_without_review" | "remove_all_from_bank") {
     if (action === "remove_all_from_bank" && !window.confirm("将本试卷所有已入库题目移出题库？题目内容、页面框选和审核记录都会保留，可以之后重新入库。")) return;
-    setBulkAction(action === "approve_high_confidence" ? "approve" : "remove");
+    setBulkAction(action === "approve_without_review" ? "approve" : "remove");
     setSaveError("");
     setBulkNotice("");
     try {
@@ -404,12 +405,12 @@ export function ReviewWorkspace({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const result = await response.json().catch(() => ({})) as { error?: string; changed?: number; highConfidenceWarnings?: number };
+      const result = await response.json().catch(() => ({})) as { error?: string; changed?: number; reviewRequired?: number };
       if (!response.ok) throw new Error(result.error ?? "批量操作失败");
-      if (action === "approve_high_confidence") {
-        setQuestions((items) => items.map((item) => item.confidence > .95 && item.status === "pending" ? { ...item, status: "approved" } : item));
+      if (action === "approve_without_review") {
+        setQuestions((items) => items.map((item) => !item.needsHumanReview && item.status === "pending" ? { ...item, status: "approved" } : item));
         setShowUnapprovedSummary(true);
-        setBulkNotice(`已入库 ${result.changed ?? 0} 道高置信度题目${result.highConfidenceWarnings ? `；另有 ${result.highConfidenceWarnings} 道虽超过 95% 但存在完整性警告，未自动入库` : ""}`);
+        setBulkNotice(`已入库 ${result.changed ?? 0} 道模型明确判定无需核查的题目${result.reviewRequired ? `；另有 ${result.reviewRequired} 道需要人工核查` : ""}`);
       } else {
         setQuestions((items) => items.map((item) => item.status === "approved" ? { ...item, status: "pending" } : item));
         setShowUnapprovedSummary(false);
@@ -492,7 +493,7 @@ export function ReviewWorkspace({
           {newResultsAvailable && <button className="btn btn-small" type="button" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新识别结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
           {bulkNotice && <span className="bulk-notice">{bulkNotice}</span>}
-          <button className="btn btn-primary btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("approve_high_confidence")}><Check size={14} /> {bulkAction === "approve" ? "批量入库中…" : "一键入库 >95%（无警告）"}</button>
+          <button className="btn btn-primary btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "批量入库中…" : "一键入库：模型判定无需核查"}</button>
           <button className="btn btn-danger-soft btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("remove_all_from_bank")}><Trash2 size={14} /> {bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</button>
         </div>
       </header>
@@ -515,7 +516,7 @@ export function ReviewWorkspace({
                       type="button"
                       key={question.id}
                       className={question.status === "needs_attention" ? "warning" : ""}
-                      title={question.status === "needs_attention" ? `第 ${question.number} 题存在识别或完整性警告` : `第 ${question.number} 题未达到自动入库条件`}
+                      title={question.status === "needs_attention" ? `第 ${question.number} 题被模型标记为需要人工核查` : `第 ${question.number} 题尚未入库`}
                       onClick={() => selectQuestion(question)}
                     >{question.number}</button>
                   ))}
@@ -589,8 +590,8 @@ export function ReviewWorkspace({
 
         <aside className="editor-panel no-print">
           <div className="editor-head">
-            <div><span className="eyebrow">识别结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
-            <span className={"confidence " + (active.confidence < .9 ? "medium" : "")}>{Math.round(active.confidence * 100)}% 置信度</span>
+            <div><span className="eyebrow"><Sparkles size={12} /> AI 提取结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
+            <span className="confidence">{active.needsHumanReview ? "模型标记：需要人工核查" : "模型标记：无需再次核查"} · {Math.round(active.confidence * 100)}% 置信度（仅供参考）</span>
           </div>
 
           <div className="cross-page-regions">

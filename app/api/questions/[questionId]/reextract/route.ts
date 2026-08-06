@@ -7,6 +7,7 @@ import type { BoundingBox, QuestionType } from "../../../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../../../lib/vision-model";
 import { stageFromGrade } from "../../../../../lib/education-taxonomy";
 import { getTagCatalog } from "../../../../../lib/tag-catalog";
+import { modelNeedsHumanReview } from "../../../../../lib/model-review";
 
 export const runtime = "nodejs";
 
@@ -96,7 +97,8 @@ export async function POST(request: Request, context: { params: Promise<{ questi
         "严格区分题干、选项、答案和解析；没有答案或解析时返回空字符串。数学表达式使用单个 $ 包裹的 LaTeX。",
         `tags 只能从下列允许标签中逐字选择 1-3 个，禁止自造标签：${JSON.stringify(allowedTags)}`,
         "只返回严格 JSON，不要 Markdown 或解释。",
-        "格式：{\"type\":\"single|multiple|fill|answer\",\"stem\":\"\",\"options\":[{\"key\":\"A\",\"content\":\"\"}],\"answer\":\"\",\"analysis\":\"\",\"tags\":[\"允许标签之一\"],\"confidence\":0.95}",
+        "必须输出布尔字段 needsHumanReview；有任何模糊、缺失或不确定就输出 true，只有确认完整且无需再次人工核查才输出 false。confidence 仅供展示，不用于决定核查状态。",
+        "格式：{\"type\":\"single|multiple|fill|answer\",\"stem\":\"\",\"options\":[{\"key\":\"A\",\"content\":\"\"}],\"answer\":\"\",\"analysis\":\"\",\"tags\":[\"允许标签之一\"],\"confidence\":0.95,\"needsHumanReview\":false}",
       ].join("\n"),
       text: `这是第 ${question.number} 题，原题型为 ${question.type}。请根据 ${uniqueRegions.length} 个已校正题框重新识别完整内容。`,
       images,
@@ -121,6 +123,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
         analysis: String(parsed.analysis ?? "").trim(),
         tags: Array.isArray(parsed.tags) ? Array.from(new Set(parsed.tags.map(String).map((tag) => tag.trim()).filter((tag) => allowedTags.includes(tag)))).slice(0, 3) : [],
         confidence: Math.max(0, Math.min(1, Number(parsed.confidence ?? 0))),
+        needsHumanReview: modelNeedsHumanReview(parsed.needsHumanReview),
       },
       provider: result.profile.provider,
       model: result.profile.model,

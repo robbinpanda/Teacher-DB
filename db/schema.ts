@@ -75,6 +75,7 @@ export const questions = sqliteTable("questions", {
   pageNumber: integer("page_number").notNull(),
   bboxJson: text("bbox_json").notNull(),
   status: text("status").notNull().default("pending"),
+  needsHumanReview: integer("needs_human_review", { mode: "boolean" }),
   confidence: real("confidence").notNull().default(0),
   score: integer("score").notNull().default(0),
   createdAt: text("created_at").notNull(),

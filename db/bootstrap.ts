@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS questions (
   id TEXT PRIMARY KEY NOT NULL, document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   number TEXT NOT NULL, type TEXT NOT NULL, stem TEXT NOT NULL, options_json TEXT, answer TEXT NOT NULL DEFAULT '',
   analysis TEXT NOT NULL DEFAULT '', page_number INTEGER NOT NULL, bbox_json TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending', confidence REAL NOT NULL DEFAULT 0, score INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending', needs_human_review INTEGER, confidence REAL NOT NULL DEFAULT 0, score INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS questions_document_page_idx ON questions(document_id, page_number);
@@ -138,6 +138,7 @@ const upgrades: Record<string, Record<string, string>> = {
   },
   questions: {
     confidence: "REAL NOT NULL DEFAULT 0",
+    needs_human_review: "INTEGER",
     score: "INTEGER NOT NULL DEFAULT 0",
   },
   question_assets: {

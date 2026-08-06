@@ -9,9 +9,9 @@ export async function POST(request: Request, context: { params: Promise<{ docume
   const { documentId } = await context.params;
   const ownerId = requestOwner(request);
   const payload = await request.json().catch(() => ({})) as {
-    action?: "approve_high_confidence" | "remove_all_from_bank";
+    action?: "approve_without_review" | "remove_all_from_bank";
   };
-  if (!new Set(["approve_high_confidence", "remove_all_from_bank"]).has(payload.action ?? "")) {
+  if (!new Set(["approve_without_review", "remove_all_from_bank"]).has(payload.action ?? "")) {
     return Response.json({ error: "批量操作无效" }, { status: 400 });
   }
   const sqlite = getSqlite();
@@ -23,31 +23,38 @@ export async function POST(request: Request, context: { params: Promise<{ docume
 
   const timestamp = now();
   const changed = sqliteTransaction((transaction) => {
-    const result = payload.action === "approve_high_confidence"
+    const result = payload.action === "approve_without_review"
       ? transaction.prepare(
           `UPDATE questions SET status = 'approved', updated_at = ?
-            WHERE document_id = ? AND confidence > 0.95 AND status = 'pending'`,
+            WHERE document_id = ? AND needs_human_review = 0 AND status = 'pending'`,
         ).run(timestamp, documentId)
       : transaction.prepare(
           `UPDATE questions SET status = 'pending', updated_at = ?
             WHERE document_id = ? AND status = 'approved'`,
         ).run(timestamp, documentId);
     transaction.prepare(
-      "UPDATE documents SET status = 'reviewing', updated_at = ? WHERE id = ?",
-    ).run(timestamp, documentId);
+      `UPDATE documents SET status = CASE
+         WHEN ? = 'approve_without_review'
+           AND page_count > 0
+           AND (SELECT COUNT(*) FROM extraction_runs WHERE document_id = documents.id AND status = 'complete') >= page_count
+           AND EXISTS (SELECT 1 FROM questions WHERE document_id = documents.id)
+           AND NOT EXISTS (SELECT 1 FROM questions WHERE document_id = documents.id AND status <> 'approved')
+         THEN 'complete' ELSE 'reviewing' END,
+       updated_at = ? WHERE id = ?`,
+    ).run(payload.action, timestamp, documentId);
     return result.changes;
   });
   const counts = sqlite.prepare(
     `SELECT COUNT(*) AS total,
             SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
-            SUM(CASE WHEN confidence > 0.95 AND status = 'needs_attention' THEN 1 ELSE 0 END) AS highConfidenceWarnings
+            SUM(CASE WHEN status <> 'approved' AND (needs_human_review IS NULL OR needs_human_review <> 0) THEN 1 ELSE 0 END) AS reviewRequired
        FROM questions WHERE document_id = ?`,
-  ).get(documentId) as { total: number; approved: number | null; highConfidenceWarnings: number | null };
+  ).get(documentId) as { total: number; approved: number | null; reviewRequired: number | null };
   return Response.json({
     action: payload.action,
     changed,
     total: counts.total,
     approved: counts.approved ?? 0,
-    highConfidenceWarnings: counts.highConfidenceWarnings ?? 0,
+    reviewRequired: counts.reviewRequired ?? 0,
   });
 }

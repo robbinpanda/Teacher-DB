@@ -39,6 +39,7 @@ export type Question = {
   assets: QuestionAsset[];
   tags: string[];
   confidence: number;
+  needsHumanReview: boolean;
   status: "pending" | "approved" | "needs_attention";
 };
 
@@ -56,6 +57,7 @@ export type SourceDocument = {
   failedPageCount: number;
   retryWaitPageCount: number;
   jobStatus?: string | null;
+  jobAttempt?: number | null;
   nextAttemptAt?: string | null;
   lastError?: string | null;
 };

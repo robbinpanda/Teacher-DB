@@ -99,10 +99,10 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
     sqliteTransaction((transaction) => {
       transaction.prepare(
         `UPDATE questions SET number = ?, type = ?, stem = ?, options_json = ?, answer = ?, analysis = ?,
-           bbox_json = ?, status = ?, confidence = ?, score = ?, updated_at = ? WHERE id = ?`,
+           bbox_json = ?, status = ?, needs_human_review = ?, confidence = ?, score = ?, updated_at = ? WHERE id = ?`,
       ).run(
         payload.number, payload.type, payload.stem, JSON.stringify(payload.options ?? []), payload.answer,
-        payload.analysis, JSON.stringify(primaryRegion.bbox), payload.status,
+        payload.analysis, JSON.stringify(primaryRegion.bbox), payload.status, payload.needsHumanReview === false ? 0 : 1,
         Math.max(0, Math.min(1, Number(payload.confidence) || 0)), 0, timestamp, questionId,
       );
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
@@ -139,6 +139,18 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
           "INSERT OR IGNORE INTO question_tags (question_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
         ).run(questionId, name);
       }
+      transaction.prepare(
+        `UPDATE documents SET status = CASE
+           WHEN page_count > 0
+             AND (SELECT COUNT(*) FROM extraction_runs WHERE document_id = documents.id AND status = 'complete') >= page_count
+             AND EXISTS (SELECT 1 FROM questions WHERE document_id = documents.id)
+             AND NOT EXISTS (SELECT 1 FROM questions WHERE document_id = documents.id AND status <> 'approved')
+           THEN 'complete'
+           WHEN (SELECT COUNT(*) FROM extraction_runs WHERE document_id = documents.id AND status = 'complete') >= page_count
+           THEN 'reviewing'
+           ELSE 'extracting'
+         END, updated_at = ? WHERE id = ?`,
+      ).run(timestamp, ownedQuestion.documentId);
     });
   } catch (error) {
     await Promise.allSettled(preparedAssets.map((prepared) => deleteFile(prepared.cropKey)));

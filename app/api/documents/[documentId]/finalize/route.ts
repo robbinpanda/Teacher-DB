@@ -1,10 +1,11 @@
 import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../lib/server";
+import { modelNeedsHumanReview } from "../../../../../lib/model-review";
 
 export const runtime = "nodejs";
 
-type AnswerUpdate = { number?: unknown; answer?: unknown; analysis?: unknown; confidence?: unknown };
+type AnswerUpdate = { number?: unknown; answer?: unknown; analysis?: unknown; confidence?: unknown; needsHumanReview?: unknown };
 
 export async function POST(request: Request, context: { params: Promise<{ documentId: string }> }) {
   await ensureDatabase();
@@ -40,12 +41,15 @@ export async function POST(request: Request, context: { params: Promise<{ docume
       const analysis = String(update.analysis ?? "");
       if (!number || (!answer && !analysis)) continue;
       const confidence = Math.max(0, Math.min(1, Number(update.confidence ?? 0)));
+      const needsHumanReview = modelNeedsHumanReview(update.needsHumanReview);
       transaction.prepare(
         `UPDATE questions SET answer = CASE WHEN ? <> '' THEN ? ELSE answer END,
            analysis = CASE WHEN ? <> '' THEN ? ELSE analysis END,
+           needs_human_review = CASE WHEN needs_human_review = 1 OR ? = 1 THEN 1 ELSE 0 END,
+           status = CASE WHEN status = 'approved' THEN status WHEN needs_human_review = 1 OR ? = 1 THEN 'needs_attention' ELSE 'pending' END,
            confidence = max(confidence, ?), updated_at = ?
          WHERE document_id = ? AND number = ?`,
-      ).run(answer, answer, analysis, analysis, confidence, timestamp, documentId, number);
+      ).run(answer, answer, analysis, analysis, needsHumanReview ? 1 : 0, needsHumanReview ? 1 : 0, confidence, timestamp, documentId, number);
     }
     const status = failedRuns.length ? "failed" : completePages >= totalPages && totalPages > 0 ? "reviewing" : "extracting";
     const error = failedRuns.length ? failedRuns.map((run) => `第 ${run.pageNumber} 页：${run.error ?? "识别失败"}`).join("\n").slice(0, 4000) : null;
