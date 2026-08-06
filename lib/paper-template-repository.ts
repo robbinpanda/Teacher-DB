@@ -1,13 +1,13 @@
 import { getSqlite } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
 import type { EducationStage } from "./education-taxonomy";
-import { presetPaperTemplates, type PaperTemplate, type PaperTemplateConfig } from "./paper-templates";
+import { normalizePaperStyle, presetPaperTemplates, type PaperTemplate, type PaperTemplateConfig } from "./paper-templates";
 
 function parseConfig(value: string): PaperTemplateConfig | null {
   try {
     const config = JSON.parse(value) as PaperTemplateConfig;
     if (!Array.isArray(config.sections) || !Array.isArray(config.infoFields)) return null;
-    return config;
+    return { ...config, style: normalizePaperStyle(config.style) };
   } catch {
     return null;
   }

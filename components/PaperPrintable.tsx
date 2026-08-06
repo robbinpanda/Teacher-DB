@@ -1,4 +1,5 @@
 import Image from "next/image";
+import type { CSSProperties } from "react";
 import type { QuestionWithSource } from "../lib/types";
 import { defaultAssetLayout, scoreForQuestion, type PaperSettings } from "../lib/paper-templates";
 import { MathText } from "./MathText";
@@ -11,16 +12,45 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
   includeAnswers?: boolean;
 }) {
   const questionMap = new Map(questions.map((question) => [question.id, question]));
+  const style = settings.style;
+  const pageDimensions = style.pageSize === "A3" ? [297, 420] : [210, 297];
+  const [pageWidth, pageHeight] = style.orientation === "landscape" ? [...pageDimensions].reverse() : pageDimensions;
+  const paperVariables = {
+    "--paper-width": `${pageWidth}mm`,
+    "--paper-height": `${pageHeight}mm`,
+    "--paper-margin-top": `${style.marginTop}mm`,
+    "--paper-margin-right": `${style.marginRight}mm`,
+    "--paper-margin-bottom": `${style.marginBottom}mm`,
+    "--paper-margin-left": `${style.marginLeft}mm`,
+    "--paper-body-font": style.bodyFont,
+    "--paper-body-size": `${style.bodySize}pt`,
+    "--paper-line-height": style.lineHeight,
+    "--paper-letter-spacing": `${style.letterSpacing}em`,
+    "--paper-title-font": style.titleFont,
+    "--paper-title-size": `${style.titleSize}pt`,
+    "--paper-title-weight": style.titleWeight,
+    "--paper-title-spacing": `${style.titleLetterSpacing}em`,
+    "--paper-subtitle-size": `${style.subtitleSize}pt`,
+    "--paper-section-title-size": `${style.sectionTitleSize}pt`,
+    "--paper-question-gap": `${style.questionGap}mm`,
+    "--paper-section-gap": `${style.sectionGap}mm`,
+    "--paper-option-columns": style.optionColumns,
+    "--paper-column-count": style.columns,
+  } as CSSProperties;
   let globalIndex = 0;
   return (
-    <article className={`paper-sheet printable-paper ${settings.compact ? "compact" : "formal"}`}>
-      <header>
+    <>
+    <style>{`@page { size: ${pageWidth}mm ${pageHeight}mm; margin: 0; }`}</style>
+    <article className={`paper-sheet printable-paper ${settings.compact ? "compact" : "formal"} header-${style.headerStyle} info-${style.infoStyle} notice-${style.noticeStyle} score-${style.scoreStyle} title-${style.titleAlign}${style.showBindingLine ? " has-binding-line" : ""}`} style={paperVariables}>
+      {style.showBindingLine && <aside className="paper-binding-line"><span>{style.bindingText}</span></aside>}
+      <header className="paper-document-header">
+        {style.headerStyle === "exam" && style.headerLabel && <div className="paper-exam-label">{style.headerLabel}</div>}
         <h1>{title}</h1>
         {subtitle && <p>{subtitle}</p>}
-        <div>{settings.infoFields.map((field) => <span key={field}>{field}：____________</span>)}</div>
+        {style.headerStyle !== "none" && <div className="paper-candidate-info">{settings.infoFields.map((field) => <span key={field}>{field}：____________</span>)}</div>}
       </header>
-      {settings.notice.trim() && <section className="paper-notice"><strong>注意事项</strong>{settings.notice.split("\n").map((line) => <p key={line}>{line}</p>)}</section>}
-      {settings.sections.map((section) => {
+      {settings.notice.trim() && style.noticeStyle !== "hidden" && <section className="paper-notice"><strong>注意事项</strong>{settings.notice.split("\n").map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}</section>}
+      <div className="paper-section-list">{settings.sections.map((section) => {
         const sectionQuestions = section.questionIds.map((id) => questionMap.get(id)).filter(Boolean) as QuestionWithSource[];
         if (!sectionQuestions.length) return null;
         return (
@@ -45,7 +75,7 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
               };
               return (
                 <section className="paper-question" key={question.id}>
-                  <div className="paper-question-line"><b>{questionNumber}.</b><div className="paper-question-stem"><MathText text={question.stem} /></div>{score > 0 && <span className="paper-question-score">（{score} 分）</span>}</div>
+                  <div className="paper-question-line"><b>{questionNumber}.</b><div className="paper-question-stem"><MathText text={question.stem} />{score > 0 && style.scoreStyle === "inline" && <span className="paper-question-score inline">（{score} 分）</span>}</div>{score > 0 && style.scoreStyle === "right" && <span className="paper-question-score">（{score} 分）</span>}</div>
                   {beforeAssets.map(renderAsset)}
                   {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}><b>{option.key}.</b> <MathText text={option.content} /></span>)}</div>}
                   {afterAssets.map(renderAsset)}
@@ -56,9 +86,10 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
             })}
           </section>
         );
-      })}
+      })}</div>
       {!questions.length && <section className="empty-state"><h2>空白试卷</h2><p>这份试卷还没有题目。</p></section>}
-      <footer>— 拾题 · 教师题库助手生成 —</footer>
+      {(style.footerText || style.showPageNumber) && <footer><span>{style.footerText}</span>{style.showPageNumber && <b>第 1 页</b>}</footer>}
     </article>
+    </>
   );
 }

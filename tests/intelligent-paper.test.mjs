@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { presetTags, stageFromGrade } from "../lib/education-taxonomy.ts";
-import { presetPaperTemplates, scoreForQuestion, sectionsFromTemplate } from "../lib/paper-templates.ts";
+import { normalizePaperStyle, paperStyleToLatex, presetPaperTemplates, scoreForQuestion, sectionsFromTemplate } from "../lib/paper-templates.ts";
 
 const source = { documentId: "d", documentName: "卷", subject: "数学", grade: "九年级" };
 const base = { answer: "", analysis: "", page: 1, bbox: { x: 0, y: 0, width: 1, height: 1 }, regions: [], assets: [], tags: [], confidence: 1, status: "approved", source };
@@ -33,4 +33,17 @@ test("中考模板按题型分板块并应用标准分值", () => {
   assert.equal(scoreForQuestion(sections[0], 0), 4);
   assert.equal(scoreForQuestion(sections[2], 0), 10);
   assert.match(sections[2].scoreDetail, /满分 78 分/);
+});
+
+test("排版模板参数会被规范化并生成 LaTeX 页面语义", () => {
+  const style = normalizePaperStyle({ pageSize: "A3", orientation: "landscape", marginTop: 999, bodySize: 4, lineHeight: 2.2, columns: 2 });
+  assert.equal(style.pageSize, "A3");
+  assert.equal(style.orientation, "landscape");
+  assert.equal(style.marginTop, 45);
+  assert.equal(style.bodySize, 7);
+  assert.equal(style.columns, 2);
+  const latex = paperStyleToLatex(style);
+  assert.match(latex, /a3paper,landscape/);
+  assert.match(latex, /top=45mm/);
+  assert.match(latex, /\\twocolumn/);
 });

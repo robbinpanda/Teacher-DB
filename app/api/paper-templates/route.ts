@@ -2,7 +2,7 @@ import { getSqlite } from "../../../db";
 import { ensureDatabase } from "../../../db/bootstrap";
 import { isEducationStage } from "../../../lib/education-taxonomy";
 import { getPaperTemplates } from "../../../lib/paper-template-repository";
-import type { PaperTemplateConfig } from "../../../lib/paper-templates";
+import { normalizePaperStyle, type PaperTemplateConfig } from "../../../lib/paper-templates";
 import { now, requestOwner } from "../../../lib/server";
 
 export const runtime = "nodejs";
@@ -31,6 +31,7 @@ export async function POST(request: Request) {
   const ownerId = requestOwner(request);
   const id = payload.id?.trim() || crypto.randomUUID();
   const timestamp = now();
+  const config = { ...payload.config, style: normalizePaperStyle(payload.config?.style) } as PaperTemplateConfig;
   const existing = getSqlite().prepare("SELECT owner_id AS ownerId FROM paper_templates WHERE id = ?").get(id) as { ownerId: string } | undefined;
   if (existing && existing.ownerId !== ownerId) return Response.json({ error: "模板不存在" }, { status: 404 });
   try {
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
        VALUES (?, ?, ?, ?, ?, 'custom', ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, subject = excluded.subject, stage = excluded.stage,
          description = excluded.description, config_json = excluded.config_json, updated_at = excluded.updated_at`,
-    ).run(id, ownerId, name, subject, payload.stage, payload.description?.trim() || "教师自定义模板", JSON.stringify(payload.config), timestamp, timestamp);
+    ).run(id, ownerId, name, subject, payload.stage, payload.description?.trim() || "教师自定义模板", JSON.stringify(config), timestamp, timestamp);
   } catch (error) {
     if (error instanceof Error && /UNIQUE/.test(error.message)) return Response.json({ error: "已有同名模板" }, { status: 409 });
     throw error;
