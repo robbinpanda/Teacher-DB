@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -13,10 +15,13 @@ import {
   LoaderCircle,
   Pencil,
   Search,
+  ShoppingBasket,
+  Trash2,
   X,
 } from "lucide-react";
 import type { QuestionType, QuestionWithSource } from "../lib/types";
 import { typeLabels } from "../lib/question-labels";
+import { moveOrderedItem } from "../lib/ordered-selection";
 import { MathText } from "./MathText";
 import { useEducationScope } from "./AppShell";
 
@@ -42,14 +47,16 @@ export function QuestionBank({
   const [pagination, setPagination] = useState(initialPagination);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<"all" | QuestionType>("all");
-  const [selectedIds, setSelectedIds] = useState<Record<string, true>>({});
+  const [selectedQuestions, setSelectedQuestions] = useState<QuestionWithSource[]>([]);
+  const [basketOpen, setBasketOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Record<string, true>>({});
   const [activeTag, setActiveTag] = useState("全部");
   const [source, setSource] = useState("全部");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const selected = Object.keys(selectedIds);
+  const selected = selectedQuestions;
+  const selectedIds = new Set(selected.map((question) => question.id));
   const tags = ["全部", ...availableTags];
 
   useEffect(() => {
@@ -81,12 +88,10 @@ export function QuestionBank({
   }, [activeTag, page, query, source, stage, subject, type]);
 
   function toggle(question: QuestionWithSource) {
-    setSelectedIds((items) => {
-      const next = { ...items };
-      if (question.id in next) delete next[question.id];
-      else next[question.id] = true;
-      return next;
-    });
+    if (selectedIds.has(question.id)) {
+      setSelectedQuestions((items) => items.filter((item) => item.id !== question.id));
+      if (selected.length === 1) setBasketOpen(false);
+    } else setSelectedQuestions((items) => [...items, question]);
   }
 
   function toggleExpanded(questionId: string) {
@@ -99,15 +104,20 @@ export function QuestionBank({
   }
 
   function togglePage() {
-    const allSelected = questions.length > 0 && questions.every((question) => question.id in selectedIds);
-    setSelectedIds((items) => {
-      const next = { ...items };
-      for (const question of questions) {
-        if (allSelected) delete next[question.id];
-        else next[question.id] = true;
-      }
-      return next;
-    });
+    const allSelected = questions.length > 0 && questions.every((question) => selectedIds.has(question.id));
+    setSelectedQuestions((items) => allSelected
+      ? items.filter((item) => !questions.some((question) => question.id === item.id))
+      : [...items, ...questions.filter((question) => !items.some((item) => item.id === question.id))]);
+    if (allSelected && selected.length === questions.length) setBasketOpen(false);
+  }
+
+  function moveSelected(index: number, offset: number) {
+    setSelectedQuestions((items) => moveOrderedItem(items, index, offset));
+  }
+
+  function removeSelected(questionId: string) {
+    if (selected.length === 1) setBasketOpen(false);
+    setSelectedQuestions((items) => items.filter((item) => item.id !== questionId));
   }
 
   function clearFilters() {
@@ -118,9 +128,10 @@ export function QuestionBank({
     setPage(1);
   }
 
-  const paperHref = "/papers/new?ids=" + encodeURIComponent(selected.join(","));
-  const exportIds = selected.length ? "?ids=" + encodeURIComponent(selected.join(",")) + "&" : "?";
-  const allPageSelected = questions.length > 0 && questions.every((question) => question.id in selectedIds);
+  const orderedSelectedIds = selected.map((question) => question.id);
+  const paperHref = "/papers/new?ids=" + encodeURIComponent(orderedSelectedIds.join(","));
+  const exportIds = selected.length ? "?ids=" + encodeURIComponent(orderedSelectedIds.join(",")) + "&" : "?";
+  const allPageSelected = questions.length > 0 && questions.every((question) => selectedIds.has(question.id));
   const activeFilterCount = Number(Boolean(query.trim())) + Number(type !== "all") + Number(activeTag !== "全部") + Number(source !== "全部");
 
   return (
@@ -145,7 +156,6 @@ export function QuestionBank({
               <small>{selected.length ? `仅导出已选 ${selected.length} 道题` : "导出当前题库全部题目"}</small>
             </div>
           </details>
-          {selected.length > 0 && <Link className="btn btn-primary" href={paperHref}><FilePlus2 size={16} /> 用已选题组卷</Link>}
         </div>
       </header>
 
@@ -173,7 +183,7 @@ export function QuestionBank({
         {searchError && <p className="form-error">{searchError}</p>}
         <div className={"question-cards " + (loading ? "loading" : "")}>
           {questions.map((question) => {
-            const checked = question.id in selectedIds;
+            const checked = selectedIds.has(question.id);
             const expanded = question.id in expandedIds;
             const sourceLabel = [question.source.year, question.source.region, question.source.school, question.source.examType].filter(Boolean).join(" · ") || question.source.documentName;
             return (
@@ -211,7 +221,18 @@ export function QuestionBank({
         {!questions.length && !loading && <div className="card empty-state"><h2>没有匹配的已审核题目</h2><p>清除部分筛选条件，或先上传试卷并完成逐题审核。</p>{activeFilterCount > 0 ? <button className="btn btn-primary" type="button" onClick={clearFilters}>清除筛选</button> : <Link className="btn btn-primary" href="/">上传试卷</Link>}</div>}
         {pagination.pageCount > 1 && <nav className="bank-pagination" aria-label="题库分页"><button type="button" disabled={pagination.page <= 1 || loading} onClick={() => { setPage((value) => Math.max(1, value - 1)); window.scrollTo({ top: 0, behavior: "smooth" }); }}><ChevronLeft size={14} /> 上一页</button><span>第 {pagination.page} / {pagination.pageCount} 页</span><button type="button" disabled={pagination.page >= pagination.pageCount || loading} onClick={() => { setPage((value) => Math.min(pagination.pageCount, value + 1)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>下一页 <ChevronRight size={14} /></button></nav>}
       </div>
-      {selected.length > 0 && <div className="selection-bar"><span><b>{selected.length}</b> 道题已选 <button type="button" onClick={() => setSelectedIds({})}>清空</button></span><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={15} /> 去组卷</Link></div>}
+      {selected.length > 0 && <>
+        {basketOpen && <button type="button" className="question-basket-backdrop" aria-label="收起选题篮" onClick={() => setBasketOpen(false)} />}
+        {basketOpen ? <aside className="question-basket" aria-label="已选题目">
+          <header><div><span><ShoppingBasket size={18} /></span><div><strong>选题篮</strong><small>共 {selected.length} 道，使用箭头调整组卷与导出顺序</small></div></div><button type="button" aria-label="收起选题篮" onClick={() => setBasketOpen(false)}><X size={16} /></button></header>
+          <ol>{selected.map((question, index) => <li key={question.id}>
+            <b>{index + 1}</b>
+            <div><span>{typeLabels[question.type]} · 原题号 {question.number}</span><p><MathText text={question.stem} /></p><small>{question.source.documentName}</small></div>
+            <div className="basket-item-actions"><button type="button" aria-label={`上移第 ${index + 1} 题`} disabled={index === 0} onClick={() => moveSelected(index, -1)}><ArrowUp size={13} /></button><button type="button" aria-label={`下移第 ${index + 1} 题`} disabled={index === selected.length - 1} onClick={() => moveSelected(index, 1)}><ArrowDown size={13} /></button><button type="button" className="danger" aria-label={`移除第 ${index + 1} 题`} onClick={() => removeSelected(question.id)}><Trash2 size={13} /></button></div>
+          </li>)}</ol>
+          <footer><button type="button" onClick={() => { setSelectedQuestions([]); setBasketOpen(false); }}>清空</button><div><a href={`/api/exports/questions${exportIds}format=markdown`}><Download size={13} /> Markdown</a><a href={`/api/exports/questions${exportIds}format=json`}><Download size={13} /> JSON</a><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={14} /> 去组卷</Link></div></footer>
+        </aside> : <button type="button" className="question-basket-trigger" aria-expanded="false" onClick={() => setBasketOpen(true)}><span><ShoppingBasket size={20} /><b>{selected.length}</b></span><i><strong>选题篮</strong><small>查看、排序或删除</small></i><ChevronRight size={16} /></button>}
+      </>}
     </div>
   );
 }
