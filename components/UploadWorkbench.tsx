@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, ChevronDown, FileText, LoaderCircle, ShieldCheck, UploadCloud } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, LoaderCircle, ShieldCheck, UploadCloud } from "lucide-react";
+import { educationStages } from "../lib/education-taxonomy";
+import { useEducationScope } from "./AppShell";
 
 type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
@@ -72,9 +74,10 @@ async function fetchWithBackoff(url: string, init: RequestInit, attempts = 5) {
 
 export function UploadWorkbench() {
   const router = useRouter();
+  const { subject, stage } = useEducationScope();
   const inputRef = useRef<HTMLInputElement>(null);
   const [tasks, setTasks] = useState<UploadTask[]>([]);
-  const [sourceMeta, setSourceMeta] = useState({ subject: "数学", grade: "九年级", sourceYear: String(new Date().getFullYear()), sourceExamType: "", sourceRegion: "", sourceSchool: "" });
+  const sourceMeta = { subject, grade: educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级", sourceYear: "", sourceExamType: "", sourceRegion: "", sourceSchool: "" };
   const working = tasks.some((task) => ["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
 
   useEffect(() => {
@@ -205,20 +208,8 @@ export function UploadWorkbench() {
 
   return (
     <div className="upload-card card">
-      <div className="section-title upload-title"><div><h2>导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
-      <div className="upload-source-grid">
-        <label><span>学科</span><input value={sourceMeta.subject} onChange={(event) => setSourceMeta({ ...sourceMeta, subject: event.target.value })} /></label>
-        <label><span>年级</span><input value={sourceMeta.grade} onChange={(event) => setSourceMeta({ ...sourceMeta, grade: event.target.value })} /></label>
-        <label><span>年份</span><input type="number" value={sourceMeta.sourceYear} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceYear: event.target.value })} /></label>
-      </div>
-      <details className="source-details">
-        <summary>补充来源信息 <small>考试类型、地区、学校</small><ChevronDown size={14} /></summary>
-        <div className="optional-source-grid">
-          <label><span>考试类型</span><input placeholder="如：二模 / 中考" value={sourceMeta.sourceExamType} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceExamType: event.target.value })} /></label>
-          <label><span>地区</span><input placeholder="如：上海市" value={sourceMeta.sourceRegion} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceRegion: event.target.value })} /></label>
-          <label><span>学校</span><input placeholder="可选" value={sourceMeta.sourceSchool} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceSchool: event.target.value })} /></label>
-        </div>
-      </details>
+      <div className="section-title upload-title"><div><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
+      <div className="upload-scope-note"><b>{educationStages.find((item) => item.value === stage)?.label} · {subject}</b><span>年份、考试类型、地区和学校会从卷面标题自动推测，可在试卷详情中随时修改。</span></div>
       <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div
         className={"drop-zone " + (working ? "working " : "")}

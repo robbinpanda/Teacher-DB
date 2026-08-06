@@ -9,6 +9,8 @@ import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../lib/vision-model";
 import { contentTypeForKey, getFile } from "../../../lib/file-storage";
 import { resolveExtractionPage } from "../../../lib/extraction-pages";
+import { stageFromGrade } from "../../../lib/education-taxonomy";
+import { getTagCatalog } from "../../../lib/tag-catalog";
 
 export const runtime = "nodejs";
 
@@ -20,7 +22,7 @@ const systemPrompt = [
   "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；page 必须填写提示中的原卷真实页码（例如主页面为第9页时写9，绝不能按输入图片顺序写1）；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
   "4. bbox 必须贴合内容：包含题号、完整题干、选项、作答横线及属于该题的图注；排除页眉、页脚、密封线、装订线、空白页边和相邻题目。边缘可留 0.3%-0.8% 安全余量，不要使用整页大框。",
   "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
-  "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。confidence 要反映文字与框选两者中较低的可信度。",
+  "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。tags 只能从用户提示给出的允许标签中选择 1-3 个，禁止创造近义标签或临时标签。confidence 要反映文字与框选两者中较低的可信度。",
   "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联，同时为答案或解析在本次实际可见的每一页输出 regions。跨页解析必须始终沿用同一题号，系统会逐页合并为完整 analysis。",
   "7a. 大题完整性优先：一道大题包含（1）（2）或【小问1详解】【小问2详解】等多个小问时，必须把所有小问的题干、答案和解析合并到同一个顶层题号。看到【小问1详解】绝不表示大题结束；必须继续向下并检查下一页，直到出现下一个独立顶层阿拉伯数字题号或本卷结束。",
   "7b. 主页面可能同时包含上一题的续页和下一题的开头。必须先找出页面上每个独立顶层题号的印刷位置，再按这些位置切分：页面顶部至下一个顶层题号之前属于已保存的跨页候选；新题 region 必须从它自己的顶层题号所在行开始。此时要同时输出前题续页和后题新题，两个 region 不得互换、重叠或错误覆盖页面顶部空白。",
@@ -30,7 +32,7 @@ const systemPrompt = [
   "number 只填写整道大题的阿拉伯数字题号；（1）、【小问1】、步骤讲解必须合并进所属大题，禁止单独创建为题目。",
   "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
   "JSON 格式：",
-  "{\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"建议知识点\"],\"confidence\":0.95}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
+  "{\"documentMeta\":{\"subject\":\"数学\",\"grade\":\"九年级\",\"year\":2026,\"examType\":\"二模\",\"region\":\"上海市徐汇区\",\"school\":\"\"},\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"允许标签之一\"],\"confidence\":0.95}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
 ].join("\n");
 
 function safeBox(value: unknown): BoundingBox {
@@ -75,8 +77,9 @@ type AnswerUpdate = {
   regions: Array<{ page: number; bbox: BoundingBox }>;
 };
 
-function normalize(raw: unknown, pageNumber: number, availablePages: number[]): { questions: Question[]; answerUpdates: AnswerUpdate[] } {
-  const result = raw as { questions?: unknown[]; answerUpdates?: unknown[] };
+function normalize(raw: unknown, pageNumber: number, availablePages: number[], allowedTags: string[]): { questions: Question[]; answerUpdates: AnswerUpdate[]; documentMeta: Record<string, unknown> } {
+  const result = raw as { questions?: unknown[]; answerUpdates?: unknown[]; documentMeta?: Record<string, unknown> };
+  const allowed = new Set(allowedTags);
   const items = Array.isArray(result?.questions) ? result.questions : [];
   const rawUpdates = Array.isArray(result?.answerUpdates) ? result.answerUpdates : [];
   if (!Array.isArray(result?.questions) && !Array.isArray(result?.answerUpdates)) {
@@ -136,7 +139,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
       bbox: primaryRegion.bbox,
       regions: uniqueRegions,
       assets: normalizedAssets,
-      tags: Array.isArray(item.tags) ? item.tags.map(String).slice(0, 8) : [],
+      tags: Array.isArray(item.tags) ? Array.from(new Set(item.tags.map(String).filter((tag) => allowed.has(tag)))).slice(0, 3) : [],
       confidence,
       status: confidence >= .92 && !assetGeometryNeedsReview && !geometryNeedsReview && !subquestionsNeedReview ? "pending" : "needs_attention",
     };
@@ -157,7 +160,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[]): 
       regions,
     };
   }).filter((item) => /^\d+$/.test(item.number) && (item.answer || item.analysis));
-  return { questions: normalizedQuestions, answerUpdates };
+  return { questions: normalizedQuestions, answerUpdates, documentMeta: result.documentMeta ?? {} };
 }
 
 function parseJsonContent(content: string) {
@@ -191,6 +194,8 @@ export async function POST(request: Request) {
     where: and(eq(documents.id, documentId), eq(documents.ownerId, ownerId)),
   });
   if (!ownedDocument) return Response.json({ error: "文档不存在" }, { status: 404 });
+  const tagCatalog = await getTagCatalog(ownerId, ownedDocument.subject || "数学", stageFromGrade(ownedDocument.grade));
+  const allowedTags = tagCatalog.map((item) => item.name);
   const ownedPage = payload.pageId
     ? await db.query.pages.findFirst({ where: and(eq(pages.id, payload.pageId), eq(pages.documentId, documentId)) })
     : await db.query.pages.findFirst({ where: and(eq(pages.documentId, documentId), eq(pages.pageNumber, pageNumber)) });
@@ -256,13 +261,13 @@ export async function POST(request: Request) {
     const result = await callVisionModel({
       ownerId,
       profileId: profile.id,
-      system: systemPrompt,
-      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。新题只输出题号或题目开头位于第 ${pageNumber} 页的题；已保存候选可以在确认连续时接力。${continuationContext} 本轮必须先做版面切分：逐页定位所有独立顶层题号；检查页面顶部是否为前题续页；检查每道含（1）（2）等小问的大题是否一直读取到全部小问解析结束。若主页面上方是前题续页、下方才出现新题号，必须分别给前题上半页 region 和新题下半页 region，新题框从其印刷题号行开始。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
+      system: `${systemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
+      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。${pageNumber === 1 ? "请从卷面标题和卷头推测 documentMeta；看不清的字段使用空字符串，年份无法确认时使用 null。" : "documentMeta 使用空对象。"}新题只输出题号或题目开头位于第 ${pageNumber} 页的题；已保存候选可以在确认连续时接力。${continuationContext} 本轮必须先做版面切分：逐页定位所有独立顶层题号；检查页面顶部是否为前题续页；检查每道含（1）（2）等小问的大题是否一直读取到全部小问解析结束。若主页面上方是前题续页、下方才出现新题号，必须分别给前题上半页 region 和新题下半页 region，新题框从其印刷题号行开始。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
       images: modelImages,
       jsonMode: true,
     });
     const parsedContent = parseJsonContent(result.content);
-    const normalized = normalize(parsedContent, pageNumber, sourcePages.map((page) => page.pageNumber));
+    const normalized = normalize(parsedContent, pageNumber, sourcePages.map((page) => page.pageNumber), allowedTags);
     const extracted = normalized.questions;
     const finishedAt = now();
     sqliteTransaction((transaction) => {
@@ -388,6 +393,18 @@ export async function POST(request: Request) {
       transaction.prepare(
         "UPDATE documents SET status = 'extracting', error = NULL, updated_at = ? WHERE id = ?",
       ).run(finishedAt, documentId);
+      if (pageNumber === 1) {
+        const meta = normalized.documentMeta;
+        const inferredYear = Number(meta.year);
+        transaction.prepare(
+          `UPDATE documents SET
+             source_year = CASE WHEN source_year IS NULL AND ? BETWEEN 1900 AND 2200 THEN ? ELSE source_year END,
+             source_exam_type = CASE WHEN COALESCE(source_exam_type, '') = '' THEN NULLIF(?, '') ELSE source_exam_type END,
+             source_region = CASE WHEN COALESCE(source_region, '') = '' THEN NULLIF(?, '') ELSE source_region END,
+             source_school = CASE WHEN COALESCE(source_school, '') = '' THEN NULLIF(?, '') ELSE source_school END
+           WHERE id = ?`,
+        ).run(inferredYear, inferredYear, String(meta.examType ?? "").slice(0, 80), String(meta.region ?? "").slice(0, 80), String(meta.school ?? "").slice(0, 120), documentId);
+      }
     });
     return Response.json({
       runId, provider: profile.provider, model: profile.model, modelProfileId: profile.id,

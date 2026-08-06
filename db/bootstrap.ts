@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS question_assets (
 CREATE INDEX IF NOT EXISTS assets_question_idx ON question_assets(question_id);
 CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS tags_name_idx ON tags(name);
+CREATE TABLE IF NOT EXISTS tag_catalog (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', subject TEXT NOT NULL,
+  stage TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS tag_catalog_scope_name_idx ON tag_catalog(owner_id, subject, stage, name);
+CREATE INDEX IF NOT EXISTS tag_catalog_scope_idx ON tag_catalog(owner_id, subject, stage);
 CREATE TABLE IF NOT EXISTS question_tags (
   question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -60,6 +66,19 @@ CREATE TABLE IF NOT EXISTS papers (
   settings_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS papers_owner_created_idx ON papers(owner_id, created_at);
+CREATE TABLE IF NOT EXISTS paper_templates (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', name TEXT NOT NULL,
+  subject TEXT NOT NULL, stage TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'custom', description TEXT NOT NULL DEFAULT '',
+  config_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS paper_templates_owner_scope_idx ON paper_templates(owner_id, subject, stage);
+CREATE UNIQUE INDEX IF NOT EXISTS paper_templates_owner_name_idx ON paper_templates(owner_id, name);
+CREATE TABLE IF NOT EXISTS answer_imports (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo',
+  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE, source_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'processing', result_json TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS answer_imports_document_idx ON answer_imports(document_id, created_at);
 CREATE TABLE IF NOT EXISTS paper_items (
   paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
   question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
