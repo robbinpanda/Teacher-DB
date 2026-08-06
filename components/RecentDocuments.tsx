@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { AlertTriangle, ArrowRight, Clock3, FileX2, LoaderCircle, RefreshCw, Trash2, X } from "lucide-react";
 import type { SourceDocument } from "../lib/types";
 
 type DocumentGroup = "preprocessing" | "pending_review" | "reviewed";
 
-const groupMeta: Array<{ id: DocumentGroup; title: string; description: string }> = [
-  { id: "preprocessing", title: "AI 预处理中", description: "上传、排队、识别、退避或已暂停的试卷" },
-  { id: "pending_review", title: "待审核", description: "AI 已完成识别，等待人工逐题确认" },
-  { id: "reviewed", title: "已人工审核", description: "全部题目已经人工确认并入库" },
+const groupMeta: Array<{ id: DocumentGroup; title: string; description: string; empty: string }> = [
+  { id: "preprocessing", title: "AI 预处理中", description: "上传、排队、识别、退避或暂停中的试卷", empty: "暂无正在处理的试卷" },
+  { id: "pending_review", title: "待审核", description: "AI 已完成识别，等待人工逐题确认", empty: "暂无待审核试卷" },
+  { id: "reviewed", title: "已人工审核", description: "全部题目已经人工确认并入库", empty: "暂无已审核试卷" },
 ];
 
 function documentGroup(document: SourceDocument): DocumentGroup {
@@ -26,6 +26,12 @@ function documentGroup(document: SourceDocument): DocumentGroup {
 export function RecentDocuments({ initialDocuments }: { initialDocuments: SourceDocument[] }) {
   const router = useRouter();
   const [documents, setDocuments] = useState(initialDocuments);
+  const [activeGroup, setActiveGroup] = useState<DocumentGroup>(() => {
+    if (initialDocuments.some((document) => documentGroup(document) === "pending_review")) return "pending_review";
+    if (initialDocuments.some((document) => documentGroup(document) === "preprocessing")) return "preprocessing";
+    if (initialDocuments.some((document) => documentGroup(document) === "reviewed")) return "reviewed";
+    return "preprocessing";
+  });
   const [target, setTarget] = useState<SourceDocument | null>(null);
   const [deletingMode, setDeletingMode] = useState<"with_questions" | "source_only" | null>(null);
   const [retryingIds, setRetryingIds] = useState<Set<string>>(() => new Set());
@@ -106,6 +112,19 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
     }
   }
 
+  function moveGroupFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? groupMeta.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + groupMeta.length) % groupMeta.length;
+    setActiveGroup(groupMeta[nextIndex].id);
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role='tab']")[nextIndex]?.focus();
+  }
+
   function renderDocument(doc: SourceDocument) {
     const recognitionProgress = doc.pageCount ? Math.round(doc.completedPageCount / doc.pageCount * 100) : 0;
     const reviewed = documentGroup(doc) === "reviewed";
@@ -149,24 +168,44 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
     );
   }
 
+  const groupCounts = Object.fromEntries(groupMeta.map((group) => [
+    group.id,
+    documents.filter((document) => documentGroup(document) === group.id).length,
+  ])) as Record<DocumentGroup, number>;
+  const activeGroupMeta = groupMeta.find((group) => group.id === activeGroup) ?? groupMeta[0];
+  const activeDocuments = documents.filter((document) => documentGroup(document) === activeGroup);
+
   return (
     <>
       {listError && <p className="form-error recent-refresh-error"><AlertTriangle size={14} /> {listError}</p>}
-      <div className="document-groups" aria-live="polite">
-        {groupMeta.map((group) => {
-          const items = documents.filter((document) => documentGroup(document) === group.id);
-          return (
-            <section className="document-group" key={group.id}>
-              <div className="document-group-title"><div><h3>{group.title}</h3><p>{group.description}</p></div><span>{items.length}</span></div>
-              <div className="document-list">
-                {items.map(renderDocument)}
-                {!items.length && <div className="document-group-empty">暂无试卷</div>}
-              </div>
-            </section>
-          );
-        })}
+      <div className="document-view-switcher" role="tablist" aria-label="试卷处理状态">
+        {groupMeta.map((group, index) => (
+          <button
+            type="button"
+            role="tab"
+            id={`document-tab-${group.id}`}
+            aria-controls="document-status-panel"
+            aria-selected={activeGroup === group.id}
+            tabIndex={activeGroup === group.id ? 0 : -1}
+            key={group.id}
+            onClick={() => setActiveGroup(group.id)}
+            onKeyDown={(event) => moveGroupFocus(event, index)}
+          ><span>{group.title}</span><b>{groupCounts[group.id]}</b></button>
+        ))}
       </div>
-      {!documents.length && <div className="card empty-state"><h3>还没有处理记录</h3><p>在上方上传第一份 PDF 试卷。</p></div>}
+      <section
+        id="document-status-panel"
+        className="document-status-panel"
+        role="tabpanel"
+        aria-labelledby={`document-tab-${activeGroup}`}
+        aria-live="polite"
+      >
+        <div className="document-view-summary"><p>{activeGroupMeta.description}</p><span>共 {activeDocuments.length} 份</span></div>
+        <div className="document-list">
+          {activeDocuments.map(renderDocument)}
+          {!activeDocuments.length && <div className="document-group-empty">{documents.length ? activeGroupMeta.empty : "还没有处理记录，请在上方上传第一份 PDF 试卷。"}</div>}
+        </div>
+      </section>
 
       {target && (
         <div className="delete-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingMode) setTarget(null); }}>
