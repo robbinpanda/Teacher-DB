@@ -4,18 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen,
-  Boxes,
+  LibraryBig,
   FilePlus2,
-  LayoutDashboard,
-  Settings,
-  Sparkles,
+  House,
+  SlidersHorizontal,
 } from "lucide-react";
 
 const navigation = [
-  { href: "/", label: "处理中心", icon: LayoutDashboard },
-  { href: "/bank", label: "我的题库", icon: Boxes },
-  { href: "/papers/new", label: "智能组卷", icon: FilePlus2 },
-  { href: "/settings/models", label: "模型设置", icon: Settings },
+  { href: "/", label: "工作台", icon: House },
+  { href: "/bank", label: "题库", icon: LibraryBig },
+  { href: "/papers/new", label: "组卷", icon: FilePlus2 },
+  { href: "/settings/models", label: "识别设置", icon: SlidersHorizontal },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -27,7 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="sidebar">
         <Link href="/" className="brand">
           <span className="brand-mark"><BookOpen size={21} strokeWidth={2.2} /></span>
-          <span><strong>拾题</strong><small>教师题库助手</small></span>
+          <span><strong>拾题</strong><small>试卷工作台</small></span>
         </Link>
         <nav className="side-nav" aria-label="主导航">
           {navigation.map(({ href, label, icon: Icon }) => {
@@ -40,16 +39,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="sidebar-card">
-          <Sparkles size={17} />
-          <strong>视觉识题引擎</strong>
-          <p>页面图像 → 题目 JSON<br />公式、插图与答案一并识别</p>
-          <span>真实识题</span>
-        </div>
-        <div className="sidebar-foot">
-          <Link href="/settings/models" className="settings-link"><Settings size={17} /> 模型与存储设置</Link>
-          <div className="user-row"><span className="avatar">林</span><span><strong>林老师</strong><small>数学教研组</small></span></div>
-        </div>
       </aside>
       <main className="app-main">{children}</main>
     </div>

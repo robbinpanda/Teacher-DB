@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, FileText, LoaderCircle, ScanLine, UploadCloud } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, FileText, LoaderCircle, ShieldCheck, UploadCloud } from "lucide-react";
 
 type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
@@ -205,30 +205,36 @@ export function UploadWorkbench() {
 
   return (
     <div className="upload-card card">
-      <div className="section-title"><div><h2>批量上传试卷</h2><p>最多同时处理 2 份试卷，每份并发上传 3 页、识别 2 页</p></div><span className="pill dark"><ScanLine size={12} /> AI 自动抽题</span></div>
+      <div className="section-title upload-title"><div><h2>导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
       <div className="upload-source-grid">
         <label><span>学科</span><input value={sourceMeta.subject} onChange={(event) => setSourceMeta({ ...sourceMeta, subject: event.target.value })} /></label>
         <label><span>年级</span><input value={sourceMeta.grade} onChange={(event) => setSourceMeta({ ...sourceMeta, grade: event.target.value })} /></label>
         <label><span>年份</span><input type="number" value={sourceMeta.sourceYear} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceYear: event.target.value })} /></label>
-        <label><span>考试类型</span><input placeholder="如：二模 / 中考" value={sourceMeta.sourceExamType} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceExamType: event.target.value })} /></label>
-        <label><span>地区</span><input placeholder="如：上海市" value={sourceMeta.sourceRegion} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceRegion: event.target.value })} /></label>
-        <label><span>学校</span><input placeholder="可选" value={sourceMeta.sourceSchool} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceSchool: event.target.value })} /></label>
       </div>
+      <details className="source-details">
+        <summary>补充来源信息 <small>考试类型、地区、学校</small><ChevronDown size={14} /></summary>
+        <div className="optional-source-grid">
+          <label><span>考试类型</span><input placeholder="如：二模 / 中考" value={sourceMeta.sourceExamType} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceExamType: event.target.value })} /></label>
+          <label><span>地区</span><input placeholder="如：上海市" value={sourceMeta.sourceRegion} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceRegion: event.target.value })} /></label>
+          <label><span>学校</span><input placeholder="可选" value={sourceMeta.sourceSchool} onChange={(event) => setSourceMeta({ ...sourceMeta, sourceSchool: event.target.value })} /></label>
+        </div>
+      </details>
       <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div
         className={"drop-zone " + (working ? "working " : "")}
         onDragOver={(event) => event.preventDefault()}
         onDrop={onDrop}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inputRef.current?.click(); } }}
         role="button"
         tabIndex={0}
       >
-        <span className="upload-orbit">
-          {working ? <LoaderCircle size={28} className="spin" /> : <UploadCloud size={29} />}
+        <span className="upload-symbol">
+          {working ? <LoaderCircle size={23} className="spin" /> : <UploadCloud size={24} />}
         </span>
-        <strong>拖入一批试卷，或点击多选文件</strong>
-        <p>{working ? "后台可靠队列正在继续；关闭当前页面也不会丢失已保存进度。" : "仅支持 PDF，一次最多选择 50 份"}</p>
-        <div className="file-types"><span><FileText size={13} /> PDF 试卷</span></div>
+        <strong>{working ? "试卷正在处理" : "选择 PDF 试卷"}</strong>
+        <p>{working ? "可以离开此页，后台会继续处理。" : "点击选择或将文件拖到这里，可一次导入多份"}</p>
+        <span className="upload-reliability"><ShieldCheck size={13} /> 原卷、分页图和处理进度都会保留</span>
       </div>
       {tasks.length > 0 && <div className="upload-task-list">
         {tasks.map((task) => <article key={task.id} className={`upload-task ${task.stage}`}>
@@ -238,7 +244,6 @@ export function UploadWorkbench() {
           {task.documentId && <Link href={`/review/${task.documentId}`} onClick={(event) => event.stopPropagation()}>{task.stage === "done" ? "审核" : "查看"}</Link>}
         </article>)}
       </div>}
-      <div className="upload-meta"><span><b>{tasks.length || "—"}</b> 试卷任务</span><i /><span><b>50</b> 份/批</span><i /><span><b>2</b> 份识别并发</span></div>
     </div>
   );
 }

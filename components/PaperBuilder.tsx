@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, Eye, GripVertical, LoaderCircle, Settings2, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, Eye, GripVertical, ListPlus, LoaderCircle, Settings2, Trash2 } from "lucide-react";
 import type { QuestionWithSource } from "../lib/types";
 import { typeLabels } from "../lib/question-labels";
 import { PaperPrintable } from "./PaperPrintable";
@@ -108,7 +108,7 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
   return (
     <div className="paper-builder">
       <header className="paper-topbar no-print">
-        <div><Link href="/bank" className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>智能组卷</strong><small>从题库生成可打印试卷</small></span></div>
+        <div><Link href="/bank" className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>组卷</strong><small>从题库生成可打印试卷</small></span></div>
         <div className="paper-save-state"><Check size={13} /> {saveState === "saving" ? "正在保存…" : saveState === "error" ? "保存失败" : "已自动保存"}</div>
         <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏答案" : "答案预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={downloading} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading ? "正在生成…" : "下载 PDF"}</button></div>
       </header>
@@ -121,7 +121,7 @@ export function PaperBuilder({ questions, initialIds }: { questions: QuestionWit
           <div className="paper-summary">
             <div><span>题目数量</span><strong>{selected.length}</strong></div><div><span>题型数量</span><strong>{typeCount}</strong></div><div><span>预计页数</span><strong>{estimatedPages}</strong></div>
           </div>
-          <div className="smart-fill"><Sparkles size={17} /><div><strong>智能补齐试卷</strong><p>优先按当前知识点补入未选题目，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= fillTarget || ids.length >= questions.length}>补齐</button></div>
+          <div className="smart-fill"><ListPlus size={17} /><div><strong>按知识点补齐</strong><p>优先补入相同知识点的未选题目，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= fillTarget || ids.length >= questions.length}>补齐</button></div>
           <div className="paper-order-title"><span>题目顺序</span><b>拖动或使用箭头排序</b></div>
           <div className="paper-order">
             {selected.map((question, index) => (
