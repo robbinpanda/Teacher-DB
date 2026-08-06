@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
+  Check,
   ChevronDown,
   LibraryBig,
   FilePlus2,
   House,
+  Settings2,
   SlidersHorizontal,
 } from "lucide-react";
 import { educationStages, subjects, type EducationStage } from "../lib/education-taxonomy";
@@ -42,6 +44,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [subject, setSubject] = useState("数学");
   const [stage, setStage] = useState<EducationStage>("middle");
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [subjectOpen, setSubjectOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const savedSubject = window.localStorage.getItem("teacher-db-subject");
@@ -52,6 +57,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    if (!scopeOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!switcherRef.current?.contains(event.target as Node)) {
+        setScopeOpen(false);
+        setSubjectOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (subjectOpen) setSubjectOpen(false);
+      else setScopeOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [scopeOpen, subjectOpen]);
 
   const scope = useMemo<EducationScopeValue>(() => ({
     subject,
@@ -70,29 +96,59 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="brand-mark"><BookOpen size={21} strokeWidth={2.2} /></span>
             <span><strong>拾题</strong><small>试卷工作台</small></span>
           </Link>
-          <div className="education-switcher" aria-label="教学范围">
-            <div className="scope-heading">
-              <span>教学范围</span>
-              <strong>{educationStages.find((item) => item.value === stage)?.label} · {subject}</strong>
-            </div>
-            <div className="stage-switch" role="group" aria-label="学段">
-              {educationStages.map((item) => (
-                <button
-                  type="button"
-                  key={item.value}
-                  className={stage === item.value ? "active" : ""}
-                  aria-pressed={stage === item.value}
-                  onClick={() => scope.setStage(item.value)}
-                >{item.label}</button>
-              ))}
-            </div>
-            <label className="subject-switch">
-              <span>学科</span>
-              <select aria-label="学科" value={subject} onChange={(event) => scope.setSubject(event.target.value)}>
-                {subjects.map((item) => <option key={item}>{item}</option>)}
-              </select>
-              <ChevronDown size={14} aria-hidden="true" />
-            </label>
+          <div ref={switcherRef} className={`education-switcher${scopeOpen ? " open" : ""}`} aria-label="教学范围">
+            <button
+              type="button"
+              className="scope-trigger"
+              aria-expanded={scopeOpen}
+              aria-controls="education-scope-settings"
+              onClick={() => { setScopeOpen((value) => !value); setSubjectOpen(false); }}
+            >
+              <span><small>教学范围</small><strong>{educationStages.find((item) => item.value === stage)?.label} · {subject}</strong></span>
+              <i><Settings2 size={15} aria-hidden="true" /></i>
+            </button>
+            {scopeOpen && (
+              <div id="education-scope-settings" className="scope-settings">
+                <div className="scope-field-heading"><span>学段</span><small>影响题库、导入与组卷范围</small></div>
+                <div className="stage-switch" role="group" aria-label="学段">
+                  {educationStages.map((item) => (
+                    <button
+                      type="button"
+                      key={item.value}
+                      className={stage === item.value ? "active" : ""}
+                      aria-pressed={stage === item.value}
+                      onClick={() => scope.setStage(item.value)}
+                    >{item.label}</button>
+                  ))}
+                </div>
+                <div className={`subject-picker${subjectOpen ? " open" : ""}`}>
+                  <span id="subject-picker-label">学科</span>
+                  <button
+                    type="button"
+                    className="subject-trigger"
+                    aria-haspopup="listbox"
+                    aria-expanded={subjectOpen}
+                    aria-labelledby="subject-picker-label subject-current-value"
+                    onClick={() => setSubjectOpen((value) => !value)}
+                  >
+                    <strong id="subject-current-value">{subject}</strong><ChevronDown size={14} aria-hidden="true" />
+                  </button>
+                  {subjectOpen && (
+                    <div className="subject-menu" role="listbox" aria-labelledby="subject-picker-label">
+                      {subjects.map((item) => (
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={subject === item}
+                          key={item}
+                          onClick={() => { scope.setSubject(item); setSubjectOpen(false); }}
+                        ><span>{item}</span>{subject === item && <Check size={13} aria-hidden="true" />}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <nav className="side-nav" aria-label="主导航">
             {navigation.map(({ href, label, icon: Icon }) => {
