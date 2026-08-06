@@ -14,6 +14,7 @@ import {
   FileUp,
   Info,
   LoaderCircle,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Sparkles,
@@ -488,19 +489,24 @@ export function ReviewWorkspace({
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
           <input ref={answerInputRef} hidden type="file" multiple accept="application/pdf,image/*" onChange={(event) => void importAnswers(event.target.files)} />
-          <button className="btn btn-small" type="button" disabled={answerImporting || approvedCount === 0} title={approvedCount === 0 ? "请先审核入库题目" : ""} onClick={() => answerInputRef.current?.click()}><FileUp size={14} /> {answerImporting ? "答案匹配中…" : "导入答案"}</button>
-          <button className="btn btn-small" type="button" onClick={() => setDetailsOpen((value) => !value)}><Info size={14} /> 试卷详情</button>
-          {newResultsAvailable && <button className="btn btn-small" type="button" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新识别结果</button>}
-          {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "继续识别中…" : failedPages.length ? `重试失败页 (${failedPages.length})` : `继续识别 (${incompletePages.length})`}</button>}
-          {bulkNotice && <span className="bulk-notice">{bulkNotice}</span>}
-          <button className="btn btn-primary btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "批量入库中…" : "一键入库：模型判定无需核查"}</button>
-          <button className="btn btn-danger-soft btn-small" type="button" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("remove_all_from_bank")}><Trash2 size={14} /> {bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</button>
+          {newResultsAvailable && <button className="btn btn-small" type="button" title="加载刚完成的识别结果" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新结果</button>}
+          {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "识别中…" : failedPages.length ? `重试失败页 ${failedPages.length}` : `继续识别 ${incompletePages.length}`}</button>}
+          <button className="btn btn-primary btn-small" type="button" title="仅入库模型明确判定无需人工核查的题目" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "入库中…" : "自动入库"}</button>
+          <details className="review-more-menu">
+            <summary className="btn btn-small"><MoreHorizontal size={15} /> 更多</summary>
+            <div>
+              <button type="button" disabled={answerImporting || approvedCount === 0} title={approvedCount === 0 ? "请先审核入库题目" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); answerInputRef.current?.click(); }}><FileUp size={14} /><span><strong>{answerImporting ? "答案匹配中…" : "导入答案"}</strong><small>从答案 PDF 或图片匹配已入库题目</small></span></button>
+              <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setDetailsOpen((value) => !value); }}><Info size={14} /><span><strong>试卷详情</strong><small>修改学科、年级、年份和来源信息</small></span></button>
+              <button className="danger" type="button" disabled={Boolean(bulkAction)} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void runBulkAction("remove_all_from_bank"); }}><Trash2 size={14} /><span><strong>{bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</strong><small>保留识别内容，可稍后重新入库</small></span></button>
+            </div>
+          </details>
         </div>
       </header>
 
-      {(detailsOpen || answerImportMessage) && <div className="review-notice-panel no-print">
+      {(detailsOpen || answerImportMessage || bulkNotice) && <div className="review-notice-panel no-print">
         {detailsOpen && <div className="document-detail-editor"><label>学科<input value={documentMeta.subject} onChange={(event) => setDocumentMeta({ ...documentMeta, subject: event.target.value })} /></label><label>年级<input value={documentMeta.grade} onChange={(event) => setDocumentMeta({ ...documentMeta, grade: event.target.value })} /></label><label>年份<input type="number" value={documentMeta.year} onChange={(event) => setDocumentMeta({ ...documentMeta, year: event.target.value })} /></label><label>考试类型<input placeholder="如：中考 / 二模" value={documentMeta.examType} onChange={(event) => setDocumentMeta({ ...documentMeta, examType: event.target.value })} /></label><label>地区<input value={documentMeta.region} onChange={(event) => setDocumentMeta({ ...documentMeta, region: event.target.value })} /></label><label>学校<input value={documentMeta.school} onChange={(event) => setDocumentMeta({ ...documentMeta, school: event.target.value })} /></label><button type="button" className="btn btn-primary btn-small" onClick={() => void saveDocumentDetails()}>保存详情</button>{detailMessage && <span>{detailMessage}</span>}</div>}
         {answerImportMessage && <p className={/失败|超过|无效/.test(answerImportMessage) ? "form-error" : "form-note"}>{answerImportMessage}</p>}
+        {bulkNotice && <p className="form-note">{bulkNotice}</p>}
       </div>}
 
       <div className="review-body">
@@ -590,17 +596,22 @@ export function ReviewWorkspace({
 
         <aside className="editor-panel no-print">
           <div className="editor-head">
-            <div><span className="eyebrow"><Sparkles size={12} /> AI 提取结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
-            <span className="confidence">{active.needsHumanReview ? "模型标记：需要人工核查" : "模型标记：无需再次核查"} · {Math.round(active.confidence * 100)}% 置信度（仅供参考）</span>
+            <div className="editor-title"><span className="eyebrow"><Sparkles size={12} /> AI 提取结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
+            <div className="model-assessment" title={`模型标记：${active.needsHumanReview ? "需要人工核查" : "无需人工核查"}；置信度仅供参考`}>
+              <span className={active.needsHumanReview ? "needs-review" : "clear"}>{active.needsHumanReview ? <AlertTriangle size={12} /> : <Check size={12} />}{active.needsHumanReview ? "需人工核查" : "无需人工核查"}</span>
+              <span className="confidence-score"><b>{Math.round(active.confidence * 100)}%</b><small>置信度</small></span>
+            </div>
           </div>
 
           <div className="cross-page-regions">
-            <span>题目页面范围</span>
-            {active.regions.map((region) => (
-              <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => { setCurrentPage(region.page); setBoxMode("region"); }}>第 {region.page} 页</button>
-            ))}
-            {Math.min(...active.regions.map((region) => region.page)) > (pageStates[0]?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.min(...active.regions.map((region) => region.page)) - 1)}><Plus size={11} /> 前一页框</button>}
-            {Math.max(...active.regions.map((region) => region.page)) < (pageStates.at(-1)?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.max(...active.regions.map((region) => region.page)) + 1)}><Plus size={11} /> 后一页框</button>}
+            <div><span>题目页面</span><small>{active.regions.length > 1 ? `跨 ${active.regions.length} 页` : "单页题目"}</small></div>
+            <div className="region-chips">
+              {active.regions.map((region) => (
+                <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => { setCurrentPage(region.page); setBoxMode("region"); }}>第 {region.page} 页</button>
+              ))}
+              {Math.min(...active.regions.map((region) => region.page)) > (pageStates[0]?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.min(...active.regions.map((region) => region.page)) - 1)}><Plus size={11} /> 前一页</button>}
+              {Math.max(...active.regions.map((region) => region.page)) < (pageStates.at(-1)?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.max(...active.regions.map((region) => region.page)) + 1)}><Plus size={11} /> 后一页</button>}
+            </div>
           </div>
 
           {!activeRegion && (
