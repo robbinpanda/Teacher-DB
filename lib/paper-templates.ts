@@ -45,6 +45,7 @@ export type PaperStyleConfig = {
   sectionTitleWeight: 400 | 500 | 700;
   sectionHeadingGap: number;
   sectionHeadingPadding: number;
+  sectionDivider: "none" | "single";
   titleAlign: "left" | "center" | "right";
   headerStyle: "exam" | "classic" | "minimal" | "none";
   headerDivider: "none" | "single" | "double";
@@ -133,6 +134,7 @@ export const defaultPaperStyle: PaperStyleConfig = {
   sectionTitleWeight: 700,
   sectionHeadingGap: 3.5,
   sectionHeadingPadding: 1.3,
+  sectionDivider: "none",
   titleAlign: "center",
   headerStyle: "classic",
   headerDivider: "none",
@@ -168,12 +170,14 @@ const examPaperStyle: PaperStyleConfig = {
   titleSize: 22,
   sectionTitleSize: 12.5,
   headerStyle: "exam",
-  headerDivider: "single",
-  headerLabel: "绝密★启用前",
-  showBindingLine: true,
-  questionGap: 7,
+  headerDivider: "none",
+  headerLabel: "",
+  noticeStyle: "plain",
+  showBindingLine: false,
+  questionGap: 4,
   sectionGap: 9,
-  footerText: "请在各题规定的答题区域内作答，超出区域的答案无效",
+  scoreStyle: "hidden",
+  footerText: "",
 };
 
 export const presetPaperTemplates: PaperTemplate[] = [
@@ -186,7 +190,7 @@ export const presetPaperTemplates: PaperTemplate[] = [
     description: "150 分正式试卷，选择、填空、解答三板块。",
     isPreset: true,
     config: {
-      style: { ...examPaperStyle, headerLabel: "2026 年初中学业水平考试" },
+      style: { ...examPaperStyle },
       notice: "1. 本试卷含三个大题，请在规定区域内作答。\n2. 解答题须写出必要的计算、证明或推理过程。",
       infoFields: ["姓名", "班级", "准考证号"],
       compact: false,
@@ -206,7 +210,7 @@ export const presetPaperTemplates: PaperTemplate[] = [
     description: "150 分正式试卷，按上海模考常见板块与分值排版。",
     isPreset: true,
     config: {
-      style: { ...examPaperStyle, headerLabel: "普通高等学校招生全国统一考试" },
+      style: { ...examPaperStyle },
       notice: "考生应在答题纸相应位置作答；解答题必须写出必要步骤。",
       infoFields: ["姓名", "班级", "准考证号"],
       compact: false,
@@ -277,6 +281,10 @@ export function defaultAssetLayout(questionNumber: number): PaperAssetLayout {
   return { x: 0, y: 0, scale: 100, placement: "after-stem", caption: `第 ${questionNumber} 题的图片` };
 }
 
+export function questionStemHasAnswerBlank(stem: string) {
+  return /_{2,}|＿{2,}|—{3,}|\.{5,}|…{2,}|\\(?:underline|blank)\s*(?:\{|\b)|[（(]\s{2,}[）)]/.test(stem);
+}
+
 function numeric(value: unknown, fallback: number, min: number, max: number) {
   const candidate = Number(value);
   return Number.isFinite(candidate) ? Math.min(max, Math.max(min, candidate)) : fallback;
@@ -311,6 +319,7 @@ export function normalizePaperStyle(value: unknown): PaperStyleConfig {
     sectionTitleWeight: style.sectionTitleWeight === 400 || style.sectionTitleWeight === 500 ? style.sectionTitleWeight : 700,
     sectionHeadingGap: numeric(style.sectionHeadingGap, defaultPaperStyle.sectionHeadingGap, 0, 20),
     sectionHeadingPadding: numeric(style.sectionHeadingPadding, defaultPaperStyle.sectionHeadingPadding, 0, 10),
+    sectionDivider: style.sectionDivider === "single" ? "single" : "none",
     titleAlign: style.titleAlign === "left" || style.titleAlign === "right" ? style.titleAlign : "center",
     headerStyle: style.headerStyle === "exam" || style.headerStyle === "minimal" || style.headerStyle === "none" ? style.headerStyle : "classic",
     headerDivider: style.headerDivider === "single" || style.headerDivider === "double" ? style.headerDivider : "none",
@@ -353,6 +362,7 @@ export function paperStyleToLatex(style: PaperStyleConfig) {
     `\\xeCJKsetup{CJKglue=\\hskip ${style.letterSpacing}em}`,
     `\\newcommand{\\papertitlefont}{\\fontsize{${style.titleSize}pt}{${(style.titleSize * style.titleLineHeight).toFixed(2)}pt}\\selectfont${titleWeight}${style.titleItalic ? "\\itshape" : ""}}`,
     `\\newlength{\\papertitlegap}\\setlength{\\papertitlegap}{${style.titleMarginBottom}mm}`,
+    style.sectionDivider === "single" ? "\\newcommand{\\papersectionrule}{\\hrule}" : "\\newcommand{\\papersectionrule}{}",
     `\\setlength{\\parskip}{${style.questionGap}mm}`,
     `\\setCJKmainfont{${/simhei|heiti/i.test(style.bodyFont) ? "SimHei" : "SimSun"}}`,
     columns,

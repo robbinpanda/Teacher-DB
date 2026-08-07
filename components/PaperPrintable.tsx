@@ -1,7 +1,7 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
 import type { QuestionWithSource } from "../lib/types";
-import { defaultAssetLayout, scoreForQuestion, type PaperSettings } from "../lib/paper-templates";
+import { defaultAssetLayout, questionStemHasAnswerBlank, scoreForQuestion, type PaperSettings } from "../lib/paper-templates";
 import { MathText } from "./MathText";
 
 const chineseDigits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
@@ -70,7 +70,7 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
   return (
     <>
     <style>{`@page { size: ${pageWidth}mm ${pageHeight}mm; margin: 0; }`}</style>
-    <article className={`paper-sheet printable-paper ${settings.compact ? "compact" : "formal"} header-${style.headerStyle} divider-${style.headerDivider} info-${style.infoStyle} notice-${style.noticeStyle} score-${style.scoreStyle} title-${style.titleAlign}${style.titleItalic ? " title-italic" : ""}${style.titleUnderline ? " title-underline" : ""}${style.showBindingLine ? " has-binding-line" : ""}`} style={paperVariables}>
+    <article className={`paper-sheet printable-paper ${settings.compact ? "compact" : "formal"} header-${style.headerStyle} divider-${style.headerDivider} section-divider-${style.sectionDivider} info-${style.infoStyle} notice-${style.noticeStyle} score-${style.scoreStyle} title-${style.titleAlign}${style.titleItalic ? " title-italic" : ""}${style.titleUnderline ? " title-underline" : ""}${style.showBindingLine ? " has-binding-line" : ""}`} style={paperVariables}>
       {style.showBindingLine && <aside className="paper-binding-line"><span>{style.bindingText}</span></aside>}
       <header className="paper-document-header">
         {style.headerStyle === "exam" && style.headerLabel && <div className="paper-exam-label">{style.headerLabel}</div>}
@@ -104,11 +104,11 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
               };
               return (
                 <section className="paper-question" key={question.id}>
-                  <div className="paper-question-line"><b>{formatQuestionNumber(questionNumber, style.questionNumberStyle)}</b><div className="paper-question-stem"><MathText text={question.stem} />{score > 0 && style.scoreStyle === "inline" && <span className="paper-question-score inline">（{score} 分）</span>}</div>{score > 0 && style.scoreStyle === "right" && <span className="paper-question-score">（{score} 分）</span>}</div>
+                  <div className="paper-question-line"><b>{formatQuestionNumber(questionNumber, style.questionNumberStyle)}</b><div className="paper-question-stem"><MathText text={question.stem} />{question.type === "fill" && !questionStemHasAnswerBlank(question.stem) && <span className="paper-fill-blank" aria-label="答题空格" />}{score > 0 && style.scoreStyle === "inline" && <span className="paper-question-score inline">（{score} 分）</span>}</div>{score > 0 && style.scoreStyle === "right" && <span className="paper-question-score">（{score} 分）</span>}</div>
                   {beforeAssets.map(renderAsset)}
                   {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}><b>{option.key}.</b> <MathText text={option.content} /></span>)}</div>}
                   {afterAssets.map(renderAsset)}
-                  {question.type === "fill" ? <div className="answer-line" /> : question.type === "answer" ? <div className="answer-space" style={{ height: settings.answerSpaces[question.id] ?? 180 }} /> : null}
+                  {question.type === "answer" ? <div className="answer-space" style={{ height: settings.answerSpaces[question.id] ?? 180 }} /> : null}
                   {includeAnswers && <div className="paper-answer printable-answer"><strong>答案：</strong><MathText text={question.answer || "未录入"} /><br /><strong>解析：</strong><MathText text={question.analysis || "未录入"} /></div>}
                 </section>
               );

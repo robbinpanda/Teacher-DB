@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { presetTags, stageFromGrade } from "../lib/education-taxonomy.ts";
-import { normalizePaperStyle, paperStyleToLatex, presetPaperTemplates, scoreForQuestion, sectionsFromTemplate } from "../lib/paper-templates.ts";
+import { normalizePaperStyle, paperStyleToLatex, presetPaperTemplates, questionStemHasAnswerBlank, scoreForQuestion, sectionsFromTemplate } from "../lib/paper-templates.ts";
 
 const source = { documentId: "d", documentName: "卷", subject: "数学", grade: "九年级" };
 const base = { answer: "", analysis: "", page: 1, bbox: { x: 0, y: 0, width: 1, height: 1 }, regions: [], assets: [], tags: [], confidence: 1, status: "approved", source };
@@ -33,6 +33,11 @@ test("中考模板按题型分板块并应用标准分值", () => {
   assert.equal(scoreForQuestion(sections[0], 0), 4);
   assert.equal(scoreForQuestion(sections[2], 0), 10);
   assert.match(sections[2].scoreDetail, /满分 78 分/);
+  assert.equal(template.config.style.sectionDivider, "none");
+  assert.equal(template.config.style.headerDivider, "none");
+  assert.equal(template.config.style.noticeStyle, "plain");
+  assert.equal(template.config.style.showBindingLine, false);
+  assert.equal(template.config.style.scoreStyle, "hidden");
 });
 
 test("排版模板参数会被规范化并生成 LaTeX 页面语义", () => {
@@ -50,4 +55,11 @@ test("排版模板参数会被规范化并生成 LaTeX 页面语义", () => {
   assert.match(latex, /fontsize\{28pt\}\{39\.20pt\}/);
   assert.match(latex, /papertitlegap\}\{7mm\}/);
   assert.match(latex, /\\twocolumn/);
+});
+
+test("填空题只在题干没有答案横线时补充行内答题位", () => {
+  assert.equal(questionStemHasAnswerBlank("若 x=1，则 y=____。"), true);
+  assert.equal(questionStemHasAnswerBlank("若 x=1，则 y=\\underline{}。"), true);
+  assert.equal(questionStemHasAnswerBlank("若 x=1，则 y 的值为"), false);
+  assert.equal(normalizePaperStyle({}).sectionDivider, "none");
 });
