@@ -5,6 +5,7 @@ import { ensureDatabase } from "../db/bootstrap";
 import { resolveModelProfile } from "./model-profiles";
 import { now } from "./server";
 import { MAX_EXTRACTION_ATTEMPTS, retryDelayMs, shouldPauseExtraction } from "./extraction-retry";
+import { getDocumentIntegrity, integrityError } from "./document-integrity";
 
 const MAX_ACTIVE_DOCUMENTS = 2;
 const LEASE_MS = 90_000;
@@ -58,15 +59,16 @@ export async function enqueueDocumentExtraction(input: {
   await ensureDatabase();
   const sqlite = getSqlite();
   const document = sqlite.prepare(
-    "SELECT id, page_count AS pageCount FROM documents WHERE id = ? AND owner_id = ?",
-  ).get(input.documentId, input.ownerId) as { id: string; pageCount: number } | undefined;
+    "SELECT id FROM documents WHERE id = ? AND owner_id = ?",
+  ).get(input.documentId, input.ownerId) as { id: string } | undefined;
   if (!document) throw new Error("文档不存在");
+  const integrity = getDocumentIntegrity(sqlite, input.documentId)!;
+  if (integrity.missingPageNumbers.length || integrity.unexpectedPageNumbers.length || !integrity.storedPageNumbers.length) {
+    throw new Error(integrityError(integrity));
+  }
   const pages = sqlite.prepare(
     "SELECT id, page_number AS pageNumber FROM pages WHERE document_id = ? ORDER BY page_number",
   ).all(input.documentId) as Array<{ id: string; pageNumber: number }>;
-  if (!pages.length || pages.length < document.pageCount) {
-    throw new Error(`页面仍在上传（${pages.length}/${document.pageCount}），暂不能加入识别队列`);
-  }
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const timestamp = now();
   sqliteTransaction((transaction) => {
@@ -121,7 +123,7 @@ export async function listDocumentJobs(ownerId: string) {
     `SELECT j.document_id AS documentId, d.name, j.status, j.attempt,
        j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError,
        j.queued_at AS queuedAt, j.started_at AS startedAt, j.finished_at AS finishedAt,
-       COUNT(r.id) AS totalPages,
+       d.page_count AS totalPages,
        SUM(CASE WHEN r.status = 'complete' THEN 1 ELSE 0 END) AS completedPages,
        SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END) AS failedPages,
        SUM(CASE WHEN r.status = 'retry_wait' THEN 1 ELSE 0 END) AS retryWaitPages
@@ -192,9 +194,21 @@ async function finishDocument(job: JobRow & { workerId: string }) {
     new Request("http://local/api/finalize", { method: "POST", headers: { "oai-authenticated-user-id": job.ownerId } }),
     { params: Promise.resolve({ documentId: job.documentId }) },
   );
-  const result = await response.json() as { failedPages?: number; completePages?: number; totalPages?: number };
-  if (!response.ok || result.failedPages) throw new Error("文档收尾失败");
+  const result = await response.json() as { error?: string; failedPages?: number; completePages?: number; totalPages?: number };
   const timestamp = now();
+  if (!response.ok || result.failedPages || (result.completePages ?? 0) < (result.totalPages ?? 0)) {
+    const message = result.error ?? "文档完整性检查未通过";
+    sqliteTransaction((transaction) => {
+      transaction.prepare(
+        `UPDATE document_jobs SET status = 'failed', lease_owner = NULL, lease_expires_at = NULL,
+           next_attempt_at = NULL, last_error = ?, finished_at = ?, updated_at = ?
+         WHERE document_id = ? AND lease_owner = ?`,
+      ).run(message, timestamp, timestamp, job.documentId, job.workerId);
+      transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
+        .run(message, timestamp, job.documentId);
+    });
+    return;
+  }
   getSqlite().prepare(
     `UPDATE document_jobs SET status = 'complete', lease_owner = NULL, lease_expires_at = NULL,
        next_attempt_at = NULL, last_error = NULL, finished_at = ?, updated_at = ?

@@ -6,6 +6,7 @@ import { now, requestOwner } from "../../../../lib/server";
 import { stageFromGrade } from "../../../../lib/education-taxonomy";
 import { getTagCatalog } from "../../../../lib/tag-catalog";
 import type { BoundingBox, Question } from "../../../../lib/types";
+import { getDocumentIntegrity, integrityError, missingPositiveNumbers } from "../../../../lib/document-integrity";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,15 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   if (!new Set(["pending", "approved", "needs_attention"]).has(payload.status)) {
     return Response.json({ error: "非法审核状态" }, { status: 400 });
   }
+  if (payload.status === "approved") {
+    const integrity = getDocumentIntegrity(sqlite, ownedQuestion.documentId)!;
+    const nextNumbers = (sqlite.prepare("SELECT id, number FROM questions WHERE document_id = ?").all(ownedQuestion.documentId) as Array<{ id: string; number: string }>)
+      .map((question) => question.id === questionId ? payload.number : question.number);
+    const missingQuestionNumbers = missingPositiveNumbers(nextNumbers);
+    const reviewIntegrity = { ...integrity, missingQuestionNumbers, questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 };
+    reviewIntegrity.reviewReady = reviewIntegrity.pagesComplete && reviewIntegrity.questionsComplete;
+    if (!reviewIntegrity.reviewReady) return Response.json({ error: integrityError(reviewIntegrity) }, { status: 409 });
+  }
   const tagNames = Array.from(new Set(payload.tags.map((tag) => tag.trim()).filter(Boolean)));
   const allowedTags = new Set((await getTagCatalog(ownerId, ownedQuestion.subject || "数学", stageFromGrade(ownedQuestion.grade))).map((item) => item.name));
   const unknownTags = tagNames.filter((tag) => !allowedTags.has(tag));
@@ -68,9 +78,10 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
     pageId: string;
     sourceKey: string;
     cropKey: string;
+    position: number;
   }> = [];
   try {
-    for (const asset of payload.assets) {
+    for (const [position, asset] of payload.assets.entries()) {
       const box = safeBox(asset.bbox);
       const page = sqlite.prepare(
         `SELECT id, storage_key AS storageKey FROM pages WHERE document_id = ? AND page_number = ?`,
@@ -87,7 +98,7 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       const cropBytes = await image.extract({ left, top, width, height }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
       const cropKey = `documents/${ownedQuestion.documentId}/crops/${questionId}/${asset.id}-${crypto.randomUUID()}.jpg`;
       await putFile(cropKey, cropBytes);
-      preparedAssets.push({ asset, box, pageId: page.id, sourceKey: page.storageKey, cropKey });
+      preparedAssets.push({ asset, box, pageId: page.id, sourceKey: page.storageKey, cropKey, position });
     }
   } catch (error) {
     await Promise.allSettled(preparedAssets.map((prepared) => deleteFile(prepared.cropKey)));
@@ -115,14 +126,14 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       for (const prepared of preparedAssets) {
         transaction.prepare(
           `INSERT INTO question_assets
-            (id, question_id, page_id, kind, label, source_key, crop_key, bbox_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, question_id, page_id, kind, label, source_key, crop_key, bbox_json, position, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET page_id = excluded.page_id, kind = excluded.kind,
              label = excluded.label, source_key = excluded.source_key, crop_key = excluded.crop_key,
-             bbox_json = excluded.bbox_json`,
+             bbox_json = excluded.bbox_json, position = excluded.position`,
         ).run(
           prepared.asset.id, questionId, prepared.pageId, prepared.asset.kind, prepared.asset.label,
-          prepared.sourceKey, prepared.cropKey, JSON.stringify(prepared.box), timestamp,
+          prepared.sourceKey, prepared.cropKey, JSON.stringify(prepared.box), prepared.position, timestamp,
         );
       }
       if (preparedAssets.length) {

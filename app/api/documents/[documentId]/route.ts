@@ -4,6 +4,7 @@ import { ensureDatabase } from "../../../../db/bootstrap";
 import { documents, questions } from "../../../../db/schema";
 import { deleteFile } from "../../../../lib/file-storage";
 import { now, requestOwner } from "../../../../lib/server";
+import { getDocumentIntegrity, integrityError } from "../../../../lib/document-integrity";
 
 export const runtime = "nodejs";
 
@@ -36,18 +37,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     if (counts.approved !== counts.total) {
       return Response.json({ error: `还有 ${counts.total - counts.approved} 道题未审核，不能完成入库` }, { status: 409 });
     }
-    const pageProgress = getSqlite().prepare(
-      `SELECT COUNT(p.id) AS total,
-              COALESCE(SUM(CASE WHEN r.status = 'complete' THEN 1 ELSE 0 END), 0) AS complete
-         FROM pages p LEFT JOIN extraction_runs r
-           ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
-        WHERE p.document_id = ?`,
-    ).get(documentId) as { total: number; complete: number };
-    const missingPages = Math.max(0, document.pageCount - pageProgress.total);
-    const incompletePages = missingPages + pageProgress.total - pageProgress.complete;
-    if (incompletePages > 0) {
-      return Response.json({ error: `还有 ${incompletePages} 页未完成识别，不能完成入库` }, { status: 409 });
-    }
+    const integrity = getDocumentIntegrity(getSqlite(), documentId)!;
+    if (!integrity.reviewReady) return Response.json({ error: integrityError(integrity) }, { status: 409 });
   }
 
   const allowedStatuses = new Set(["uploading", "extracting", "reviewing", "failed", "complete"]);

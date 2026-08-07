@@ -83,7 +83,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
        FROM question_assets a
        LEFT JOIN pages p ON p.id = a.page_id
       WHERE a.question_id IN (${placeholders(ids.length)})
-      ORDER BY a.created_at, a.id`,
+      ORDER BY a.position, a.created_at, a.id`,
   ).all(...ids) as AssetRow[];
   const regions = sqlite.prepare(
     `SELECT question_id AS questionId, page_number AS page, bbox_json AS bboxJson

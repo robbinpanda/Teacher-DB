@@ -8,10 +8,12 @@ import { now, requestOwner } from "../../../lib/server";
 import type { BoundingBox, Question, QuestionType } from "../../../lib/types";
 import { callVisionModel, ModelCallError } from "../../../lib/vision-model";
 import { contentTypeForKey, getFile } from "../../../lib/file-storage";
-import { resolveExtractionPage } from "../../../lib/extraction-pages";
+import { resolveExtractionPage, selectPrimaryExtractionRegion } from "../../../lib/extraction-pages";
 import { stageFromGrade } from "../../../lib/education-taxonomy";
 import { getTagCatalog } from "../../../lib/tag-catalog";
 import { modelNeedsHumanReview } from "../../../lib/model-review";
+import { findMatchingAsset } from "../../../lib/extraction-assets";
+import { loadContinuationCandidates } from "../../../lib/continuation-candidates";
 
 export const runtime = "nodejs";
 
@@ -23,11 +25,13 @@ const systemPrompt = [
   "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；page 必须填写提示中的原卷真实页码（例如主页面为第9页时写9，绝不能按输入图片顺序写1）；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
   "4. bbox 必须贴合内容：包含题号、完整题干、选项、作答横线及属于该题的图注；排除页眉、页脚、密封线、装订线、空白页边和相邻题目。边缘可留 0.3%-0.8% 安全余量，不要使用整页大框。",
   "5. assets 只框必须作为图片保存的几何图、函数图象、统计图、地图、实验装置或无法可靠转成文字的表格。asset bbox 紧贴图形本身，可包含图内标注，但不要包含外围题干或无关空白。纯文字、普通公式和可转写的小表格不要建 asset。",
+  "5a. 一道题可以有多张题图。每个独立图形、图表或子图组分别输出一个 asset，按阅读顺序排列；不得把相距较远的多张图连同题干一起框成一个大图，也不得因为已经输出一张图而漏掉其余题图。",
   "6. type 只能是 single、multiple、fill、answer。不要提取或输出分值。tags 只能从用户提示给出的允许标签中选择 1-3 个，禁止创造近义标签或临时标签。confidence 要反映文字与框选两者中较低的可信度，但仅用于展示，绝不能用它决定是否需要人工核查。",
   "7. 如果主页面是答案或解析页，不要把答案条目伪造成新题；放进 answerUpdates，并按原题号关联，同时为答案或解析在本次实际可见的每一页输出 regions。跨页解析必须始终沿用同一题号，系统会逐页合并为完整 analysis。",
   "7a. 大题完整性优先：一道大题包含（1）（2）或【小问1详解】【小问2详解】等多个小问时，必须把所有小问的题干、答案和解析合并到同一个顶层题号。看到【小问1详解】绝不表示大题结束；必须继续向下并检查下一页，直到出现下一个独立顶层阿拉伯数字题号或本卷结束。",
   "7b. 主页面可能同时包含上一题的续页和下一题的开头。必须先找出页面上每个独立顶层题号的印刷位置，再按这些位置切分：页面顶部至下一个顶层题号之前属于已保存的跨页候选；新题 region 必须从它自己的顶层题号所在行开始。此时要同时输出前题续页和后题新题，两个 region 不得互换、重叠或错误覆盖页面顶部空白。",
   "7c. 新题的主页面 region 必须实际包住它自己的可见顶层题号；只有提示中列出的跨页候选允许在续页 region 内没有题号。长题干或长解析不得配一个角落小框。若文字量与框面积明显不相称，必须重新检查框边界后再输出。",
+  "7d. 题号一致性是硬约束：有印刷顶层题号时逐字采用；页面没有印刷题号时，只能沿用提示中与该页连续的跨页候选题号，绝不能根据相似内容猜成更早的题号。若候选为第20题，后续无题号解析页必须始终写20，禁止改写为18或其他题号。",
   "8. 输出前逐题自检：逐项核对题干中出现的每个（1）（2）等小问在 answer/analysis 中是否完整；逐页核对 region 从本题第一行到下一顶层题号前最后一行；region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。",
   "8a. questions 和 answerUpdates 中都必须输出布尔字段 needsHumanReview。只要存在文字模糊、内容缺失、答案解析不完整、题型或框选存疑等任何问题，就输出 true；只有确认完整且无需再次人工核查时才输出 false。不确定时必须输出 true，禁止省略或输出字符串。",
   "主页面没有题号或题目开头、只有下一页 region 的候选题必须丢弃；严禁为了保留它而补造默认 bbox。",
@@ -56,14 +60,6 @@ function hasExplicitBox(value: unknown) {
     && Number(box.width) > 0 && Number(box.height) > 0;
 }
 
-type ContinuationCandidate = {
-  number: string;
-  primaryPage: number;
-  lastPage: number;
-  stemTail: string;
-  analysisTail: string;
-};
-
 type AnswerUpdate = {
   number: string;
   answer: string;
@@ -73,7 +69,7 @@ type AnswerUpdate = {
   regions: Array<{ page: number; bbox: BoundingBox }>;
 };
 
-function normalize(raw: unknown, pageNumber: number, availablePages: number[], allowedTags: string[]): { questions: Question[]; answerUpdates: AnswerUpdate[]; documentMeta: Record<string, unknown> } {
+function normalize(raw: unknown, pageNumber: number, availablePages: number[], allowedTags: string[]): { questions: Question[]; answerUpdates: AnswerUpdate[]; documentMeta: Record<string, unknown>; diagnostics: { acceptedQuestionNumbers: string[]; discardedQuestionNumbers: string[]; unmatchedAnswerUpdateNumbers: string[] } } {
   const result = raw as { questions?: unknown[]; answerUpdates?: unknown[]; documentMeta?: Record<string, unknown> };
   const allowed = new Set(allowedTags);
   const items = Array.isArray(result?.questions) ? result.questions : [];
@@ -92,10 +88,11 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
       const entry = region as Record<string, unknown>;
       return { page: resolveExtractionPage(entry.page, availablePages, pageNumber), bbox: safeBox(entry.bbox) };
     }).filter((region) => availablePages.includes(region.page));
-    // 新题或明确的接力题都必须给出主页面 region；不再接受会产生角落小框的旧 bbox 回退格式。
-    if (!regions.some((region) => region.page === pageNumber)) return null;
+    // 模型偶尔会提前读出随附的下一页。只要框选落在本轮真实提供的页面内就保留，
+    // 后续处理该页时会按题号合并，避免“原始 JSON 已识别、最终题库却缺题”。
+    if (!regions.length) return null;
     const uniqueRegions = regions.filter((region, regionIndex) => regions.findIndex((candidate) => candidate.page === region.page) === regionIndex);
-    const primaryRegion = uniqueRegions.find((region) => region.page === pageNumber)!;
+    const primaryRegion = selectPrimaryExtractionRegion(uniqueRegions, pageNumber);
     const rawAssets = Array.isArray(item.assets) ? item.assets : [];
     const normalizedAssets = rawAssets.map((asset, assetIndex) => {
       const entry = asset as Record<string, unknown>;
@@ -124,7 +121,7 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
       options,
       answer,
       analysis,
-      page: pageNumber,
+      page: primaryRegion.page,
       bbox: primaryRegion.bbox,
       regions: uniqueRegions,
       assets: normalizedAssets,
@@ -151,7 +148,15 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
       regions,
     };
   }).filter((item) => /^\d+$/.test(item.number) && (item.answer || item.analysis));
-  return { questions: normalizedQuestions, answerUpdates, documentMeta: result.documentMeta ?? {} };
+  const acceptedQuestionNumbers = normalizedQuestions.map((question) => question.number);
+  const accepted = new Set(acceptedQuestionNumbers);
+  const discardedQuestionNumbers = items.map((value, index) => String((value as Record<string, unknown>).number ?? index + 1).trim()).filter((number) => !accepted.has(number));
+  return {
+    questions: normalizedQuestions,
+    answerUpdates,
+    documentMeta: result.documentMeta ?? {},
+    diagnostics: { acceptedQuestionNumbers, discardedQuestionNumbers, unmatchedAnswerUpdateNumbers: [] },
+  };
 }
 
 function parseJsonContent(content: string) {
@@ -195,7 +200,7 @@ export async function POST(request: Request) {
     where: and(eq(pages.documentId, documentId), eq(pages.pageNumber, pageNumber + 1)),
   });
   const sourcePages = [ownedPage, ...(nextPage ? [nextPage] : [])];
-  const continuationCandidates = loadContinuationCandidates(documentId, pageNumber);
+  const continuationCandidates = loadContinuationCandidates(getSqlite(), documentId, pageNumber);
   const modelImages: Array<{ page: number; dataUrl: string }> = [];
   for (const sourcePage of sourcePages) {
     let dataUrl = sourcePage.id === ownedPage.id ? payload.image : undefined;
@@ -262,7 +267,6 @@ export async function POST(request: Request) {
     const extracted = normalized.questions;
     const finishedAt = now();
     sqliteTransaction((transaction) => {
-      transaction.prepare("DELETE FROM questions WHERE document_id = ? AND page_number = ?").run(documentId, pageNumber);
       for (const question of extracted) {
         const existingQuestion = transaction.prepare(
           `SELECT id, stem, options_json AS optionsJson, answer, analysis, status,
@@ -328,12 +332,24 @@ export async function POST(request: Request) {
                page_id = excluded.page_id, bbox_json = excluded.bbox_json, position = excluded.position`,
           ).run(crypto.randomUUID(), questionId, regionPage?.id ?? null, region.page, JSON.stringify(region.bbox), regionIndex, createdAt);
         }
-        for (const asset of question.assets) {
+        const existingAssets = transaction.prepare(
+          "SELECT id, page_id AS pageId, bbox_json AS bboxJson FROM question_assets WHERE question_id = ?",
+        ).all(questionId) as Array<{ id: string; pageId: string | null; bboxJson: string }>;
+        for (const [assetPosition, asset] of question.assets.entries()) {
           const assetPage = sourcePages.find((page) => page.pageNumber === asset.page);
+          const matchingAsset = findMatchingAsset(existingAssets.map((candidate) => ({
+            id: candidate.id,
+            pageId: candidate.pageId,
+            bbox: JSON.parse(candidate.bboxJson) as BoundingBox,
+          })), assetPage?.id ?? null, asset.bbox);
+          if (matchingAsset) asset.id = matchingAsset.id;
           transaction.prepare(
-            `INSERT INTO question_assets (id, question_id, page_id, kind, label, source_key, bbox_json, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(asset.id, questionId, assetPage?.id ?? null, asset.kind, asset.label, null, JSON.stringify(asset.bbox), createdAt);
+            `INSERT INTO question_assets (id, question_id, page_id, kind, label, source_key, bbox_json, position, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET page_id = excluded.page_id, kind = excluded.kind,
+               label = excluded.label, bbox_json = excluded.bbox_json, position = excluded.position`,
+          ).run(asset.id, questionId, assetPage?.id ?? null, asset.kind, asset.label, null, JSON.stringify(asset.bbox), assetPosition, createdAt);
+          if (!matchingAsset) existingAssets.push({ id: asset.id, pageId: assetPage?.id ?? null, bboxJson: JSON.stringify(asset.bbox) });
         }
         for (const tagName of question.tags) {
           transaction.prepare("INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?, ?, ?)").run(crypto.randomUUID(), tagName, createdAt);
@@ -355,7 +371,10 @@ export async function POST(request: Request) {
           needsHumanReview: number | null;
           status: Question["status"];
         } | undefined;
-        if (!target) continue;
+        if (!target) {
+          normalized.diagnostics.unmatchedAnswerUpdateNumbers.push(update.number);
+          continue;
+        }
         const mergedAnswer = mergeContinuationText(target.answer, update.answer);
         const mergedAnalysis = mergeContinuationText(target.analysis, update.analysis);
         const mergedConfidence = target.confidence > 0
@@ -383,7 +402,7 @@ export async function POST(request: Request) {
         `UPDATE extraction_runs SET status = 'complete', raw_json = ?, error = NULL, error_code = NULL,
            next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL, finished_at = ?
          WHERE idempotency_key = ?`,
-      ).run(JSON.stringify(parsedContent), finishedAt, idempotencyKey);
+      ).run(JSON.stringify({ ...(parsedContent as Record<string, unknown>), _pipeline: normalized.diagnostics }), finishedAt, idempotencyKey);
       transaction.prepare(
         "UPDATE documents SET status = 'extracting', error = NULL, updated_at = ? WHERE id = ?",
       ).run(finishedAt, documentId);
@@ -424,46 +443,6 @@ export async function POST(request: Request) {
   }
 }
 
-function loadContinuationCandidates(documentId: string, pageNumber: number): ContinuationCandidate[] {
-  if (pageNumber <= 1) return [];
-  const rows = getSqlite().prepare(
-    `SELECT q.number AS number, q.page_number AS primaryPage, q.stem AS stem,
-            q.analysis AS analysis, qr.page_number AS lastPage, qr.bbox_json AS regionBbox
-       FROM questions q
-       JOIN question_regions qr ON qr.question_id = q.id
-      WHERE q.document_id = ? AND q.page_number < ?
-        AND qr.page_number BETWEEN ? AND ?
-      ORDER BY qr.page_number DESC`,
-  ).all(documentId, pageNumber, pageNumber - 1, pageNumber) as Array<{
-    number: string;
-    primaryPage: number;
-    lastPage: number;
-    stem: string;
-    analysis: string;
-    regionBbox: string;
-  }>;
-  const byNumber = new Map<string, typeof rows[number]>();
-  for (const row of rows) {
-    const current = byNumber.get(row.number);
-    if (!current || row.lastPage > current.lastPage) byNumber.set(row.number, row);
-  }
-  const bottom = (row: typeof rows[number]) => {
-    try {
-      const box = JSON.parse(row.regionBbox) as BoundingBox;
-      return Number(box.y) + Number(box.height);
-    } catch { return -1; }
-  };
-  return Array.from(byNumber.values()).sort((left, right) =>
-    right.lastPage - left.lastPage || bottom(right) - bottom(left) || Number(right.number) - Number(left.number),
-  ).slice(0, 4).map((row) => ({
-    number: row.number,
-    primaryPage: row.primaryPage,
-    lastPage: row.lastPage,
-    stemTail: row.stem.slice(-1400),
-    analysisTail: row.analysis.slice(-900),
-  }));
-}
-
 async function loadPageQuestions(documentId: string, pageNumber: number): Promise<Question[]> {
   const db = getDb();
   const rows = await db.select().from(questions).where(and(eq(questions.documentId, documentId), eq(questions.pageNumber, pageNumber)));
@@ -495,7 +474,7 @@ async function loadPageQuestions(documentId: string, pageNumber: number): Promis
       page: region.page,
       bbox: JSON.parse(region.bboxJson) as BoundingBox,
     })).concat(regionRows.some((region) => region.questionId === row.id) ? [] : [{ page: row.pageNumber, bbox: JSON.parse(row.bboxJson) as BoundingBox }]),
-    assets: assetRows.filter((asset) => asset.questionId === row.id).map((asset) => ({
+    assets: assetRows.filter((asset) => asset.questionId === row.id).sort((left, right) => left.position - right.position).map((asset) => ({
       id: asset.id,
       kind: asset.kind as "figure" | "table" | "graph",
       page: assetRows.find((candidate) => candidate.id === asset.id)?.pageId

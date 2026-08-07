@@ -15,10 +15,8 @@ const groupMeta: Array<{ id: DocumentGroup; title: string; description: string; 
 ];
 
 function documentGroup(document: SourceDocument): DocumentGroup {
-  if (document.status === "complete"
-    || (document.status === "reviewing" && document.questionCount > 0 && document.approvedCount === document.questionCount)) {
-    return "reviewed";
-  }
+  if (document.completedPageCount < document.pageCount) return "preprocessing";
+  if (document.status === "complete") return "reviewed";
   if (document.status === "reviewing") return "pending_review";
   return "preprocessing";
 }

@@ -108,6 +108,7 @@ export const assets = sqliteTable("question_assets", {
   sourceKey: text("source_key"),
   cropKey: text("crop_key"),
   bboxJson: text("bbox_json").notNull(),
+  position: integer("position").notNull().default(0),
   createdAt: text("created_at").notNull(),
 }, (table) => [index("assets_question_idx").on(table.questionId)]);
 

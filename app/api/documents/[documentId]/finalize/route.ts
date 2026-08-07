@@ -2,6 +2,7 @@ import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../lib/server";
 import { modelNeedsHumanReview } from "../../../../../lib/model-review";
+import { getDocumentIntegrity, integrityError } from "../../../../../lib/document-integrity";
 
 export const runtime = "nodejs";
 
@@ -30,9 +31,27 @@ export async function POST(request: Request, context: { params: Promise<{ docume
       // 单页原始结果已在识别接口中验证；这里忽略历史损坏记录并保留可审核题目。
     }
   }
-  const totalPages = (sqlite.prepare("SELECT COUNT(*) AS count FROM pages WHERE document_id = ?").get(documentId) as { count: number }).count;
-  const completePages = runs.filter((run) => run.status === "complete").length;
+  const integrity = getDocumentIntegrity(sqlite, documentId)!;
+  const totalPages = integrity.pageCount;
+  const storedPages = integrity.storedPageNumbers.length;
+  const completePages = integrity.completedPageNumbers.length;
   const failedRuns = runs.filter((run) => run.status === "failed");
+  const existingQuestionNumbers = new Set(
+    (sqlite.prepare("SELECT number FROM questions WHERE document_id = ?").all(documentId) as Array<{ number: string }>)
+      .map((question) => question.number),
+  );
+  const unmatchedAnswerUpdateNumbers = Array.from(new Set(
+    updates.map((update) => String(update.number ?? "").trim())
+      .filter((number) => /^\d+$/.test(number) && !existingQuestionNumbers.has(number)),
+  )).sort((left, right) => Number(left) - Number(right));
+  const integrityFailure = failedRuns.length
+    ? null
+    : unmatchedAnswerUpdateNumbers.length
+      ? `识别结果包含第 ${unmatchedAnswerUpdateNumbers.join("、")} 题的答案或解析，但题目主体未成功落库，请重新识别对应页面后再审核`
+      : integrity.reviewReady ? null : integrityError(integrity);
+  const terminalError = failedRuns.length
+    ? failedRuns.map((run) => `第 ${run.pageNumber} 页：${run.error ?? "识别失败"}`).join("\n").slice(0, 4000)
+    : integrityFailure;
   const timestamp = now();
   sqliteTransaction((transaction) => {
     for (const update of updates) {
@@ -51,9 +70,25 @@ export async function POST(request: Request, context: { params: Promise<{ docume
          WHERE document_id = ? AND number = ?`,
       ).run(answer, answer, analysis, analysis, needsHumanReview ? 1 : 0, needsHumanReview ? 1 : 0, confidence, timestamp, documentId, number);
     }
-    const status = failedRuns.length ? "failed" : completePages >= totalPages && totalPages > 0 ? "reviewing" : "extracting";
-    const error = failedRuns.length ? failedRuns.map((run) => `第 ${run.pageNumber} 页：${run.error ?? "识别失败"}`).join("\n").slice(0, 4000) : null;
-    transaction.prepare("UPDATE documents SET status = ?, error = ?, updated_at = ? WHERE id = ?").run(status, error, timestamp, documentId);
+    const status = terminalError ? "failed" : "reviewing";
+    transaction.prepare("UPDATE documents SET status = ?, error = ?, updated_at = ? WHERE id = ?").run(status, terminalError, timestamp, documentId);
+    transaction.prepare(
+      `UPDATE document_jobs SET status = ?, next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL,
+         last_error = ?, finished_at = ?, updated_at = ? WHERE document_id = ?`,
+    ).run(terminalError ? "failed" : "complete", terminalError, timestamp, timestamp, documentId);
   });
-  return Response.json({ totalPages, completePages, failedPages: failedRuns.length, answerUpdatesApplied: updates.length });
+  const payload = {
+    totalPages,
+    storedPages,
+    completePages,
+    failedPages: failedRuns.length,
+    missingPageNumbers: integrity.missingPageNumbers,
+    unexpectedPageNumbers: integrity.unexpectedPageNumbers,
+    incompletePageNumbers: integrity.incompletePageNumbers,
+    missingQuestionNumbers: integrity.missingQuestionNumbers,
+    unmatchedAnswerUpdateNumbers,
+    answerUpdatesApplied: updates.length,
+    ...(terminalError ? { error: terminalError } : {}),
+  };
+  return Response.json(payload, { status: terminalError ? 409 : 200 });
 }

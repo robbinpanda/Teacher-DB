@@ -1,6 +1,7 @@
 import { getSqlite, sqliteTransaction } from "../../../../../../db";
 import { ensureDatabase } from "../../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../../lib/server";
+import { getDocumentIntegrity, integrityError } from "../../../../../../lib/document-integrity";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,10 @@ export async function POST(request: Request, context: { params: Promise<{ docume
   ).get(documentId, ownerId) as { id: string; sourceRemovedAt: string | null } | undefined;
   if (!document) return Response.json({ error: "试卷不存在" }, { status: 404 });
   if (document.sourceRemovedAt) return Response.json({ error: "原试卷已删除，题目无法再修改" }, { status: 409 });
+  if (payload.action === "approve_without_review") {
+    const integrity = getDocumentIntegrity(sqlite, documentId)!;
+    if (!integrity.reviewReady) return Response.json({ error: integrityError(integrity) }, { status: 409 });
+  }
 
   const timestamp = now();
   const changed = sqliteTransaction((transaction) => {

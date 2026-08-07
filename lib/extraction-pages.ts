@@ -9,3 +9,7 @@ export function resolveExtractionPage(rawPage: unknown, availablePages: number[]
   }
   return page;
 }
+
+export function selectPrimaryExtractionRegion<T extends { page: number }>(regions: T[], currentPage: number) {
+  return regions.find((region) => region.page === currentPage) ?? regions[0];
+}

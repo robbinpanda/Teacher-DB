@@ -30,6 +30,7 @@ import { typeLabels } from "../lib/question-labels";
 import { stageFromGrade } from "../lib/education-taxonomy";
 import { answerImagesFromFile } from "../lib/client-answer-images";
 import type { TagCatalogEntry } from "../lib/tag-catalog";
+import { missingPositiveNumbers } from "../lib/document-integrity";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -85,6 +86,7 @@ export function ReviewWorkspace({
   const [retrying, setRetrying] = useState(false);
   const [newResultsAvailable, setNewResultsAvailable] = useState(false);
   const [boxMode, setBoxMode] = useState<"region" | "asset">("region");
+  const [activeAssetId, setActiveAssetId] = useState("");
   const [newTag, setNewTag] = useState("");
   const [tagCatalog, setTagCatalog] = useState<TagCatalogEntry[]>([]);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -102,8 +104,10 @@ export function ReviewWorkspace({
   const dragRef = useRef<null | { mode: "move" | "resize"; x: number; y: number; box: BoundingBox }>(null);
   const active = questions.find((question) => question.id === activeId) ?? questions[0];
   const regionAdjusted = active ? adjustedQuestionIds.has(active.id) : false;
-  const pageAsset = active?.assets.find((asset) => asset.page === currentPage);
-  const activeAsset = boxMode === "asset" ? pageAsset : undefined;
+  const pageAssets = active?.assets.filter((asset) => asset.page === currentPage) ?? [];
+  const activeAsset = boxMode === "asset"
+    ? pageAssets.find((asset) => asset.id === activeAssetId) ?? pageAssets[0]
+    : undefined;
   const activeRegion = active?.regions.find((region) => region.page === currentPage);
   const editableBox = activeAsset?.bbox ?? activeRegion?.bbox;
   const currentPageInfo = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates[0];
@@ -113,6 +117,19 @@ export function ReviewWorkspace({
   const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
   const incompletePages = pageStates.filter((page) => page.extractionStatus !== "complete");
   const failedPages = pageStates.filter((page) => page.extractionStatus === "failed");
+  const missingSourcePageCount = Math.max(0, sourceDocument.pageCount - pageStates.length);
+  const unexpectedSourcePageCount = Math.max(0, pageStates.length - sourceDocument.pageCount);
+  const missingQuestionNumbers = missingPositiveNumbers(questions.map((question) => question.number));
+  const documentReadyForReview = missingSourcePageCount === 0 && unexpectedSourcePageCount === 0 && incompletePages.length === 0 && missingQuestionNumbers.length === 0;
+  const integrityMessage = missingSourcePageCount
+    ? `原卷声明 ${sourceDocument.pageCount} 页，但目前只保存了 ${pageStates.length} 页。请重新上传同一 PDF 补齐，现有识别结果会保留。`
+    : unexpectedSourcePageCount
+      ? `原卷声明 ${sourceDocument.pageCount} 页，但保存了 ${pageStates.length} 页。请重新上传并核对 PDF 页数。`
+    : incompletePages.length
+      ? `还有 ${incompletePages.length} 页尚未识别完成，暂不能审核入库。`
+      : missingQuestionNumbers.length
+        ? `题号不连续，缺少第 ${missingQuestionNumbers.join("、")} 题。请补题或重新识别对应页面后再审核。`
+        : "";
   const initialCompletedRef = useRef(sourceDocument.completedPageCount);
 
   useEffect(() => {
@@ -124,22 +141,29 @@ export function ReviewWorkspace({
   }, [documentMeta.grade, documentMeta.subject]);
 
   useEffect(() => {
-    if (!incompletePages.length) return;
+    if (!incompletePages.length && !missingSourcePageCount) return;
     let cancelled = false;
     const poll = async () => {
       const response = await fetch(`/api/documents/${sourceDocument.id}/progress`, { cache: "no-store" }).catch(() => undefined);
       if (!response?.ok || cancelled) return;
       const result = await response.json() as {
         job?: { status?: string; nextAttemptAt?: string | null; lastError?: string | null };
-        pages?: Array<{ pageId: string; pageNumber: number; status: ReviewPage["extractionStatus"]; attempt: number; error?: string | null; nextAttemptAt?: string | null }>;
+        pages?: Array<{ pageId: string; pageNumber: number; imageUrl: string; width: number; height: number; status: ReviewPage["extractionStatus"]; attempt: number; error?: string | null; nextAttemptAt?: string | null }>;
       };
       setJob(result.job ?? {});
       if (result.pages) {
         const completed = result.pages.filter((page) => page.status === "complete").length;
-        setPageStates((items) => items.map((page) => {
-          const fresh = result.pages?.find((candidate) => candidate.pageId === page.id);
-          return fresh ? { ...page, extractionStatus: fresh.status, extractionAttempt: fresh.attempt, extractionError: fresh.error, nextAttemptAt: fresh.nextAttemptAt } : page;
-        }));
+        setPageStates(result.pages.map((page) => ({
+          id: page.pageId,
+          pageNumber: page.pageNumber,
+          imageUrl: page.imageUrl,
+          width: page.width,
+          height: page.height,
+          extractionStatus: page.status,
+          extractionAttempt: page.attempt,
+          extractionError: page.error,
+          nextAttemptAt: page.nextAttemptAt,
+        })));
         if (completed > initialCompletedRef.current) {
           initialCompletedRef.current = completed;
           if (!initialQuestions.length) window.location.reload();
@@ -150,7 +174,7 @@ export function ReviewWorkspace({
     void poll();
     const timer = window.setInterval(poll, 3000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [incompletePages.length, initialQuestions.length, sourceDocument.id]);
+  }, [incompletePages.length, initialQuestions.length, missingSourcePageCount, sourceDocument.id]);
 
   async function addManualQuestion(pageNumber = currentPage) {
     setSaveError("");
@@ -259,7 +283,7 @@ export function ReviewWorkspace({
     const asset = {
       id: crypto.randomUUID(),
       kind: "figure" as const,
-      label: "手动题图",
+      label: `题图 ${active.assets.length + 1}`,
       page: currentPage,
       bbox: {
         x: clamp(regionBox.x + (regionBox.width - width) / 2, 0, 100 - width),
@@ -269,13 +293,16 @@ export function ReviewWorkspace({
       },
     };
     patchActive({ assets: [...active.assets, asset] });
+    setActiveAssetId(asset.id);
     setBoxMode("asset");
   }
 
-  function removePageAsset() {
-    if (!pageAsset) return;
-    patchActive({ assets: active.assets.filter((asset) => asset.id !== pageAsset.id) });
-    setBoxMode("region");
+  function removeActiveAsset() {
+    if (!activeAsset) return;
+    const remainingPageAssets = pageAssets.filter((asset) => asset.id !== activeAsset.id);
+    patchActive({ assets: active.assets.filter((asset) => asset.id !== activeAsset.id) });
+    if (remainingPageAssets.length) setActiveAssetId(remainingPageAssets[0].id);
+    else setBoxMode("region");
   }
 
   function beginDrag(event: React.PointerEvent, mode: "move" | "resize") {
@@ -310,17 +337,18 @@ export function ReviewWorkspace({
   async function saveQuestion() {
     setSaved(false);
     setSaveError("");
+    const nextStatus = documentReadyForReview ? "approved" : "needs_attention";
     const response = await fetch("/api/questions/" + active.id, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...active, status: "approved" }),
+      body: JSON.stringify({ ...active, status: nextStatus }),
     });
     const result = await response.json().catch(() => ({})) as { error?: string };
     if (!response.ok) {
       setSaveError(result.error ?? "保存失败，请稍后重试");
       return;
     }
-    patchActive({ status: "approved" });
+    patchActive({ status: nextStatus });
     setAdjustedQuestionIds((items) => {
       const next = new Set(items);
       next.delete(active.id);
@@ -380,6 +408,7 @@ export function ReviewWorkspace({
 
   function selectQuestion(question: QuestionWithSource) {
     setActiveId(question.id);
+    setActiveAssetId("");
     setBoxMode("region");
     if (!question.regions.some((region) => region.page === currentPage)) setCurrentPage(question.regions[0]?.page ?? question.page);
     setSaveError("");
@@ -390,12 +419,14 @@ export function ReviewWorkspace({
     const next = pageStates[clamp(index + direction, 0, pageStates.length - 1)];
     if (!next) return;
     setCurrentPage(next.pageNumber);
+    setActiveAssetId("");
     setBoxMode("region");
     const firstQuestion = questions.find((question) => question.regions.some((region) => region.page === next.pageNumber));
     if (firstQuestion) setActiveId(firstQuestion.id);
   }
 
   async function runBulkAction(action: "approve_without_review" | "remove_all_from_bank") {
+    if (action === "approve_without_review" && !documentReadyForReview) { setSaveError(integrityMessage); return; }
     if (action === "remove_all_from_bank" && !window.confirm("将本试卷所有已入库题目移出题库？题目内容、页面框选和审核记录都会保留，可以之后重新入库。")) return;
     setBulkAction(action === "approve_without_review" ? "approve" : "remove");
     setSaveError("");
@@ -484,14 +515,14 @@ export function ReviewWorkspace({
       <header className="review-topbar no-print">
         <div className="review-title">
           <Link href="/" className="icon-btn" aria-label="返回"><ArrowLeft size={18} /></Link>
-          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {pageStates.length} 页　·　发现 {questions.length} 道题　·　识别 {pageStates.length - incompletePages.length}/{pageStates.length} 页</span></div>
+          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {sourceDocument.pageCount} 页　·　发现 {questions.length} 道题　·　识别 {pageStates.length - incompletePages.length}/{sourceDocument.pageCount} 页</span></div>
         </div>
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
           <input ref={answerInputRef} hidden type="file" multiple accept="application/pdf,image/*" onChange={(event) => void importAnswers(event.target.files)} />
           {newResultsAvailable && <button className="btn btn-small" type="button" title="加载刚完成的识别结果" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "识别中…" : failedPages.length ? `重试失败页 ${failedPages.length}` : `继续识别 ${incompletePages.length}`}</button>}
-          <button className="btn btn-primary btn-small" type="button" title="仅入库模型明确判定无需人工核查的题目" disabled={Boolean(bulkAction)} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "入库中…" : "自动入库"}</button>
+          <button className="btn btn-primary btn-small" type="button" title={documentReadyForReview ? "仅入库模型明确判定无需人工核查的题目" : integrityMessage} disabled={Boolean(bulkAction) || !documentReadyForReview} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "入库中…" : "自动入库"}</button>
           <details className="review-more-menu">
             <summary className="btn btn-small"><MoreHorizontal size={15} /> 更多</summary>
             <div>
@@ -508,6 +539,7 @@ export function ReviewWorkspace({
         {answerImportMessage && <p className={/失败|超过|无效/.test(answerImportMessage) ? "form-error" : "form-note"}>{answerImportMessage}</p>}
         {bulkNotice && <p className="form-note">{bulkNotice}</p>}
       </div>}
+      {!documentReadyForReview && <div className="review-integrity-alert no-print"><AlertTriangle size={16} /><div><strong>完整性检查未通过，审核已暂停</strong><p>{integrityMessage}</p></div>{missingSourcePageCount > 0 && <Link href="/" className="btn btn-small">重新上传补齐</Link>}</div>}
 
       <div className="review-body">
         <aside className="question-rail no-print">
@@ -579,6 +611,16 @@ export function ReviewWorkspace({
                   <button type="button" className="resize-handle" onPointerDown={(event) => beginDrag(event, "resize")} aria-label="缩放题目范围" />
                 </div>
               )}
+              {pageAssets.filter((asset) => asset.id !== activeAsset?.id).map((asset, index) => (
+                <button
+                  type="button"
+                  key={asset.id}
+                  className="asset-box asset-box-passive"
+                  style={{ left: asset.bbox.x + "%", top: asset.bbox.y + "%", width: asset.bbox.width + "%", height: asset.bbox.height + "%" }}
+                  onClick={() => { setActiveAssetId(asset.id); setBoxMode("asset"); }}
+                  aria-label={`编辑题图 ${index + 1}`}
+                ><span><ImageIcon size={11} /> 图 {index + 1}</span></button>
+              ))}
               {activeAsset && editableBox && (
                 <div
                   className="asset-box"
@@ -626,12 +668,15 @@ export function ReviewWorkspace({
             <div className="crop-card">
               <div className="box-mode-tabs">
                 <button type="button" className={boxMode === "region" ? "active" : ""} onClick={() => setBoxMode("region")}><Crop size={12} /> 题目范围</button>
-                {pageAsset
-                  ? <><button type="button" className={boxMode === "asset" ? "active" : ""} onClick={() => setBoxMode("asset")}><ImageIcon size={12} /> 题图裁剪</button><button type="button" className="remove-asset" onClick={removePageAsset}><X size={12} /> 移除题图</button></>
-                  : <button type="button" className="add-asset" onClick={addManualAsset}><Plus size={12} /> 框选题图</button>}
+                {pageAssets.map((asset, index) => <button type="button" key={asset.id} className={activeAsset?.id === asset.id ? "active" : ""} onClick={() => { setActiveAssetId(asset.id); setBoxMode("asset"); }}><ImageIcon size={12} /> 图 {index + 1}</button>)}
+                <button type="button" className="add-asset" onClick={addManualAsset}><Plus size={12} /> 新增题图</button>
+                {activeAsset && <button type="button" className="remove-asset" onClick={removeActiveAsset}><X size={12} /> 删除此图</button>}
               </div>
               <div className="field-label"><span>{activeAsset ? <ImageIcon size={13} /> : <Crop size={13} />} {activeAsset ? "题图裁剪" : `第 ${currentPage} 页题目范围`}</span><b>可拖动调整</b></div>
-              <CropPreview bbox={editableBox} imageUrl={currentPageInfo.imageUrl} />
+              {activeAsset && <>
+                <CropPreview bbox={activeAsset.bbox} imageUrl={currentPageInfo.imageUrl} />
+                <label className="asset-label-edit"><span>题图名称</span><input value={activeAsset.label} onChange={(event) => patchActive({ assets: active.assets.map((asset) => asset.id === activeAsset.id ? { ...asset, label: event.target.value } : asset) })} /></label>
+              </>}
               <div className="bbox-grid">
                 {(["x", "y", "width", "height"] as const).map((key) => (
                   <label key={key}><span>{key === "width" ? "宽" : key === "height" ? "高" : key.toUpperCase()}</span><input type="number" min="0" max="100" step=".1" value={editableBox[key].toFixed(1)} onChange={(event) => patchBox({ ...editableBox, [key]: Number(event.target.value) })} /><i>%</i></label>
@@ -691,7 +736,7 @@ export function ReviewWorkspace({
           </div>
 
           {saveError && <p className="form-error">{saveError}</p>}
-          <button type="button" className="btn btn-primary save-review" onClick={() => void saveQuestion()}><Check size={16} /> {saved ? "已保存，审核通过" : "保存并通过此题"}</button>
+          <button type="button" className="btn btn-primary save-review" title={!documentReadyForReview ? "先保存修正；完整性恢复后才能审核通过" : undefined} onClick={() => void saveQuestion()}><Check size={16} /> {saved ? (documentReadyForReview ? "已保存，审核通过" : "修改已保存") : (documentReadyForReview ? "保存并通过此题" : "保存修改")}</button>
         </aside>
       </div>
     </div>

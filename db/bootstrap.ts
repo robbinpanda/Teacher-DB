@@ -44,7 +44,7 @@ CREATE INDEX IF NOT EXISTS question_regions_page_idx ON question_regions(page_id
 CREATE TABLE IF NOT EXISTS question_assets (
   id TEXT PRIMARY KEY NOT NULL, question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   page_id TEXT REFERENCES pages(id) ON DELETE SET NULL, kind TEXT NOT NULL, label TEXT NOT NULL DEFAULT '题图',
-  source_key TEXT, crop_key TEXT, bbox_json TEXT NOT NULL, created_at TEXT NOT NULL
+  source_key TEXT, crop_key TEXT, bbox_json TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS assets_question_idx ON question_assets(question_id);
 CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -151,6 +151,7 @@ const upgrades: Record<string, Record<string, string>> = {
     page_id: "TEXT",
     source_key: "TEXT",
     crop_key: "TEXT",
+    position: "INTEGER NOT NULL DEFAULT 0",
   },
   papers: {
     owner_id: "TEXT NOT NULL DEFAULT 'local-demo'",
@@ -180,6 +181,24 @@ function initialize() {
   sqlite.exec("CREATE INDEX IF NOT EXISTS papers_owner_folder_idx ON papers(owner_id, folder_id, updated_at)");
   const migrationTime = new Date().toISOString();
   sqlite.prepare(
+    `UPDATE document_jobs SET status = 'failed', next_attempt_at = NULL, lease_owner = NULL,
+       lease_expires_at = NULL, finished_at = COALESCE(finished_at, ?), updated_at = ?,
+       last_error = (SELECT '原卷页面不完整：已保存 ' || COUNT(p.id) || '/' || d.page_count || ' 页，请重新上传同一 PDF 补齐'
+                       FROM documents d LEFT JOIN pages p ON p.document_id = d.id
+                      WHERE d.id = document_jobs.document_id GROUP BY d.id)
+     WHERE status = 'complete' AND EXISTS (
+       SELECT 1 FROM documents d WHERE d.id = document_jobs.document_id
+         AND d.page_count <> (SELECT COUNT(*) FROM pages p WHERE p.document_id = d.id)
+     )`,
+  ).run(migrationTime, migrationTime);
+  sqlite.prepare(
+    `UPDATE documents SET status = 'failed',
+       error = '原卷页面不完整：已保存 ' || (SELECT COUNT(*) FROM pages p WHERE p.document_id = documents.id)
+         || '/' || page_count || ' 页，请重新上传同一 PDF 补齐', updated_at = ?
+     WHERE status IN ('reviewing', 'complete')
+       AND page_count <> (SELECT COUNT(*) FROM pages p WHERE p.document_id = documents.id)`,
+  ).run(migrationTime);
+  sqlite.prepare(
     `UPDATE extraction_runs SET status = 'queued', attempt = 0, error = NULL, error_code = NULL,
        next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL, finished_at = NULL
      WHERE status = 'failed' AND document_id IN (
@@ -192,6 +211,10 @@ function initialize() {
       (document_id, owner_id, profile_id, status, priority, attempt, queued_at, updated_at)
      SELECT d.id, d.owner_id, NULL, 'queued', 0, 0, ?, ? FROM documents d
      WHERE d.status IN ('extracting', 'failed')
+       AND d.page_count > 0
+       AND (SELECT COUNT(*) FROM pages p WHERE p.document_id = d.id) = d.page_count
+       AND (SELECT MIN(p.page_number) FROM pages p WHERE p.document_id = d.id) = 1
+       AND (SELECT MAX(p.page_number) FROM pages p WHERE p.document_id = d.id) = d.page_count
        AND EXISTS (SELECT 1 FROM pages p WHERE p.document_id = d.id)
        AND EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id = d.id AND r.status <> 'complete')`,
   ).run(migrationTime, migrationTime);
@@ -255,6 +278,16 @@ function initialize() {
   }
   sqlite.exec("DELETE FROM questions WHERE status <> 'approved' AND number NOT GLOB '[0-9]*'");
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS questions_document_number_idx ON questions(document_id, number)");
+  sqlite.exec(
+    `DELETE FROM question_assets WHERE id IN (
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (
+           PARTITION BY question_id, page_id, kind, label, bbox_json ORDER BY created_at, id
+         ) AS duplicate_position
+         FROM question_assets WHERE crop_key IS NULL
+       ) WHERE duplicate_position > 1
+     )`,
+  );
   initialized = true;
 }
 

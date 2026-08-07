@@ -14,14 +14,15 @@ export async function GET(request: Request, context: { params: Promise<{ documen
   ).get(documentId, requestOwner(request)) as { id: string; status: string; error: string | null; pageCount: number; updatedAt: string } | undefined;
   if (!document) return Response.json({ error: "文档不存在" }, { status: 404 });
   const pageRows = sqlite.prepare(
-    `SELECT p.id AS pageId, p.page_number AS pageNumber, COALESCE(r.status, 'queued') AS status,
+    `SELECT p.id AS pageId, p.page_number AS pageNumber, p.storage_key AS storageKey, p.width, p.height,
+            COALESCE(r.status, 'queued') AS status,
             COALESCE(r.attempt, 0) AS attempt, r.error, r.next_attempt_at AS nextAttemptAt,
             r.created_at AS startedAt, r.finished_at AS finishedAt
        FROM pages p LEFT JOIN extraction_runs r
          ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
       WHERE p.document_id = ? ORDER BY p.page_number`,
   ).all(documentId) as Array<{
-    pageId: string; pageNumber: number; status: string; attempt: number; error: string | null;
+    pageId: string; pageNumber: number; storageKey: string; width: number; height: number; status: string; attempt: number; error: string | null;
     startedAt: string | null; finishedAt: string | null;
   }>;
   const counts = pageRows.reduce((result, page) => {
@@ -33,5 +34,9 @@ export async function GET(request: Request, context: { params: Promise<{ documen
        queued_at AS queuedAt, started_at AS startedAt, finished_at AS finishedAt
      FROM document_jobs WHERE document_id = ?`,
   ).get(documentId);
-  return Response.json({ document, job, counts, pages: pageRows }, { headers: { "cache-control": "no-store" } });
+  const responsePages = pageRows.map(({ storageKey, ...page }) => ({
+    ...page,
+    imageUrl: "/api/files/" + storageKey.split("/").map(encodeURIComponent).join("/"),
+  }));
+  return Response.json({ document, job, counts, pages: responsePages }, { headers: { "cache-control": "no-store" } });
 }
