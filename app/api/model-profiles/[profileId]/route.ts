@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import { getDb } from "../../../../db";
-import { appSettings, modelProfiles } from "../../../../db/schema";
+import { getDb, sqliteTransaction } from "../../../../db";
+import { modelProfiles } from "../../../../db/schema";
 import { ensureOwnerModelSettings, ownerMimoProfileId } from "../../../../lib/model-profiles";
 import { encryptSecret, maskSecret } from "../../../../lib/secret-box";
 import { now, requestOwner } from "../../../../lib/server";
@@ -13,8 +13,16 @@ export async function DELETE(request: Request, context: { params: Promise<{ prof
   const profile = await db.query.modelProfiles.findFirst({ where: and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)) });
   if (!profile) return Response.json({ error: "自定义模型配置不存在" }, { status: 404 });
   if (profile.isManaged) return Response.json({ error: "内置模型不可删除" }, { status: 400 });
-  await db.delete(modelProfiles).where(and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)));
-  await db.update(appSettings).set({ selectedModelProfileId: ownerMimoProfileId(ownerId), updatedAt: now() }).where(and(eq(appSettings.ownerId, ownerId), eq(appSettings.selectedModelProfileId, profileId)));
+  sqliteTransaction((transaction) => {
+    const current = transaction.prepare(
+      "SELECT is_managed AS isManaged FROM model_profiles WHERE id = ? AND owner_id = ?",
+    ).get(profileId, ownerId) as { isManaged: number } | undefined;
+    if (!current || current.isManaged) throw new Error("模型配置在删除前已发生变化");
+    transaction.prepare("DELETE FROM model_profiles WHERE id = ? AND owner_id = ?").run(profileId, ownerId);
+    transaction.prepare(
+      "UPDATE app_settings SET selected_model_profile_id = ?, updated_at = ? WHERE owner_id = ? AND selected_model_profile_id = ?",
+    ).run(ownerMimoProfileId(ownerId), now(), ownerId, profileId);
+  });
   return new Response(null, { status: 204 });
 }
 

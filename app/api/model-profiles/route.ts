@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { getDb, sqliteTransaction } from "../../../db";
 import { modelProfiles, appSettings } from "../../../db/schema";
 import { ensureOwnerModelSettings } from "../../../lib/model-profiles";
 import { encryptSecret, maskSecret } from "../../../lib/secret-box";
@@ -53,21 +53,28 @@ export async function POST(request: Request) {
   const id = crypto.randomUUID();
   const timestamp = now();
   const timeoutMs = Math.max(15000, Math.min(300000, Number(payload.timeoutMs ?? 90000)));
-  const db = getDb();
   try {
-    await db.insert(modelProfiles).values({
-      id, ownerId, displayName, provider, baseUrl, model,
-      apiKeyCiphertext: encrypted.ciphertext, apiKeyIv: encrypted.iv, apiKeyMask: maskSecret(apiKey),
-      isManaged: false, isMultimodal: true, enabled: true, timeoutMs, createdAt: timestamp, updatedAt: timestamp,
+    sqliteTransaction((transaction) => {
+      transaction.prepare(
+        `INSERT INTO model_profiles
+          (id, owner_id, display_name, provider, base_url, model, api_key_ciphertext, api_key_iv, api_key_mask,
+           is_managed, is_multimodal, enabled, timeout_ms, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, ?, ?)`,
+      ).run(
+        id, ownerId, displayName, provider, baseUrl, model, encrypted.ciphertext, encrypted.iv,
+        maskSecret(apiKey), timeoutMs, timestamp, timestamp,
+      );
+      if (payload.select !== false) {
+        transaction.prepare("UPDATE app_settings SET selected_model_profile_id = ?, updated_at = ? WHERE owner_id = ?")
+          .run(id, timestamp, ownerId);
+      }
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "保存失败";
     if (message.toLowerCase().includes("unique")) return Response.json({ error: "模型配置名称已存在" }, { status: 409 });
     throw error;
   }
-  if (payload.select !== false) {
-    await db.update(appSettings).set({ selectedModelProfileId: id, updatedAt: timestamp }).where(eq(appSettings.ownerId, ownerId));
-  }
+  const db = getDb();
   const profile = await db.query.modelProfiles.findFirst({ where: and(eq(modelProfiles.id, id), eq(modelProfiles.ownerId, ownerId)) });
   return Response.json({ profile: profile && publicProfile(profile), selectedProfileId: payload.select === false ? undefined : id }, { status: 201 });
 }
@@ -77,15 +84,15 @@ export async function PATCH(request: Request) {
   await ensureOwnerModelSettings(ownerId);
   const payload = await request.json() as { selectedProfileId?: string };
   if (!payload.selectedProfileId) return Response.json({ error: "缺少 selectedProfileId" }, { status: 400 });
-  const db = getDb();
-  const profile = await db.query.modelProfiles.findFirst({
-    where: and(
-      eq(modelProfiles.id, payload.selectedProfileId),
-      eq(modelProfiles.ownerId, ownerId),
-      eq(modelProfiles.enabled, true),
-    ),
+  const selected = sqliteTransaction((transaction) => {
+    const profile = transaction.prepare(
+      "SELECT id FROM model_profiles WHERE id = ? AND owner_id = ? AND enabled = 1",
+    ).get(payload.selectedProfileId, ownerId) as { id: string } | undefined;
+    if (!profile) return null;
+    transaction.prepare("UPDATE app_settings SET selected_model_profile_id = ?, updated_at = ? WHERE owner_id = ?")
+      .run(profile.id, now(), ownerId);
+    return profile.id;
   });
-  if (!profile) return Response.json({ error: "模型配置不存在或已停用" }, { status: 404 });
-  await db.update(appSettings).set({ selectedModelProfileId: profile.id, updatedAt: now() }).where(eq(appSettings.ownerId, ownerId));
-  return Response.json({ selectedProfileId: profile.id });
+  if (!selected) return Response.json({ error: "模型配置不存在或已停用" }, { status: 404 });
+  return Response.json({ selectedProfileId: selected });
 }

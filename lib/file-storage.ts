@@ -1,6 +1,6 @@
 import "server-only";
 
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { dataDirectory } from "../db";
 
@@ -22,7 +22,20 @@ export function resolveStorageKey(key: string) {
 export async function putFile(key: string, bytes: ArrayBuffer | Uint8Array) {
   const destination = resolveStorageKey(key);
   await mkdir(path.dirname(destination), { recursive: true });
-  await writeFile(destination, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+  const temporary = `${destination}.tmp-${crypto.randomUUID()}`;
+  await writeFile(temporary, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), { flag: "wx" });
+  try {
+    await rename(temporary, destination);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EEXIST" && code !== "EPERM") throw error;
+    try { await access(destination); }
+    catch { throw error; }
+  } finally {
+    await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
   return destination;
 }
 

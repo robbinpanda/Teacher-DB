@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getSqlite } from "../db";
+import { getSqlite, sqliteTransaction } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
 import { now } from "./server";
 
@@ -30,10 +30,6 @@ function cleanName(value: unknown, label: string) {
   return name;
 }
 
-function ownedFolder(ownerId: string, folderId: string) {
-  return getSqlite().prepare("SELECT id FROM paper_folders WHERE id = ? AND owner_id = ?").get(folderId, ownerId) as { id: string } | undefined;
-}
-
 export async function getPaperLibrary(ownerId: string) {
   await ensureDatabase();
   const sqlite = getSqlite();
@@ -59,59 +55,70 @@ export async function getPaperLibrary(ownerId: string) {
 export async function createPaperFolder(ownerId: string, nameValue: unknown, parentId: string | null) {
   await ensureDatabase();
   const name = cleanName(nameValue, "文件夹名称");
-  if (parentId && !ownedFolder(ownerId, parentId)) throw new Error("上级文件夹不存在");
-  const duplicate = getSqlite().prepare(
-    "SELECT id FROM paper_folders WHERE owner_id = ? AND parent_id IS ? AND name = ? COLLATE NOCASE",
-  ).get(ownerId, parentId, name);
-  if (duplicate) throw new Error("当前目录已有同名文件夹");
   const id = crypto.randomUUID();
   const timestamp = now();
-  getSqlite().prepare(
-    "INSERT INTO paper_folders (id, owner_id, parent_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(id, ownerId, parentId, name, timestamp, timestamp);
+  sqliteTransaction((transaction) => {
+    if (parentId && !transaction.prepare("SELECT 1 FROM paper_folders WHERE id = ? AND owner_id = ?").get(parentId, ownerId)) {
+      throw new Error("上级文件夹不存在");
+    }
+    const duplicate = transaction.prepare(
+      "SELECT id FROM paper_folders WHERE owner_id = ? AND parent_id IS ? AND name = ? COLLATE NOCASE",
+    ).get(ownerId, parentId, name);
+    if (duplicate) throw new Error("当前目录已有同名文件夹");
+    transaction.prepare(
+      "INSERT INTO paper_folders (id, owner_id, parent_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(id, ownerId, parentId, name, timestamp, timestamp);
+  });
   return { id, parentId, name, createdAt: timestamp, updatedAt: timestamp } satisfies PaperFolderRecord;
 }
 
 export async function renamePaperFolder(ownerId: string, folderId: string, nameValue: unknown) {
   await ensureDatabase();
   const name = cleanName(nameValue, "文件夹名称");
-  const folder = getSqlite().prepare("SELECT parent_id AS parentId FROM paper_folders WHERE id = ? AND owner_id = ?").get(folderId, ownerId) as { parentId: string | null } | undefined;
-  if (!folder) throw new Error("文件夹不存在");
-  const duplicate = getSqlite().prepare(
-    "SELECT id FROM paper_folders WHERE owner_id = ? AND parent_id IS ? AND name = ? COLLATE NOCASE AND id <> ?",
-  ).get(ownerId, folder.parentId, name, folderId);
-  if (duplicate) throw new Error("当前目录已有同名文件夹");
-  getSqlite().prepare("UPDATE paper_folders SET name = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(name, now(), folderId, ownerId);
+  sqliteTransaction((transaction) => {
+    const folder = transaction.prepare("SELECT parent_id AS parentId FROM paper_folders WHERE id = ? AND owner_id = ?").get(folderId, ownerId) as { parentId: string | null } | undefined;
+    if (!folder) throw new Error("文件夹不存在");
+    const duplicate = transaction.prepare(
+      "SELECT id FROM paper_folders WHERE owner_id = ? AND parent_id IS ? AND name = ? COLLATE NOCASE AND id <> ?",
+    ).get(ownerId, folder.parentId, name, folderId);
+    if (duplicate) throw new Error("当前目录已有同名文件夹");
+    transaction.prepare("UPDATE paper_folders SET name = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(name, now(), folderId, ownerId);
+  });
   return { renamed: true };
 }
 
 export async function deletePaperFolder(ownerId: string, folderId: string) {
   await ensureDatabase();
-  const sqlite = getSqlite();
-  if (!ownedFolder(ownerId, folderId)) throw new Error("文件夹不存在");
-  const contents = sqlite.prepare(
-    `SELECT (SELECT COUNT(*) FROM paper_folders WHERE parent_id = ? AND owner_id = ?) +
-            (SELECT COUNT(*) FROM papers WHERE folder_id = ? AND owner_id = ?) AS count`,
-  ).get(folderId, ownerId, folderId, ownerId) as { count: number };
-  if (contents.count) throw new Error("文件夹不为空，请先移动或删除其中内容");
-  sqlite.prepare("DELETE FROM paper_folders WHERE id = ? AND owner_id = ?").run(folderId, ownerId);
+  sqliteTransaction((transaction) => {
+    if (!transaction.prepare("SELECT 1 FROM paper_folders WHERE id = ? AND owner_id = ?").get(folderId, ownerId)) {
+      throw new Error("文件夹不存在");
+    }
+    const contents = transaction.prepare(
+      `SELECT (SELECT COUNT(*) FROM paper_folders WHERE parent_id = ? AND owner_id = ?) +
+              (SELECT COUNT(*) FROM papers WHERE folder_id = ? AND owner_id = ?) AS count`,
+    ).get(folderId, ownerId, folderId, ownerId) as { count: number };
+    if (contents.count) throw new Error("文件夹不为空，请先移动或删除其中内容");
+    transaction.prepare("DELETE FROM paper_folders WHERE id = ? AND owner_id = ?").run(folderId, ownerId);
+  });
   return { deleted: true };
 }
 
 export async function updateLibraryPaper(ownerId: string, paperId: string, input: { title?: unknown; folderId?: unknown }) {
   await ensureDatabase();
-  const sqlite = getSqlite();
-  const paper = sqlite.prepare("SELECT id FROM papers WHERE id = ? AND owner_id = ?").get(paperId, ownerId);
-  if (!paper) throw new Error("试卷不存在");
-  if (input.title !== undefined) {
-    const title = cleanName(input.title, "试卷名称");
-    sqlite.prepare("UPDATE papers SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(title, now(), paperId, ownerId);
-  }
-  if (input.folderId !== undefined) {
-    const folderId = typeof input.folderId === "string" && input.folderId ? input.folderId : null;
-    if (folderId && !ownedFolder(ownerId, folderId)) throw new Error("目标文件夹不存在");
-    sqlite.prepare("UPDATE papers SET folder_id = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(folderId, now(), paperId, ownerId);
-  }
+  const title = input.title !== undefined ? cleanName(input.title, "试卷名称") : undefined;
+  const folderId = input.folderId !== undefined
+    ? typeof input.folderId === "string" && input.folderId ? input.folderId : null
+    : undefined;
+  sqliteTransaction((transaction) => {
+    const paper = transaction.prepare("SELECT id FROM papers WHERE id = ? AND owner_id = ?").get(paperId, ownerId);
+    if (!paper) throw new Error("试卷不存在");
+    if (folderId && !transaction.prepare("SELECT 1 FROM paper_folders WHERE id = ? AND owner_id = ?").get(folderId, ownerId)) {
+      throw new Error("目标文件夹不存在");
+    }
+    const timestamp = now();
+    if (title !== undefined) transaction.prepare("UPDATE papers SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(title, timestamp, paperId, ownerId);
+    if (folderId !== undefined) transaction.prepare("UPDATE papers SET folder_id = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(folderId, timestamp, paperId, ownerId);
+  });
   return { updated: true };
 }
 

@@ -1,20 +1,39 @@
 import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../lib/server";
-import { modelNeedsHumanReview } from "../../../../../lib/model-review";
 import { getDocumentIntegrity, integrityError } from "../../../../../lib/document-integrity";
+import { assertDocumentLease, LostDocumentLeaseError } from "../../../../../lib/job-lease";
+import { finalizeDocumentState } from "../../../../../lib/document-finalization";
 
 export const runtime = "nodejs";
 
 type AnswerUpdate = { number?: unknown; answer?: unknown; analysis?: unknown; confidence?: unknown; needsHumanReview?: unknown };
+type RunPayload = {
+  answerUpdates?: AnswerUpdate[];
+  _pipeline?: { unmatchedAnswerUpdateNumbers?: unknown[] };
+};
 
 export async function POST(request: Request, context: { params: Promise<{ documentId: string }> }) {
   await ensureDatabase();
   const { documentId } = await context.params;
   const ownerId = requestOwner(request);
+  const workerId = request.headers.get("x-extraction-worker-id")?.trim() || null;
   const sqlite = getSqlite();
   const document = sqlite.prepare("SELECT id FROM documents WHERE id = ? AND owner_id = ?").get(documentId, ownerId);
   if (!document) return Response.json({ error: "文档不存在" }, { status: 404 });
+  const activeJob = sqlite.prepare(
+    "SELECT status, lease_owner AS leaseOwner FROM document_jobs WHERE document_id = ?",
+  ).get(documentId) as { status: string; leaseOwner: string | null } | undefined;
+  if (activeJob?.status === "processing" && !workerId) {
+    return Response.json({ error: "识别任务仍在运行，只有持有当前租约的 worker 可以收尾", code: "worker_required" }, { status: 409 });
+  }
+  if (workerId) {
+    try { assertDocumentLease(sqlite, documentId, workerId, now()); }
+    catch (error) {
+      if (error instanceof LostDocumentLeaseError) return Response.json({ error: error.message, code: error.code }, { status: 409 });
+      throw error;
+    }
+  }
   const runs = sqlite.prepare(
     `SELECT page_number AS pageNumber, status, raw_json AS rawJson, error
        FROM extraction_runs
@@ -22,11 +41,15 @@ export async function POST(request: Request, context: { params: Promise<{ docume
       ORDER BY page_number`,
   ).all(documentId, `${documentId}:page:%:extract-v3`) as Array<{ pageNumber: number; status: string; rawJson: string | null; error: string | null }>;
   const updates: AnswerUpdate[] = [];
+  const pipelineUnmatchedNumbers: string[] = [];
   for (const run of runs) {
     if (run.status !== "complete" || !run.rawJson) continue;
     try {
-      const parsed = JSON.parse(run.rawJson) as { answerUpdates?: AnswerUpdate[] };
+      const parsed = JSON.parse(run.rawJson) as RunPayload;
       if (Array.isArray(parsed.answerUpdates)) updates.push(...parsed.answerUpdates);
+      if (Array.isArray(parsed._pipeline?.unmatchedAnswerUpdateNumbers)) {
+        pipelineUnmatchedNumbers.push(...parsed._pipeline.unmatchedAnswerUpdateNumbers.map(String));
+      }
     } catch {
       // 单页原始结果已在识别接口中验证；这里忽略历史损坏记录并保留可审核题目。
     }
@@ -41,8 +64,11 @@ export async function POST(request: Request, context: { params: Promise<{ docume
       .map((question) => question.number),
   );
   const unmatchedAnswerUpdateNumbers = Array.from(new Set(
-    updates.map((update) => String(update.number ?? "").trim())
-      .filter((number) => /^\d+$/.test(number) && !existingQuestionNumbers.has(number)),
+    [
+      ...pipelineUnmatchedNumbers,
+      ...updates.map((update) => String(update.number ?? "").trim())
+        .filter((number) => /^\d+$/.test(number) && !existingQuestionNumbers.has(number)),
+    ].filter((number) => /^[1-9]\d*$/.test(number)),
   )).sort((left, right) => Number(left) - Number(right));
   const integrityFailure = failedRuns.length
     ? null
@@ -53,30 +79,18 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     ? failedRuns.map((run) => `第 ${run.pageNumber} 页：${run.error ?? "识别失败"}`).join("\n").slice(0, 4000)
     : integrityFailure;
   const timestamp = now();
-  sqliteTransaction((transaction) => {
-    for (const update of updates) {
-      const number = String(update.number ?? "").trim();
-      const answer = String(update.answer ?? "");
-      const analysis = String(update.analysis ?? "");
-      if (!number || (!answer && !analysis)) continue;
-      const confidence = Math.max(0, Math.min(1, Number(update.confidence ?? 0)));
-      const needsHumanReview = modelNeedsHumanReview(update.needsHumanReview);
-      transaction.prepare(
-        `UPDATE questions SET answer = CASE WHEN ? <> '' THEN ? ELSE answer END,
-           analysis = CASE WHEN ? <> '' THEN ? ELSE analysis END,
-           needs_human_review = CASE WHEN needs_human_review = 1 OR ? = 1 THEN 1 ELSE 0 END,
-           status = CASE WHEN status = 'approved' THEN status WHEN needs_human_review = 1 OR ? = 1 THEN 'needs_attention' ELSE 'pending' END,
-           confidence = max(confidence, ?), updated_at = ?
-         WHERE document_id = ? AND number = ?`,
-      ).run(answer, answer, analysis, analysis, needsHumanReview ? 1 : 0, needsHumanReview ? 1 : 0, confidence, timestamp, documentId, number);
-    }
-    const status = terminalError ? "failed" : "reviewing";
-    transaction.prepare("UPDATE documents SET status = ?, error = ?, updated_at = ? WHERE id = ?").run(status, terminalError, timestamp, documentId);
-    transaction.prepare(
-      `UPDATE document_jobs SET status = ?, next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL,
-         last_error = ?, finished_at = ?, updated_at = ? WHERE document_id = ?`,
-    ).run(terminalError ? "failed" : "complete", terminalError, timestamp, timestamp, documentId);
-  });
+  try {
+    sqliteTransaction((transaction) => {
+    if (workerId) assertDocumentLease(transaction, documentId, workerId, timestamp);
+    // Each page transaction has already normalized and applied its answer updates.
+    // Replaying raw model JSON here can overwrite a repaired question with stale or
+    // historically misnumbered content, so finalization is deliberately state-only.
+    finalizeDocumentState(transaction, { documentId, terminalError, timestamp });
+    });
+  } catch (error) {
+    if (error instanceof LostDocumentLeaseError) return Response.json({ error: error.message, code: error.code }, { status: 409 });
+    throw error;
+  }
   const payload = {
     totalPages,
     storedPages,
@@ -86,8 +100,9 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     unexpectedPageNumbers: integrity.unexpectedPageNumbers,
     incompletePageNumbers: integrity.incompletePageNumbers,
     missingQuestionNumbers: integrity.missingQuestionNumbers,
+    invalidQuestionNumbers: integrity.invalidQuestionNumbers,
     unmatchedAnswerUpdateNumbers,
-    answerUpdatesApplied: updates.length,
+    answerUpdatesAlreadyApplied: updates.length,
     ...(terminalError ? { error: terminalError } : {}),
   };
   return Response.json(payload, { status: terminalError ? 409 : 200 });

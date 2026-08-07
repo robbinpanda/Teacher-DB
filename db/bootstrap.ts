@@ -1,4 +1,5 @@
 import { getSqlite } from ".";
+import { installDatabaseInvariants, repairFailedDocumentApprovals } from "../lib/database-invariants";
 
 const schemaSql = `
 PRAGMA foreign_keys = ON;
@@ -179,7 +180,12 @@ function initialize() {
   sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_owner_idx ON document_jobs(owner_id, status)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS paper_folders_owner_parent_idx ON paper_folders(owner_id, parent_id)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS papers_owner_folder_idx ON papers(owner_id, folder_id, updated_at)");
+  installDatabaseInvariants(sqlite);
   const migrationTime = new Date().toISOString();
+  sqlite.prepare(
+    `UPDATE answer_imports SET status = 'failed', error = '服务重启中断了答案识别，请重新导入未完成页面', updated_at = ?
+      WHERE status = 'processing'`,
+  ).run(migrationTime);
   sqlite.prepare(
     `UPDATE document_jobs SET status = 'failed', next_attempt_at = NULL, lease_owner = NULL,
        lease_expires_at = NULL, finished_at = COALESCE(finished_at, ?), updated_at = ?,
@@ -198,6 +204,7 @@ function initialize() {
      WHERE status IN ('reviewing', 'complete')
        AND page_count <> (SELECT COUNT(*) FROM pages p WHERE p.document_id = documents.id)`,
   ).run(migrationTime);
+  repairFailedDocumentApprovals(sqlite, migrationTime);
   sqlite.prepare(
     `UPDATE extraction_runs SET status = 'queued', attempt = 0, error = NULL, error_code = NULL,
        next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL, finished_at = NULL
@@ -276,7 +283,19 @@ function initialize() {
     sqlite.exec("DELETE FROM questions WHERE id IN (SELECT id FROM _question_dedup WHERE id <> keep_id)");
     sqlite.exec("DROP TABLE temp._question_dedup");
   }
-  sqlite.exec("DELETE FROM questions WHERE status <> 'approved' AND number NOT GLOB '[0-9]*'");
+  sqlite.prepare(
+    `UPDATE questions SET status = 'needs_attention', needs_human_review = 1, updated_at = ?
+      WHERE number = '' OR number GLOB '*[^0-9]*' OR CAST(number AS INTEGER) < 1
+         OR CAST(CAST(number AS INTEGER) AS TEXT) <> number`,
+  ).run(migrationTime);
+  sqlite.prepare(
+    `UPDATE documents SET status = 'reviewing', updated_at = ?
+      WHERE status = 'complete' AND EXISTS (
+        SELECT 1 FROM questions q WHERE q.document_id = documents.id
+          AND (q.number = '' OR q.number GLOB '*[^0-9]*' OR CAST(q.number AS INTEGER) < 1
+               OR CAST(CAST(q.number AS INTEGER) AS TEXT) <> q.number)
+      )`,
+  ).run(migrationTime);
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS questions_document_number_idx ON questions(document_id, number)");
   sqlite.exec(
     `DELETE FROM question_assets WHERE id IN (

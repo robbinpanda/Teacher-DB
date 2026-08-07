@@ -1,9 +1,9 @@
-import { getDb } from "../../../db";
+import { getDb, sqliteTransaction } from "../../../db";
 import { and, eq } from "drizzle-orm";
 import { ensureDatabase } from "../../../db/bootstrap";
 import { documents } from "../../../db/schema";
 import { now, requestOwner } from "../../../lib/server";
-import { putFile } from "../../../lib/file-storage";
+import { deleteFile, putFile } from "../../../lib/file-storage";
 import { getDocuments } from "../../../lib/question-repository";
 
 export const runtime = "nodejs";
@@ -65,23 +65,45 @@ export async function POST(request: Request) {
     return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount: existing.pageCount, duplicate: true, resumed: false });
   }
   await putFile(originalKey, bytes);
-  await getDb().insert(documents).values({
-      id,
-      ownerId,
-      name: file.name,
-      mimeType: file.type || "application/octet-stream",
-      originalKey,
-      status: pageCount > 0 ? "extracting" : "uploading",
-      pageCount,
-      subject: String(form.get("subject") ?? "") || null,
-      grade: String(form.get("grade") ?? "") || null,
-      sourceYear: Number(form.get("sourceYear")) || null,
-      sourceExamType: String(form.get("sourceExamType") ?? "") || null,
-      sourceRegion: String(form.get("sourceRegion") ?? "") || null,
-      sourceSchool: String(form.get("sourceSchool") ?? "") || null,
-      checksum,
-      createdAt,
-      updatedAt: createdAt,
-  });
+  try {
+    const outcome = sqliteTransaction((transaction) => {
+      const racedExisting = transaction.prepare(
+        `SELECT id, original_key AS originalKey, page_count AS pageCount, status
+           FROM documents WHERE owner_id = ? AND checksum = ? LIMIT 1`,
+      ).get(ownerId, checksum) as { id: string; originalKey: string | null; pageCount: number; status: string } | undefined;
+      if (racedExisting) return { existing: racedExisting } as const;
+      transaction.prepare(
+        `INSERT INTO documents
+          (id, owner_id, name, mime_type, original_key, status, page_count, subject, grade,
+           source_year, source_exam_type, source_region, source_school, checksum, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        id, ownerId, file.name, file.type || "application/octet-stream", originalKey,
+        pageCount > 0 ? "extracting" : "uploading", pageCount,
+        String(form.get("subject") ?? "") || null,
+        String(form.get("grade") ?? "") || null,
+        Number(form.get("sourceYear")) || null,
+        String(form.get("sourceExamType") ?? "") || null,
+        String(form.get("sourceRegion") ?? "") || null,
+        String(form.get("sourceSchool") ?? "") || null,
+        checksum, createdAt, createdAt,
+      );
+      return { existing: null } as const;
+    });
+    if (outcome.existing) {
+      await deleteFile(originalKey).catch(() => undefined);
+      return Response.json({
+        id: outcome.existing.id,
+        originalKey: outcome.existing.originalKey,
+        pageCount: outcome.existing.pageCount,
+        duplicate: true,
+        resumed: outcome.existing.status !== "complete",
+        status: outcome.existing.status,
+      });
+    }
+  } catch (error) {
+    await deleteFile(originalKey).catch(() => undefined);
+    throw error;
+  }
   return Response.json({ id, originalKey, pageCount, checksum, duplicate: false }, { status: 201 });
 }

@@ -14,12 +14,16 @@ import { getTagCatalog } from "../../../lib/tag-catalog";
 import { modelNeedsHumanReview } from "../../../lib/model-review";
 import { findMatchingAsset } from "../../../lib/extraction-assets";
 import { loadContinuationCandidates } from "../../../lib/continuation-candidates";
+import { assertDocumentLease, LostDocumentLeaseError } from "../../../lib/job-lease";
+import { acceptsQuestionNumberSource, isValidQuestionNumber } from "../../../lib/question-number-source";
+import { extractionCoverageFailures } from "../../../lib/extraction-coverage";
+import { activateExtractionRun } from "../../../lib/extraction-run";
 
 export const runtime = "nodejs";
 
 const systemPrompt = [
   "你是中文中学试卷的视觉结构化专家。只能抄录图中确实可见的内容，禁止凭常识补写模糊、被遮挡或不在图中的文字。",
-  "你会收到一张主页面，可能还会收到紧接着的下一页。questions 输出题号或题目开头位于主页面的新题，以及提示中明确列出的、在主页面继续的已保存跨页题；禁止把从下一页才开始的新题重复输出。",
+  "你会收到一张主页面，可能还会收到紧接着的下一页。为了双重校验，两页中所有清晰可见的印刷顶层题号都必须输出；系统会按题号幂等合并重复结果。无印刷题号的续页只允许关联提示中明确列出的跨页候选。",
   "1. 将题干、选项、答案、解析严格分开。保留原有编号和语义顺序；页面没有答案或解析时使用空字符串。",
   "2. 行内和独立数学表达式全部转为 LaTeX，并用单个 $ 包裹。不要把普通中文、题号或选项字母放进 LaTeX。",
   "3. regions 表示一道题在每个来源页上的实际可见印刷范围，按页码升序排列。跨页题必须给出本次可见的各页 regions；page 必须填写提示中的原卷真实页码（例如主页面为第9页时写9，绝不能按输入图片顺序写1）；每个 bbox 都相对于它自己的单页，使用 0-100 百分比坐标。系统会逐页合并同一题号，因此跨三页及以上时也必须沿用同一顶层题号。",
@@ -32,13 +36,15 @@ const systemPrompt = [
   "7b. 主页面可能同时包含上一题的续页和下一题的开头。必须先找出页面上每个独立顶层题号的印刷位置，再按这些位置切分：页面顶部至下一个顶层题号之前属于已保存的跨页候选；新题 region 必须从它自己的顶层题号所在行开始。此时要同时输出前题续页和后题新题，两个 region 不得互换、重叠或错误覆盖页面顶部空白。",
   "7c. 新题的主页面 region 必须实际包住它自己的可见顶层题号；只有提示中列出的跨页候选允许在续页 region 内没有题号。长题干或长解析不得配一个角落小框。若文字量与框面积明显不相称，必须重新检查框边界后再输出。",
   "7d. 题号一致性是硬约束：有印刷顶层题号时逐字采用；页面没有印刷题号时，只能沿用提示中与该页连续的跨页候选题号，绝不能根据相似内容猜成更早的题号。若候选为第20题，后续无题号解析页必须始终写20，禁止改写为18或其他题号。",
+  "7e. questions 和 answerUpdates 的每一项都必须输出 numberSource。只有该项 region 内清晰看见印刷的顶层题号时才写 printed；没有印刷题号、依靠跨页候选接力时必须写 continuation。continuation 的 number 必须逐字等于候选题号，系统会拒绝并重试任何不一致或缺失 numberSource 的结果。",
+  "7f. 额外输出 pageAudit：为本轮提供的每一页逐页列出肉眼可见的全部独立顶层阿拉伯数字题号 visibleTopLevelNumbers。pageAudit 是独立复核，不得从 questions 复制后省略；每个可见题号必须同时出现在 questions 或 answerUpdates 中，否则系统会判定本轮漏题并自动重试。",
   "8. 输出前逐题自检：逐项核对题干中出现的每个（1）（2）等小问在 answer/analysis 中是否完整；逐页核对 region 从本题第一行到下一顶层题号前最后一行；region 四边应落在最外侧可见笔画之外，不能用版心或整栏边界代替内容边界；x+width、y+height 不得超过 100；相邻题目的 region 不得重叠；assets 必须完全位于同页对应题目的 region 内。",
   "8a. questions 和 answerUpdates 中都必须输出布尔字段 needsHumanReview。只要存在文字模糊、内容缺失、答案解析不完整、题型或框选存疑等任何问题，就输出 true；只有确认完整且无需再次人工核查时才输出 false。不确定时必须输出 true，禁止省略或输出字符串。",
   "主页面没有题号或题目开头、只有下一页 region 的候选题必须丢弃；严禁为了保留它而补造默认 bbox。",
   "number 只填写整道大题的阿拉伯数字题号；（1）、【小问1】、步骤讲解必须合并进所属大题，禁止单独创建为题目。",
   "9. 不要输出 Markdown、解释或代码围栏，只输出严格 JSON。",
   "JSON 格式：",
-  "{\"documentMeta\":{\"subject\":\"数学\",\"grade\":\"九年级\",\"year\":2026,\"examType\":\"二模\",\"region\":\"上海市徐汇区\",\"school\":\"\"},\"questions\":[{\"number\":\"1\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"允许标签之一\"],\"confidence\":0.95,\"needsHumanReview\":false}],\"answerUpdates\":[{\"number\":\"1\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"needsHumanReview\":false,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
+  "{\"documentMeta\":{\"subject\":\"数学\",\"grade\":\"九年级\",\"year\":2026,\"examType\":\"二模\",\"region\":\"上海市徐汇区\",\"school\":\"\"},\"pageAudit\":[{\"page\":1,\"visibleTopLevelNumbers\":[\"1\"]}],\"questions\":[{\"number\":\"1\",\"numberSource\":\"printed\",\"type\":\"single\",\"stem\":\"题干，公式如 $x^2$\",\"options\":[{\"key\":\"A\",\"content\":\"选项\"}],\"answer\":\"\",\"analysis\":\"\",\"regions\":[{\"page\":1,\"bbox\":{\"x\":8.2,\"y\":15.1,\"width\":84.0,\"height\":18.6}}],\"assets\":[{\"kind\":\"figure\",\"label\":\"几何图\",\"page\":1,\"bbox\":{\"x\":55.0,\"y\":20.0,\"width\":25.0,\"height\":12.0}}],\"tags\":[\"允许标签之一\"],\"confidence\":0.95,\"needsHumanReview\":false}],\"answerUpdates\":[{\"number\":\"1\",\"numberSource\":\"printed\",\"answer\":\"答案 LaTeX\",\"analysis\":\"解析\",\"confidence\":0.95,\"needsHumanReview\":false,\"regions\":[{\"page\":8,\"bbox\":{\"x\":8.2,\"y\":12.0,\"width\":84.0,\"height\":76.0}}]}]}",
 ].join("\n");
 
 function safeBox(value: unknown): BoundingBox {
@@ -69,18 +75,26 @@ type AnswerUpdate = {
   regions: Array<{ page: number; bbox: BoundingBox }>;
 };
 
-function normalize(raw: unknown, pageNumber: number, availablePages: number[], allowedTags: string[]): { questions: Question[]; answerUpdates: AnswerUpdate[]; documentMeta: Record<string, unknown>; diagnostics: { acceptedQuestionNumbers: string[]; discardedQuestionNumbers: string[]; unmatchedAnswerUpdateNumbers: string[] } } {
-  const result = raw as { questions?: unknown[]; answerUpdates?: unknown[]; documentMeta?: Record<string, unknown> };
+function normalize(raw: unknown, pageNumber: number, availablePages: number[], allowedTags: string[], continuationNumbers: ReadonlySet<string>): { questions: Question[]; answerUpdates: AnswerUpdate[]; documentMeta: Record<string, unknown>; diagnostics: { acceptedQuestionNumbers: string[]; discardedQuestionNumbers: string[]; unmatchedAnswerUpdateNumbers: string[]; rejectedNumberAssociations: string[]; visibleTopLevelNumbers: string[]; uncoveredVisibleNumbers: string[]; missingPageAuditPages: number[] } } {
+  const result = raw as { questions?: unknown[]; answerUpdates?: unknown[]; pageAudit?: unknown[]; documentMeta?: Record<string, unknown> };
   const allowed = new Set(allowedTags);
   const items = Array.isArray(result?.questions) ? result.questions : [];
   const rawUpdates = Array.isArray(result?.answerUpdates) ? result.answerUpdates : [];
   if (!Array.isArray(result?.questions) && !Array.isArray(result?.answerUpdates)) {
     throw new Error("模型结果缺少 questions 和 answerUpdates 数组");
   }
+  const rejectedNumberAssociations: string[] = [];
   const normalizedQuestions = items.map((value, index): Question | null => {
     const item = value as Record<string, unknown>;
-    const questionNumber = String(item.number ?? index + 1).trim();
-    if (!/^\d+$/.test(questionNumber)) return null;
+    const questionNumber = String(item.number ?? "").trim();
+    if (!isValidQuestionNumber(questionNumber)) {
+      rejectedNumberAssociations.push(`question:${questionNumber || `item-${index + 1}`}:invalid-number`);
+      return null;
+    }
+    if (!acceptsQuestionNumberSource(questionNumber, item.numberSource, continuationNumbers)) {
+      rejectedNumberAssociations.push(`question:${questionNumber}:${String(item.numberSource ?? "missing")}`);
+      return null;
+    }
     const type = ["single", "multiple", "fill", "answer"].includes(String(item.type)) ? String(item.type) as QuestionType : "answer";
     const id = crypto.randomUUID();
     const rawRegions = Array.isArray(item.regions) ? item.regions : [];
@@ -133,6 +147,15 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
   }).filter((question): question is Question => question !== null);
   const answerUpdates = rawUpdates.map((value) => {
     const item = value as Record<string, unknown>;
+    const number = String(item.number ?? "").trim();
+    if (!isValidQuestionNumber(number)) {
+      rejectedNumberAssociations.push(`answerUpdate:${number || "missing"}:invalid-number`);
+      return null;
+    }
+    if (!acceptsQuestionNumberSource(number, item.numberSource, continuationNumbers)) {
+      rejectedNumberAssociations.push(`answerUpdate:${number}:${String(item.numberSource ?? "missing")}`);
+      return null;
+    }
     const regions = (Array.isArray(item.regions) ? item.regions : [])
       .filter((region) => hasExplicitBox((region as Record<string, unknown>).bbox)).map((region) => {
       const entry = region as Record<string, unknown>;
@@ -140,22 +163,42 @@ function normalize(raw: unknown, pageNumber: number, availablePages: number[], a
     }).filter((region) => availablePages.includes(region.page))
       .filter((region, index, all) => all.findIndex((candidate) => candidate.page === region.page) === index);
     return {
-      number: String(item.number ?? "").trim(),
+      number,
       answer: String(item.answer ?? ""),
       analysis: String(item.analysis ?? ""),
       confidence: Math.max(0, Math.min(1, Number(item.confidence ?? 0))),
       needsHumanReview: modelNeedsHumanReview(item.needsHumanReview),
       regions,
     };
-  }).filter((item) => /^\d+$/.test(item.number) && (item.answer || item.analysis));
+  }).filter((item): item is AnswerUpdate => item !== null && isValidQuestionNumber(item.number) && Boolean(item.answer || item.analysis));
   const acceptedQuestionNumbers = normalizedQuestions.map((question) => question.number);
   const accepted = new Set(acceptedQuestionNumbers);
-  const discardedQuestionNumbers = items.map((value, index) => String((value as Record<string, unknown>).number ?? index + 1).trim()).filter((number) => !accepted.has(number));
+  const discardedQuestionNumbers = items.map((value) => String((value as Record<string, unknown>).number ?? "").trim())
+    .filter((number) => isValidQuestionNumber(number) && !accepted.has(number));
+  const auditedPages = new Set<number>();
+  const visibleTopLevelNumbers = (Array.isArray(result.pageAudit) ? result.pageAudit : []).flatMap((value) => {
+    const audit = value as Record<string, unknown>;
+    const auditPage = resolveExtractionPage(audit.page, availablePages, pageNumber);
+    if (!availablePages.includes(auditPage) || !Array.isArray(audit.visibleTopLevelNumbers)) return [];
+    auditedPages.add(auditPage);
+    return audit.visibleTopLevelNumbers.map((number) => String(number).trim()).filter(isValidQuestionNumber);
+  });
+  const missingPageAuditPages = availablePages.filter((availablePage) => !auditedPages.has(availablePage));
+  const returnedNumbers = new Set([...acceptedQuestionNumbers, ...answerUpdates.map((update) => update.number)]);
+  const uncoveredVisibleNumbers = Array.from(new Set(visibleTopLevelNumbers.filter((number) => !returnedNumbers.has(number))));
   return {
     questions: normalizedQuestions,
     answerUpdates,
     documentMeta: result.documentMeta ?? {},
-    diagnostics: { acceptedQuestionNumbers, discardedQuestionNumbers, unmatchedAnswerUpdateNumbers: [] },
+    diagnostics: {
+      acceptedQuestionNumbers,
+      discardedQuestionNumbers,
+      unmatchedAnswerUpdateNumbers: [],
+      rejectedNumberAssociations,
+      visibleTopLevelNumbers: Array.from(new Set(visibleTopLevelNumbers)),
+      uncoveredVisibleNumbers,
+      missingPageAuditPages,
+    },
   };
 }
 
@@ -178,7 +221,7 @@ function parseJsonContent(content: string) {
 export async function POST(request: Request) {
   const payload = await request.json() as {
     documentId?: string; pageId?: string; pageNumber?: number; image?: string; fileName?: string;
-    profileId?: string;
+    profileId?: string; workerId?: string;
   };
   if (!payload.documentId) return Response.json({ error: "documentId 为必填项" }, { status: 400 });
   const documentId = payload.documentId;
@@ -215,7 +258,22 @@ export async function POST(request: Request) {
     modelImages.push({ page: sourcePage.pageNumber, dataUrl });
   }
   const sqlite = getSqlite();
-  const runId = crypto.randomUUID();
+  const activeJob = sqlite.prepare(
+    "SELECT status FROM document_jobs WHERE document_id = ?",
+  ).get(documentId) as { status: string } | undefined;
+  if (activeJob?.status === "processing" && !payload.workerId) {
+    return Response.json({ error: "识别任务正在由队列处理，拒绝无租约的并发写入", code: "worker_required" }, { status: 409 });
+  }
+  if (payload.workerId) {
+    try { assertDocumentLease(sqlite, documentId, payload.workerId, now()); }
+    catch (error) {
+      if (error instanceof LostDocumentLeaseError) {
+        return Response.json({ error: error.message, code: error.code, retryable: false }, { status: 409 });
+      }
+      throw error;
+    }
+  }
+  const proposedRunId = crypto.randomUUID();
   const createdAt = now();
   const idempotencyKey = `${documentId}:page:${pageNumber}:extract-v3`;
   const existingRun = await getDb().query.extractionRuns.findFirst({
@@ -236,19 +294,18 @@ export async function POST(request: Request) {
     return Response.json({ error: error instanceof Error ? error.message : "模型配置不可用" }, { status: 400 });
   }
 
-  sqlite.prepare(
-    `INSERT INTO extraction_runs
-      (id, document_id, page_id, page_number, model_profile_id, provider, model, status, attempt, idempotency_key, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', 1, ?, ?)
-     ON CONFLICT(idempotency_key) DO UPDATE SET
-       id = excluded.id, model_profile_id = excluded.model_profile_id, provider = excluded.provider,
-       model = excluded.model, status = 'running', attempt = extraction_runs.attempt + 1,
-       raw_json = NULL, error = NULL, error_code = NULL, next_attempt_at = NULL,
-       lease_owner = NULL, lease_expires_at = NULL, created_at = excluded.created_at, finished_at = NULL`,
-  ).run(
-    runId, documentId, payload.pageId ?? null, pageNumber, profile.id,
-    profile.provider, profile.model, idempotencyKey, createdAt,
-  );
+  const activeRun = activateExtractionRun(sqlite, {
+    proposedRunId,
+    documentId,
+    pageId: ownedPage.id,
+    pageNumber,
+    profileId: profile.id,
+    provider: profile.provider,
+    model: profile.model,
+    idempotencyKey,
+    timestamp: createdAt,
+  });
+  const runId = activeRun.id;
 
   try {
     const continuationContext = continuationCandidates.length > 0
@@ -258,15 +315,26 @@ export async function POST(request: Request) {
       ownerId,
       profileId: profile.id,
       system: `${systemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
-      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于补全跨页题` : "，这是最后一页"}。${pageNumber === 1 ? "请从卷面标题和卷头推测 documentMeta；看不清的字段使用空字符串，年份无法确认时使用 null。" : "documentMeta 使用空对象。"}新题只输出题号或题目开头位于第 ${pageNumber} 页的题；已保存候选可以在确认连续时接力。${continuationContext} 本轮必须先做版面切分：逐页定位所有独立顶层题号；检查页面顶部是否为前题续页；检查每道含（1）（2）等小问的大题是否一直读取到全部小问解析结束。若主页面上方是前题续页、下方才出现新题号，必须分别给前题上半页 region 和新题下半页 region，新题框从其印刷题号行开始。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
+      text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于交叉复核和补全跨页题` : "，这是最后一页"}。${pageNumber === 1 ? "请从卷面标题和卷头推测 documentMeta；看不清的字段使用空字符串，年份无法确认时使用 null。" : "documentMeta 使用空对象。"}两页中所有带清晰印刷顶层题号的新题都必须输出，重复题系统会幂等合并；已保存候选可以在确认连续时接力。${continuationContext} 本轮必须先做版面切分：逐页定位所有独立顶层题号并写入 pageAudit；检查页面顶部是否为前题续页；检查每道含（1）（2）等小问的大题是否一直读取到全部小问解析结束。若页面上方是前题续页、下方才出现新题号，必须分别给前题上半页 region 和新题下半页 region，新题框从其印刷题号行开始。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
       images: modelImages,
       jsonMode: true,
     });
     const parsedContent = parseJsonContent(result.content);
-    const normalized = normalize(parsedContent, pageNumber, sourcePages.map((page) => page.pageNumber), allowedTags);
+    const normalized = normalize(
+      parsedContent,
+      pageNumber,
+      sourcePages.map((page) => page.pageNumber),
+      allowedTags,
+      new Set(continuationCandidates.map((candidate) => candidate.number)),
+    );
+    const validationFailures = extractionCoverageFailures(normalized.diagnostics);
+    if (validationFailures.length) {
+      throw new Error(`题号与覆盖校验失败：${validationFailures.join("、")}`);
+    }
     const extracted = normalized.questions;
     const finishedAt = now();
     sqliteTransaction((transaction) => {
+      if (payload.workerId) assertDocumentLease(transaction, documentId, payload.workerId, finishedAt);
       for (const question of extracted) {
         const existingQuestion = transaction.prepare(
           `SELECT id, stem, options_json AS optionsJson, answer, analysis, status,
@@ -424,15 +492,20 @@ export async function POST(request: Request) {
       mode: "live", idempotentReplay: false, questions: extracted, answerUpdates: normalized.answerUpdates,
     });
   } catch (error) {
+    if (error instanceof LostDocumentLeaseError) {
+      return Response.json({ error: error.message, code: error.code, retryable: false, runId }, { status: 409 });
+    }
     const message = error instanceof Error ? error.message : "识别失败";
     const finishedAt = now();
-    sqliteTransaction((transaction) => {
-      transaction.prepare(
-        "UPDATE extraction_runs SET status = 'failed', error = ?, finished_at = ? WHERE idempotency_key = ?",
-      ).run(message.slice(0, 4000), finishedAt, idempotencyKey);
-      transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
-        .run(message.slice(0, 4000), finishedAt, documentId);
-    });
+    if (!payload.workerId) {
+      sqliteTransaction((transaction) => {
+        transaction.prepare(
+          "UPDATE extraction_runs SET status = 'failed', error = ?, finished_at = ? WHERE idempotency_key = ?",
+        ).run(message.slice(0, 4000), finishedAt, idempotencyKey);
+        transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
+          .run(message.slice(0, 4000), finishedAt, documentId);
+      });
+    }
     return Response.json({
       error: message,
       runId,

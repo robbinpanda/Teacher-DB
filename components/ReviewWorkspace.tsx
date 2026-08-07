@@ -31,6 +31,7 @@ import { stageFromGrade } from "../lib/education-taxonomy";
 import { answerImagesFromFile } from "../lib/client-answer-images";
 import type { TagCatalogEntry } from "../lib/tag-catalog";
 import { missingPositiveNumbers } from "../lib/document-integrity";
+import { isValidQuestionNumber } from "../lib/question-number-source";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -120,7 +121,8 @@ export function ReviewWorkspace({
   const missingSourcePageCount = Math.max(0, sourceDocument.pageCount - pageStates.length);
   const unexpectedSourcePageCount = Math.max(0, pageStates.length - sourceDocument.pageCount);
   const missingQuestionNumbers = missingPositiveNumbers(questions.map((question) => question.number));
-  const documentReadyForReview = missingSourcePageCount === 0 && unexpectedSourcePageCount === 0 && incompletePages.length === 0 && missingQuestionNumbers.length === 0;
+  const invalidQuestionNumbers = questions.map((question) => question.number).filter((number) => !isValidQuestionNumber(number));
+  const documentReadyForReview = missingSourcePageCount === 0 && unexpectedSourcePageCount === 0 && incompletePages.length === 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0;
   const integrityMessage = missingSourcePageCount
     ? `原卷声明 ${sourceDocument.pageCount} 页，但目前只保存了 ${pageStates.length} 页。请重新上传同一 PDF 补齐，现有识别结果会保留。`
     : unexpectedSourcePageCount
@@ -129,6 +131,8 @@ export function ReviewWorkspace({
       ? `还有 ${incompletePages.length} 页尚未识别完成，暂不能审核入库。`
       : missingQuestionNumbers.length
         ? `题号不连续，缺少第 ${missingQuestionNumbers.join("、")} 题。请补题或重新识别对应页面后再审核。`
+        : invalidQuestionNumbers.length
+          ? `存在非法题号 ${invalidQuestionNumbers.join("、")}，请改为从 1 开始、不带前导零的阿拉伯数字。`
         : "";
   const initialCompletedRef = useRef(sourceDocument.completedPageCount);
 

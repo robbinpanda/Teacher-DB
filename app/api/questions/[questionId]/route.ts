@@ -7,8 +7,11 @@ import { stageFromGrade } from "../../../../lib/education-taxonomy";
 import { getTagCatalog } from "../../../../lib/tag-catalog";
 import type { BoundingBox, Question } from "../../../../lib/types";
 import { getDocumentIntegrity, integrityError, missingPositiveNumbers } from "../../../../lib/document-integrity";
+import { isValidQuestionNumber } from "../../../../lib/question-number-source";
 
 export const runtime = "nodejs";
+
+class QuestionIntegrityError extends Error {}
 
 function safeBox(box: BoundingBox): BoundingBox {
   const x = Math.max(0, Math.min(99.9, Number(box.x) || 0));
@@ -39,12 +42,16 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   if (!new Set(["pending", "approved", "needs_attention"]).has(payload.status)) {
     return Response.json({ error: "非法审核状态" }, { status: 400 });
   }
+  if (!isValidQuestionNumber(payload.number)) {
+    return Response.json({ error: "题号必须是从 1 开始、不带前导零的阿拉伯数字" }, { status: 400 });
+  }
   if (payload.status === "approved") {
     const integrity = getDocumentIntegrity(sqlite, ownedQuestion.documentId)!;
     const nextNumbers = (sqlite.prepare("SELECT id, number FROM questions WHERE document_id = ?").all(ownedQuestion.documentId) as Array<{ id: string; number: string }>)
       .map((question) => question.id === questionId ? payload.number : question.number);
     const missingQuestionNumbers = missingPositiveNumbers(nextNumbers);
-    const reviewIntegrity = { ...integrity, missingQuestionNumbers, questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 };
+    const invalidQuestionNumbers = nextNumbers.filter((number) => !isValidQuestionNumber(number));
+    const reviewIntegrity = { ...integrity, missingQuestionNumbers, invalidQuestionNumbers, questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0 };
     reviewIntegrity.reviewReady = reviewIntegrity.pagesComplete && reviewIntegrity.questionsComplete;
     if (!reviewIntegrity.reviewReady) return Response.json({ error: integrityError(reviewIntegrity) }, { status: 409 });
   }
@@ -108,6 +115,30 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   const timestamp = now();
   try {
     sqliteTransaction((transaction) => {
+      const currentDocument = transaction.prepare(
+        `SELECT d.source_removed_at AS sourceRemovedAt FROM questions q
+          JOIN documents d ON d.id = q.document_id WHERE q.id = ? AND d.owner_id = ?`,
+      ).get(questionId, ownerId) as { sourceRemovedAt: string | null } | undefined;
+      if (!currentDocument || currentDocument.sourceRemovedAt) {
+        throw new QuestionIntegrityError("原试卷已删除或题目已不存在，不能保存本次修改");
+      }
+      if (payload.status === "approved") {
+        const integrity = getDocumentIntegrity(transaction, ownedQuestion.documentId)!;
+        const nextNumbers = (transaction.prepare(
+          "SELECT id, number FROM questions WHERE document_id = ?",
+        ).all(ownedQuestion.documentId) as Array<{ id: string; number: string }>)
+          .map((question) => question.id === questionId ? payload.number : question.number);
+        const missingQuestionNumbers = missingPositiveNumbers(nextNumbers);
+        const invalidQuestionNumbers = nextNumbers.filter((number) => !isValidQuestionNumber(number));
+        const reviewIntegrity = {
+          ...integrity,
+          missingQuestionNumbers,
+          invalidQuestionNumbers,
+          questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0,
+        };
+        reviewIntegrity.reviewReady = reviewIntegrity.pagesComplete && reviewIntegrity.questionsComplete;
+        if (!reviewIntegrity.reviewReady) throw new QuestionIntegrityError(integrityError(reviewIntegrity));
+      }
       transaction.prepare(
         `UPDATE questions SET number = ?, type = ?, stem = ?, options_json = ?, answer = ?, analysis = ?,
            bbox_json = ?, status = ?, needs_human_review = ?, confidence = ?, score = ?, updated_at = ? WHERE id = ?`,
@@ -167,9 +198,10 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
     await Promise.allSettled(preparedAssets.map((prepared) => deleteFile(prepared.cropKey)));
     const duplicateNumber = typeof error === "object" && error !== null && "code" in error
       && String(error.code).includes("SQLITE_CONSTRAINT_UNIQUE");
+    const integrityConflict = error instanceof QuestionIntegrityError;
     return Response.json(
       { error: duplicateNumber ? `题号 ${payload.number} 已存在，请使用唯一题号` : error instanceof Error ? error.message : "题目保存失败" },
-      { status: duplicateNumber ? 409 : 500 },
+      { status: duplicateNumber || integrityConflict ? 409 : 500 },
     );
   }
   const retainedCropKeys = new Set(preparedAssets.map((prepared) => prepared.cropKey));

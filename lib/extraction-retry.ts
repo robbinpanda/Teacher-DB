@@ -4,6 +4,10 @@ export function shouldPauseExtraction(attempt: number) {
   return attempt >= MAX_EXTRACTION_ATTEMPTS;
 }
 
+export function effectiveExtractionAttempt(runAttempt: number, jobAttempt: number) {
+  return Math.max(runAttempt + 1, jobAttempt);
+}
+
 export function retryDelayMs(attempt: number, requestedMs?: number, random = Math.random()) {
   if (requestedMs && requestedMs > 0) return Math.min(requestedMs, 30 * 60_000);
   const steps = [5, 15, 30, 60, 120, 300, 600, 900];

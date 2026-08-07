@@ -32,10 +32,30 @@ test("review remains blocked until every page completed and question numbering i
     unexpectedPageNumbers: [],
     incompletePageNumbers: [],
     questionNumbers: [1, 3],
+    invalidQuestionNumbers: [],
     missingQuestionNumbers: [2],
     pagesComplete: false,
     questionsComplete: false,
     reviewReady: false,
   });
+  sqlite.close();
+});
+
+test("non-canonical question numbers block review even when numeric values look contiguous", () => {
+  const sqlite = new Database(":memory:");
+  sqlite.exec(`
+    CREATE TABLE documents (id TEXT PRIMARY KEY, page_count INTEGER NOT NULL);
+    CREATE TABLE pages (document_id TEXT NOT NULL, page_number INTEGER NOT NULL);
+    CREATE TABLE extraction_runs (document_id TEXT NOT NULL, page_number INTEGER, status TEXT NOT NULL);
+    CREATE TABLE questions (document_id TEXT NOT NULL, number TEXT NOT NULL);
+    INSERT INTO documents VALUES ('paper', 1);
+    INSERT INTO pages VALUES ('paper', 1);
+    INSERT INTO extraction_runs VALUES ('paper', 1, 'complete');
+    INSERT INTO questions VALUES ('paper', '01');
+  `);
+  const integrity = getDocumentIntegrity(sqlite, "paper");
+  assert.deepEqual(integrity.invalidQuestionNumbers, ["01"]);
+  assert.equal(integrity.questionsComplete, false);
+  assert.equal(integrity.reviewReady, false);
   sqlite.close();
 });

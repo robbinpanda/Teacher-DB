@@ -4,8 +4,14 @@ import { getSqlite, sqliteTransaction } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
 import { resolveModelProfile } from "./model-profiles";
 import { now } from "./server";
-import { MAX_EXTRACTION_ATTEMPTS, retryDelayMs, shouldPauseExtraction } from "./extraction-retry";
+import {
+  effectiveExtractionAttempt,
+  MAX_EXTRACTION_ATTEMPTS,
+  retryDelayMs,
+  shouldPauseExtraction,
+} from "./extraction-retry";
 import { getDocumentIntegrity, integrityError } from "./document-integrity";
+import { assertDocumentLease, LostDocumentLeaseError, renewDocumentLease } from "./job-lease";
 
 const MAX_ACTIVE_DOCUMENTS = 2;
 const LEASE_MS = 90_000;
@@ -144,8 +150,15 @@ function claimJobs() {
     transaction.prepare(
       `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
          lease_expires_at = NULL, last_error = COALESCE(last_error, '工作进程中断，已自动恢复'), updated_at = ?
-       WHERE status = 'processing' AND lease_expires_at < ?`,
+       WHERE status = 'processing' AND lease_expires_at <= ?`,
     ).run(timestamp, timestamp, timestamp);
+    transaction.prepare(
+      `UPDATE extraction_runs SET status = 'retry_wait', next_attempt_at = ?,
+         error = COALESCE(error, '工作进程租约过期，等待自动恢复')
+       WHERE status = 'running' AND document_id IN (
+         SELECT document_id FROM document_jobs WHERE status = 'retry_wait' AND next_attempt_at = ?
+       )`,
+    ).run(timestamp, timestamp);
     const active = (transaction.prepare(
       "SELECT COUNT(*) AS count FROM document_jobs WHERE status = 'processing' AND lease_expires_at >= ?",
     ).get(timestamp) as { count: number }).count;
@@ -166,15 +179,15 @@ function claimJobs() {
          WHERE document_id = ?`,
       ).run(workerId, futureIso(LEASE_MS), timestamp, timestamp, job.documentId);
       (job as JobRow & { workerId: string }).workerId = workerId;
+      job.attempt += 1;
     }
     return candidates;
   }) as Array<JobRow & { workerId: string }>;
 }
 
 function heartbeat(documentId: string, workerId: string) {
-  getSqlite().prepare(
-    "UPDATE document_jobs SET lease_expires_at = ?, updated_at = ? WHERE document_id = ? AND lease_owner = ? AND status = 'processing'",
-  ).run(futureIso(LEASE_MS), now(), documentId, workerId);
+  const timestamp = now();
+  return renewDocumentLease(getSqlite(), documentId, workerId, timestamp, futureIso(LEASE_MS));
 }
 
 function nextRun(documentId: string) {
@@ -191,37 +204,22 @@ function nextRun(documentId: string) {
 async function finishDocument(job: JobRow & { workerId: string }) {
   const finalize = await import("../app/api/documents/[documentId]/finalize/route");
   const response = await finalize.POST(
-    new Request("http://local/api/finalize", { method: "POST", headers: { "oai-authenticated-user-id": job.ownerId } }),
+    new Request("http://local/api/finalize", {
+      method: "POST",
+      headers: { "oai-authenticated-user-id": job.ownerId, "x-extraction-worker-id": job.workerId },
+    }),
     { params: Promise.resolve({ documentId: job.documentId }) },
   );
-  const result = await response.json() as { error?: string; failedPages?: number; completePages?: number; totalPages?: number };
-  const timestamp = now();
-  if (!response.ok || result.failedPages || (result.completePages ?? 0) < (result.totalPages ?? 0)) {
-    const message = result.error ?? "文档完整性检查未通过";
-    sqliteTransaction((transaction) => {
-      transaction.prepare(
-        `UPDATE document_jobs SET status = 'failed', lease_owner = NULL, lease_expires_at = NULL,
-           next_attempt_at = NULL, last_error = ?, finished_at = ?, updated_at = ?
-         WHERE document_id = ? AND lease_owner = ?`,
-      ).run(message, timestamp, timestamp, job.documentId, job.workerId);
-      transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
-        .run(message, timestamp, job.documentId);
-    });
-    return;
-  }
-  getSqlite().prepare(
-    `UPDATE document_jobs SET status = 'complete', lease_owner = NULL, lease_expires_at = NULL,
-       next_attempt_at = NULL, last_error = NULL, finished_at = ?, updated_at = ?
-     WHERE document_id = ? AND lease_owner = ?`,
-  ).run(timestamp, timestamp, job.documentId, job.workerId);
+  await response.json();
 }
 
 async function processJob(job: JobRow & { workerId: string }) {
-  const beat = setInterval(() => heartbeat(job.documentId, job.workerId), HEARTBEAT_MS);
+  const beat = setInterval(() => { heartbeat(job.documentId, job.workerId); }, HEARTBEAT_MS);
   beat.unref?.();
+  let currentRun: RunRow | undefined;
   try {
     while (true) {
-      heartbeat(job.documentId, job.workerId);
+      if (!heartbeat(job.documentId, job.workerId)) return;
       const remaining = getSqlite().prepare(
         "SELECT COUNT(*) AS count FROM extraction_runs WHERE document_id = ? AND status <> 'complete'",
       ).get(job.documentId) as { count: number };
@@ -230,6 +228,7 @@ async function processJob(job: JobRow & { workerId: string }) {
         return;
       }
       const run = nextRun(job.documentId);
+      currentRun = run;
       if (!run) {
         const waiting = getSqlite().prepare(
           `SELECT MIN(next_attempt_at) AS nextAttemptAt FROM extraction_runs
@@ -239,16 +238,21 @@ async function processJob(job: JobRow & { workerId: string }) {
           "SELECT error FROM extraction_runs WHERE document_id = ? AND status = 'failed' ORDER BY page_number LIMIT 1",
         ).get(job.documentId) as { error: string } | undefined;
         const timestamp = now();
-        getSqlite().prepare(
-          `UPDATE document_jobs SET status = ?, next_attempt_at = ?, lease_owner = NULL,
-             lease_expires_at = NULL, last_error = ?, updated_at = ?, finished_at = ?
-           WHERE document_id = ? AND lease_owner = ?`,
-        ).run(
-          failed ? "failed" : "retry_wait", waiting.nextAttemptAt,
-          failed?.error ?? null, timestamp, failed ? timestamp : null, job.documentId, job.workerId,
-        );
-        if (failed) getSqlite().prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
-          .run(failed.error, timestamp, job.documentId);
+        sqliteTransaction((transaction) => {
+          assertDocumentLease(transaction, job.documentId, job.workerId, timestamp);
+          const changed = transaction.prepare(
+            `UPDATE document_jobs SET status = ?, next_attempt_at = ?, lease_owner = NULL,
+               lease_expires_at = NULL, last_error = ?, updated_at = ?, finished_at = ?
+             WHERE document_id = ? AND lease_owner = ?`,
+          ).run(
+            failed ? "failed" : "retry_wait", waiting.nextAttemptAt,
+            failed?.error ?? null, timestamp, failed ? timestamp : null, job.documentId, job.workerId,
+          );
+          if (failed && changed.changes === 1) {
+            transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
+              .run(failed.error, timestamp, job.documentId);
+          }
+        });
         return;
       }
       const document = getSqlite().prepare("SELECT name FROM documents WHERE id = ?").get(job.documentId) as { name: string };
@@ -262,17 +266,23 @@ async function processJob(job: JobRow & { workerId: string }) {
           pageNumber: run.pageNumber,
           fileName: document.name,
           profileId: job.profileId ?? undefined,
+          workerId: job.workerId,
         }),
       }));
       if (response.ok) continue;
       const failure = await response.json() as ExtractionFailure;
-      const attempt = run.attempt + 1;
+      if (failure.code === "lease_lost" || !heartbeat(job.documentId, job.workerId)) return;
+      // Some failures (for example decrypting the model credential) happen before
+      // the page run is activated, so its attempt can remain zero. The document
+      // job attempt is the durable retry clock and prevents an infinite retry loop.
+      const attempt = effectiveExtractionAttempt(run.attempt, job.attempt);
       const retryable = failure.retryable !== false && !shouldPauseExtraction(attempt);
       const timestamp = now();
       const message = (failure.error ?? "页面识别失败").slice(0, 4000);
       if (retryable) {
         const nextAttemptAt = futureIso(retryDelayMs(attempt, failure.retryAfterMs));
         sqliteTransaction((transaction) => {
+          assertDocumentLease(transaction, job.documentId, job.workerId, timestamp);
           transaction.prepare(
             `UPDATE extraction_runs SET status = 'retry_wait', error = ?, error_code = ?,
                next_attempt_at = ?, lease_owner = NULL, lease_expires_at = NULL, finished_at = ?
@@ -288,6 +298,7 @@ async function processJob(job: JobRow & { workerId: string }) {
         });
       } else {
         sqliteTransaction((transaction) => {
+          assertDocumentLease(transaction, job.documentId, job.workerId, timestamp);
           transaction.prepare(
             `UPDATE extraction_runs SET status = 'failed', error = ?, error_code = ?,
                next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL, finished_at = ?
@@ -298,16 +309,20 @@ async function processJob(job: JobRow & { workerId: string }) {
                lease_expires_at = NULL, last_error = ?, finished_at = ?, updated_at = ?
              WHERE document_id = ? AND lease_owner = ?`,
           ).run(`第 ${run.pageNumber} 页：${message}`, timestamp, timestamp, job.documentId, job.workerId);
+          transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
+            .run(`第 ${run.pageNumber} 页：${message}`.slice(0, 4000), timestamp, job.documentId);
         });
       }
       return;
     }
   } catch (error) {
+    if (error instanceof LostDocumentLeaseError || !heartbeat(job.documentId, job.workerId)) return;
     const message = error instanceof Error ? error.message : "队列工作进程异常";
     const timestamp = now();
-    const attempt = job.attempt + 1;
+    const attempt = job.attempt;
     const paused = shouldPauseExtraction(attempt);
     sqliteTransaction((transaction) => {
+      assertDocumentLease(transaction, job.documentId, job.workerId, timestamp);
       if (paused) {
         transaction.prepare(
           `UPDATE extraction_runs SET status = 'failed', error = ?, error_code = 'worker_error',
@@ -323,6 +338,13 @@ async function processJob(job: JobRow & { workerId: string }) {
           .run(`连续 ${MAX_EXTRACTION_ATTEMPTS} 次处理失败，任务已暂停：${message}`.slice(0, 4000), timestamp, job.documentId);
       } else {
         const nextAttemptAt = futureIso(retryDelayMs(attempt));
+        if (currentRun) {
+          transaction.prepare(
+            `UPDATE extraction_runs SET status = 'retry_wait', error = ?, error_code = 'worker_error',
+               next_attempt_at = ?, lease_owner = NULL, lease_expires_at = NULL, finished_at = ?
+             WHERE id = ? AND status <> 'complete'`,
+          ).run(message.slice(0, 4000), nextAttemptAt, timestamp, currentRun.id);
+        }
         transaction.prepare(
           `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
              lease_expires_at = NULL, last_error = ?, updated_at = ?

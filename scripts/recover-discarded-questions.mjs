@@ -43,7 +43,7 @@ try {
     const availablePages = [run.pageNumber, run.pageNumber + 1].filter((pageNumber) => pageByNumber.has(pageNumber));
     for (const item of Array.isArray(raw.questions) ? raw.questions : []) {
       const number = String(item?.number ?? "").trim();
-      if (!/^\d+$/.test(number) || existingNumbers.has(number)) continue;
+      if (!/^[1-9]\d*$/.test(number) || existingNumbers.has(number)) continue;
       const regions = (Array.isArray(item.regions) ? item.regions : []).map((region) => {
         const pageNumber = resolvePage(region?.page, availablePages, run.pageNumber);
         return pageNumber ? { pageNumber, bbox: safeBox(region?.bbox) } : null;
