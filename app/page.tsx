@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertCircle, ArrowRight, CheckCircle2, FileStack, ScanText } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, ClipboardCheck, Database, FileStack, LoaderCircle, ScanText, Sparkles } from "lucide-react";
 import { UploadWorkbench } from "../components/UploadWorkbench";
 import { RecentDocuments } from "../components/RecentDocuments";
 import { getBankData, getDocuments } from "../lib/question-repository";
@@ -30,7 +30,7 @@ export default async function Home() {
   return (
     <div className="page-shell dashboard workspace-page">
       <header className="workspace-header">
-        <div><h1>工作台</h1><p>导入试卷、完成审核，题目就会进入题库。</p></div>
+        <div><span className="workspace-eyebrow"><Sparkles size={13} /> 今日工作空间</span><h1>工作台</h1><p>导入试卷、完成审核，题目就会进入题库。</p></div>
         <div className="header-actions">
           <Link className="btn" href="/bank"><FileStack size={16} /> 打开题库</Link>
           {nextReview && <Link className="btn btn-primary" href={`/review/${nextReview.id}`}><ScanText size={16} /> 继续审核</Link>}
@@ -38,9 +38,9 @@ export default async function Home() {
       </header>
 
       <section className="workspace-status" aria-label="工作概况">
-        <article className={pendingQuestions ? "needs-action" : ""}><span>待审核</span><strong>{pendingQuestions}</strong><small>道题</small></article>
-        <article><span>处理中</span><strong>{processingDocuments.length}</strong><small>份试卷</small></article>
-        <article><span>已入库</span><strong>{approvedQuestions}</strong><small>道题</small></article>
+        <article className={pendingQuestions ? "needs-action" : ""}><i><ClipboardCheck size={18} /></i><div><span>待审核</span><p><strong>{pendingQuestions}</strong><small>道题</small></p></div></article>
+        <article><i><LoaderCircle size={18} /></i><div><span>处理中</span><p><strong>{processingDocuments.length}</strong><small>份试卷</small></p></div></article>
+        <article><i><Database size={18} /></i><div><span>已入库</span><p><strong>{approvedQuestions}</strong><small>道题</small></p></div></article>
       </section>
 
       <section className="dashboard-grid">
