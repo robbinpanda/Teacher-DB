@@ -229,6 +229,10 @@ export const appSettings = sqliteTable("app_settings", {
   ownerId: text("owner_id").primaryKey(),
   selectedModelProfileId: text("selected_model_profile_id"),
   extractionConcurrency: integer("extraction_concurrency").notNull().default(2),
+  extractionPaused: integer("extraction_paused", { mode: "boolean" }).notNull().default(false),
+  extractionPauseReason: text("extraction_pause_reason"),
+  extractionPausedAt: text("extraction_paused_at"),
+  extractionFailureStreak: integer("extraction_failure_streak").notNull().default(0),
   updatedAt: text("updated_at").notNull(),
 });
 

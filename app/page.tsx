@@ -58,7 +58,7 @@ export default async function Home() {
           {todoDocuments.length > 0 && <div className="todo-list">{todoDocuments.map((document) => {
             const failed = document.status === "failed" || document.jobStatus === "failed";
             const reviewing = document.status === "reviewing";
-            const label = failed ? "处理异常" : reviewing ? `待审核 ${Math.max(0, document.questionCount - document.approvedCount)} 题` : document.jobStatus === "retry_wait" ? "等待重试" : "正在处理";
+            const label = failed ? "处理异常" : reviewing ? `待审核 ${Math.max(0, document.questionCount - document.approvedCount)} 题` : document.jobStatus === "paused" ? "识别已暂停" : document.jobStatus === "retry_wait" ? "等待重试" : "正在处理";
             return <Link key={document.id} href={document.status === "uploading" ? "/" : `/review/${document.id}`}><span className={failed ? "failed" : ""}>{label}</span><strong>{document.name}</strong><ArrowRight size={14} /></Link>;
           })}</div>}
         </aside>

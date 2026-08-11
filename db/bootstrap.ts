@@ -103,7 +103,9 @@ CREATE INDEX IF NOT EXISTS model_profiles_owner_idx ON model_profiles(owner_id, 
 CREATE UNIQUE INDEX IF NOT EXISTS model_profiles_owner_name_idx ON model_profiles(owner_id, display_name);
 CREATE TABLE IF NOT EXISTS app_settings (
   owner_id TEXT PRIMARY KEY NOT NULL, selected_model_profile_id TEXT,
-  extraction_concurrency INTEGER NOT NULL DEFAULT 2, updated_at TEXT NOT NULL
+  extraction_concurrency INTEGER NOT NULL DEFAULT 2, extraction_paused INTEGER NOT NULL DEFAULT 0,
+  extraction_pause_reason TEXT, extraction_paused_at TEXT,
+  extraction_failure_streak INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS document_jobs (
   document_id TEXT PRIMARY KEY NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -163,6 +165,10 @@ const upgrades: Record<string, Record<string, string>> = {
   },
   app_settings: {
     extraction_concurrency: "INTEGER NOT NULL DEFAULT 2",
+    extraction_paused: "INTEGER NOT NULL DEFAULT 0",
+    extraction_pause_reason: "TEXT",
+    extraction_paused_at: "TEXT",
+    extraction_failure_streak: "INTEGER NOT NULL DEFAULT 0",
   },
 };
 
@@ -186,6 +192,35 @@ function initialize() {
   sqlite.exec("CREATE INDEX IF NOT EXISTS papers_owner_folder_idx ON papers(owner_id, folder_id, updated_at)");
   installDatabaseInvariants(sqlite);
   const migrationTime = new Date().toISOString();
+  sqlite.prepare(
+    `INSERT INTO app_settings
+       (owner_id, extraction_paused, extraction_pause_reason, extraction_paused_at, extraction_failure_streak, updated_at)
+     SELECT owner_id, 1,
+       '检测到多份试卷同时处于退避状态，已暂停全部识别。请检查网络或模型 API 后点击“全部开始”。',
+       ?, 3, ?
+     FROM document_jobs WHERE status = 'retry_wait'
+     GROUP BY owner_id HAVING COUNT(*) >= 3
+     ON CONFLICT(owner_id) DO UPDATE SET
+       extraction_paused = 1,
+       extraction_pause_reason = excluded.extraction_pause_reason,
+       extraction_paused_at = excluded.extraction_paused_at,
+       extraction_failure_streak = MAX(app_settings.extraction_failure_streak, 3),
+       updated_at = excluded.updated_at`,
+  ).run(migrationTime, migrationTime);
+  sqlite.prepare(
+    `UPDATE document_jobs SET status = 'paused', next_attempt_at = NULL, lease_owner = NULL,
+       lease_expires_at = NULL, finished_at = NULL, updated_at = ?
+     WHERE status IN ('queued', 'retry_wait', 'failed') AND owner_id IN (
+       SELECT owner_id FROM app_settings WHERE extraction_paused = 1
+     )`,
+  ).run(migrationTime);
+  sqlite.prepare(
+    `UPDATE extraction_runs SET status = 'paused', next_attempt_at = NULL,
+       lease_owner = NULL, lease_expires_at = NULL, finished_at = NULL
+     WHERE status <> 'complete' AND status <> 'running' AND document_id IN (
+       SELECT document_id FROM document_jobs WHERE status = 'paused'
+     )`,
+  ).run();
   sqlite.prepare(
     `UPDATE answer_imports SET status = 'failed', error = '服务重启中断了答案识别，请重新导入未完成页面', updated_at = ?
       WHERE status = 'processing'`,

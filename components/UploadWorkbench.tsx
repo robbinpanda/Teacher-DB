@@ -3,19 +3,22 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, FileText, Gauge, LoaderCircle, ShieldCheck, UploadCloud } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, Gauge, LoaderCircle, ShieldCheck, Sparkles, UploadCloud } from "lucide-react";
 import { educationStages } from "../lib/education-taxonomy";
 import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
 
-type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "waiting_model" | "done" | "error";
+type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "paused" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
-type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; documentId?: string; renderer?: string };
+type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; documentId?: string; renderer?: string; modelDisplayName?: string };
 type QueueSnapshot = {
   concurrency?: number;
   activeCount?: number;
   queuedCount?: number;
-  jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; nextAttemptAt?: string; lastError?: string }>;
+  paused?: boolean;
+  pauseReason?: string | null;
+  pausedCount?: number;
+  jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; nextAttemptAt?: string; lastError?: string; modelDisplayName?: string; modelName?: string }>;
   error?: string;
 };
 
@@ -81,6 +84,8 @@ export function UploadWorkbench() {
   const [concurrencyFeedback, setConcurrencyFeedback] = useState("");
   const [concurrencyError, setConcurrencyError] = useState(false);
   const [queueCounts, setQueueCounts] = useState({ active: 0, queued: 0 });
+  const [queuePaused, setQueuePaused] = useState(false);
+  const [queuePauseReason, setQueuePauseReason] = useState("");
   const [batchActive, setBatchActive] = useState(false);
   const sourceMeta = { subject, grade: educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级", sourceYear: "", sourceExamType: "", sourceRegion: "", sourceSchool: "" };
   const working = tasks.some((task) => ["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
@@ -93,6 +98,8 @@ export function UploadWorkbench() {
       if (syncDraft || !concurrencyDraftDirtyRef.current) setConcurrencyDraft(String(result.concurrency));
     }
     setQueueCounts({ active: Number(result.activeCount ?? 0), queued: Number(result.queuedCount ?? 0) });
+    setQueuePaused(Boolean(result.paused));
+    setQueuePauseReason(result.pauseReason ?? "");
   }
 
   useEffect(() => {
@@ -118,13 +125,18 @@ export function UploadWorkbench() {
       setTasks((items) => items.map((task) => {
         const job = result.jobs?.find((candidate) => candidate.documentId === task.documentId);
         if (!job || ["rendering", "uploading"].includes(task.stage)) return task;
-        if (job.status === "complete") return { ...task, stage: "done", completedPages: job.totalPages, message: "全部页面识别完成，已进入待审核区。" };
-        if (job.status === "failed") return { ...task, stage: "error", message: job.lastError ?? "识别失败，可进入审核页重新入队。" };
+        const modelDisplayName = job.modelDisplayName ?? job.modelName ?? task.modelDisplayName;
+        if (job.status === "complete") return { ...task, modelDisplayName, stage: "done", completedPages: job.totalPages, message: "全部页面识别完成，已进入待审核区。" };
+        if (job.status === "failed") return { ...task, modelDisplayName, stage: "error", message: job.lastError ?? "识别失败，可进入审核页重新入队。" };
         if (job.status === "retry_wait") return {
-          ...task, stage: "retry_wait", completedPages: job.completedPages,
+          ...task, modelDisplayName, stage: "retry_wait", completedPages: job.completedPages,
           message: `已保存 ${job.completedPages}/${job.totalPages} 页；网络退避中${job.nextAttemptAt ? `，${new Date(job.nextAttemptAt).toLocaleTimeString()} 自动继续` : ""}。`,
         };
-        return { ...task, stage: job.status === "processing" ? "extracting" : "queued", completedPages: job.completedPages, message: `可靠队列中：已完成 ${job.completedPages}/${job.totalPages} 页。` };
+        if (job.status === "paused") return {
+          ...task, modelDisplayName, stage: "paused", completedPages: job.completedPages,
+          message: `已保存 ${job.completedPages}/${job.totalPages} 页；全部识别已暂停，点击下方“全部开始”后继续。`,
+        };
+        return { ...task, modelDisplayName, stage: job.status === "processing" ? "extracting" : "queued", completedPages: job.completedPages, message: `可靠队列中：已完成 ${job.completedPages}/${job.totalPages} 页。` };
       }));
     };
     void poll();
@@ -285,7 +297,7 @@ export function UploadWorkbench() {
           <label><input aria-label="同时处理试卷数" inputMode="numeric" type="number" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={(event) => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") void applyConcurrency(); }} /><span>份</span></label>
           <button type="button" className="btn btn-primary" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button>
         </div>
-        <p className={concurrencyError ? "error" : concurrencyFeedback ? "success" : ""}>{concurrencyFeedback || `当前已应用 ${appliedConcurrency} 份并发 · 后台处理中 ${queueCounts.active} 份${queueCounts.queued ? ` · 等待 ${queueCounts.queued} 份` : ""}；处理中也可随时修改`}</p>
+        <p className={concurrencyError ? "error" : concurrencyFeedback ? "success" : queuePaused ? "paused" : ""}>{concurrencyFeedback || (queuePaused ? (queuePauseReason || "全部识别已暂停，可在试卷列表中点击“全部开始”。") : `当前已应用 ${appliedConcurrency} 份并发 · 后台处理中 ${queueCounts.active} 份${queueCounts.queued ? ` · 等待 ${queueCounts.queued} 份` : ""}；处理中也可随时修改`)}</p>
       </section>
       <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div
@@ -308,7 +320,7 @@ export function UploadWorkbench() {
       {tasks.length > 0 && <div className="upload-task-list">
         {tasks.map((task) => <article key={task.id} className={`upload-task ${task.stage}`}>
           <span className="upload-task-icon">{["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage) ? <LoaderCircle className="spin" size={16} /> : task.stage === "done" ? <CheckCircle2 size={16} /> : task.stage === "error" ? <AlertCircle size={16} /> : <FileText size={16} />}</span>
-          <div><strong>{task.fileName}</strong><small>{task.message}</small>{task.renderer && <em>渲染：{task.renderer}</em>}</div>
+          <div><strong>{task.fileName}</strong><small>{task.message}</small>{task.modelDisplayName && <em className="upload-task-model"><Sparkles size={10} /> 识别模型：{task.modelDisplayName}</em>}{task.renderer && <em>渲染：{task.renderer}</em>}</div>
           <b>{task.pageCount ? `${Math.min(task.completedPages, task.pageCount)}/${task.pageCount} 页` : task.stage === "idle" ? "排队中" : "准备中"}</b>
           {task.documentId && <Link href={`/review/${task.documentId}`} onClick={(event) => event.stopPropagation()}>{task.stage === "done" ? "审核" : "查看"}</Link>}
         </article>)}

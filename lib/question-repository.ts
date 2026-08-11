@@ -171,23 +171,32 @@ export async function getReviewData(documentId: string, ownerId: string) {
             d.source_exam_type AS examType, d.source_region AS region, d.source_school AS school,
             d.status, d.error, d.page_count AS pageCount,
             j.status AS jobStatus, j.next_attempt_at AS nextAttemptAt,
+            j.profile_id AS modelProfileId,
+            COALESCE(mp.display_name, (SELECT NULLIF(rm.model, 'pending') FROM extraction_runs rm WHERE rm.document_id = d.id AND rm.model <> 'pending' ORDER BY rm.created_at DESC LIMIT 1)) AS modelDisplayName,
+            COALESCE(mp.model, (SELECT NULLIF(rm.model, 'pending') FROM extraction_runs rm WHERE rm.document_id = d.id AND rm.model <> 'pending' ORDER BY rm.created_at DESC LIMIT 1)) AS modelName,
+            COALESCE(mp.provider, (SELECT rm.provider FROM extraction_runs rm WHERE rm.document_id = d.id AND rm.model <> 'pending' ORDER BY rm.created_at DESC LIMIT 1)) AS modelProvider,
             COUNT(q.id) AS questionCount,
             COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approvedCount
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
        LEFT JOIN document_jobs j ON j.document_id = d.id
+       LEFT JOIN model_profiles mp ON mp.id = j.profile_id AND mp.owner_id = d.owner_id
       WHERE d.id = ? AND d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id`,
   ).get(documentId, ownerId) as (Omit<ReviewDocument, "subject" | "grade"> & { subject: string | null; grade: string | null }) | undefined;
   if (!documentRow) return null;
   const pages = sqlite.prepare(
     `SELECT p.id, p.page_number AS pageNumber, p.storage_key AS storageKey, p.width, p.height,
             COALESCE(r.status, 'queued') AS extractionStatus, COALESCE(r.attempt, 0) AS extractionAttempt,
-            r.error AS extractionError, r.next_attempt_at AS nextAttemptAt
+            r.error AS extractionError, r.next_attempt_at AS nextAttemptAt,
+            COALESCE(rmp.display_name, NULLIF(r.model, 'pending')) AS modelDisplayName,
+            NULLIF(r.model, 'pending') AS modelName, r.provider AS modelProvider
        FROM pages p LEFT JOIN extraction_runs r
          ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
+       LEFT JOIN model_profiles rmp ON rmp.id = r.model_profile_id
       WHERE p.document_id = ? ORDER BY p.page_number`,
   ).all(documentId) as Array<{
     id: string; pageNumber: number; storageKey: string; width: number; height: number;
     extractionStatus: ReviewPage["extractionStatus"]; extractionAttempt: number; extractionError: string | null; nextAttemptAt: string | null;
+    modelDisplayName: string | null; modelName: string | null; modelProvider: string | null;
   }>;
   const questionRows = sqlite.prepare(
     `${questionSelect} WHERE d.id = ? AND d.owner_id = ?
@@ -203,6 +212,9 @@ export async function getReviewData(documentId: string, ownerId: string) {
       extractionAttempt: page.extractionAttempt,
       extractionError: page.extractionError,
       nextAttemptAt: page.nextAttemptAt,
+      modelDisplayName: page.modelDisplayName,
+      modelName: page.modelName,
+      modelProvider: page.modelProvider,
     }));
   return {
     document: {
@@ -338,9 +350,14 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
             (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'failed') AS failedPageCount,
             (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'retry_wait') AS retryWaitPageCount,
             j.status AS jobStatus, j.attempt AS jobAttempt,
-            j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError
+            j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError,
+            j.profile_id AS modelProfileId,
+            COALESCE(mp.display_name, (SELECT NULLIF(rm.model, 'pending') FROM extraction_runs rm WHERE rm.document_id = d.id AND rm.model <> 'pending' ORDER BY rm.created_at DESC LIMIT 1)) AS modelDisplayName,
+            COALESCE(mp.model, (SELECT NULLIF(rm.model, 'pending') FROM extraction_runs rm WHERE rm.document_id = d.id AND rm.model <> 'pending' ORDER BY rm.created_at DESC LIMIT 1)) AS modelName,
+            COALESCE(mp.provider, (SELECT rm.provider FROM extraction_runs rm WHERE rm.document_id = d.id AND rm.model <> 'pending' ORDER BY rm.created_at DESC LIMIT 1)) AS modelProvider
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
        LEFT JOIN document_jobs j ON j.document_id = d.id
+       LEFT JOIN model_profiles mp ON mp.id = j.profile_id AND mp.owner_id = d.owner_id
       WHERE d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id ORDER BY d.created_at DESC LIMIT 100`,
   ).all(ownerId) as SourceDocument[];
   return rows;

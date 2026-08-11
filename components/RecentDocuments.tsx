@@ -3,10 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { AlertTriangle, ArrowRight, Check, Clock3, FileX2, ListChecks, LoaderCircle, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Clock3, FileX2, ListChecks, LoaderCircle, Pause, Play, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import type { SourceDocument } from "../lib/types";
 
 type DocumentGroup = "preprocessing" | "pending_review" | "reviewed";
+type QueueControlState = {
+  paused: boolean;
+  pauseReason: string | null;
+  pausedCount: number;
+  activeCount: number;
+  queuedCount: number;
+};
 
 const groupMeta: Array<{ id: DocumentGroup; title: string; description: string; empty: string }> = [
   { id: "preprocessing", title: "AI 预处理中", description: "上传、排队、识别、退避或暂停中的试卷", empty: "暂无正在处理的试卷" },
@@ -40,17 +47,31 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
   const [batchNotice, setBatchNotice] = useState("");
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
+  const [queueState, setQueueState] = useState<QueueControlState>({ paused: false, pauseReason: null, pausedCount: 0, activeCount: 0, queuedCount: 0 });
+  const [queueBusy, setQueueBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
       if (document.hidden) return;
       try {
-        const response = await fetch("/api/documents", { cache: "no-store" });
+        const [response, queueResponse] = await Promise.all([
+          fetch("/api/documents", { cache: "no-store" }),
+          fetch("/api/extraction-queue", { cache: "no-store" }),
+        ]);
         const result = await response.json().catch(() => ({})) as { documents?: SourceDocument[]; error?: string };
+        const queue = await queueResponse.json().catch(() => ({})) as Partial<QueueControlState> & { error?: string };
         if (!response.ok || !result.documents) throw new Error(result.error ?? "无法更新试卷状态");
+        if (!queueResponse.ok) throw new Error(queue.error ?? "无法更新识别队列状态");
         if (!cancelled) {
           setDocuments(result.documents);
+          setQueueState({
+            paused: Boolean(queue.paused),
+            pauseReason: queue.pauseReason ?? null,
+            pausedCount: Number(queue.pausedCount ?? 0),
+            activeCount: Number(queue.activeCount ?? 0),
+            queuedCount: Number(queue.queuedCount ?? 0),
+          });
           const currentIds = new Set(result.documents.map((item) => item.id));
           setSelectedIds((ids) => new Set(Array.from(ids).filter((id) => currentIds.has(id))));
           setListError("");
@@ -69,6 +90,40 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
+
+  async function controlQueue(action: "pause" | "resume") {
+    setQueueBusy(true);
+    setListError("");
+    setBatchNotice("");
+    try {
+      const response = await fetch("/api/extraction-queue", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const result = await response.json().catch(() => ({})) as QueueControlState & { changed?: number; error?: string };
+      if (!response.ok) throw new Error(result.error ?? (action === "pause" ? "暂停队列失败" : "启动队列失败"));
+      setQueueState(result);
+      setDocuments((items) => items.map((item) => {
+        if (documentGroup(item) !== "preprocessing") return item;
+        if (action === "pause" && item.jobStatus !== "processing") {
+          return { ...item, status: "extracting", jobStatus: "paused", nextAttemptAt: null };
+        }
+        if (action === "resume" && ["paused", "retry_wait", "failed", "queued"].includes(item.jobStatus ?? "")) {
+          return { ...item, status: "extracting", jobStatus: "queued", jobAttempt: 0, nextAttemptAt: null, lastError: null, failedPageCount: 0 };
+        }
+        return item;
+      }));
+      setBatchNotice(action === "pause"
+        ? `已暂停全部识别任务；${result.activeCount ? `当前 ${result.activeCount} 份会在本页安全收尾后停止。` : "当前没有仍在运行的任务。"}`
+        : `已重新开始 ${result.changed ?? 0} 份未完成试卷，长退避和失败计数已清除。`);
+      router.refresh();
+    } catch (caught) {
+      setListError(caught instanceof Error ? caught.message : "识别队列操作失败");
+    } finally {
+      setQueueBusy(false);
+    }
+  }
 
   async function retryDocument(document: SourceDocument) {
     setRetryingIds((ids) => new Set(ids).add(document.id));
@@ -210,10 +265,13 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
       ? (doc.questionCount ? Math.round(doc.approvedCount / doc.questionCount * 100) : 0)
       : recognitionProgress;
     const retrying = retryingIds.has(doc.id);
-    const paused = doc.jobStatus === "failed";
+    const paused = doc.jobStatus === "failed" || doc.jobStatus === "paused";
     const selected = selectedIds.has(doc.id);
-    const queueLabel = paused
-      ? `已暂停 · 连续失败 ${doc.jobAttempt ?? 8} 次`
+    const modelLabel = doc.modelDisplayName ?? doc.modelName ?? "模型记录缺失";
+    const queueLabel = doc.jobStatus === "paused"
+      ? "已暂停 · 等待全部开始"
+      : doc.jobStatus === "failed"
+        ? `已暂停 · 连续失败 ${doc.jobAttempt ?? 8} 次`
       : doc.jobStatus === "retry_wait"
         ? `退避中${doc.nextAttemptAt ? ` · ${new Date(doc.nextAttemptAt).toLocaleTimeString("zh-CN")} 自动继续` : ""}`
         : doc.jobStatus === "queued"
@@ -236,12 +294,12 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
         {selectionMode && <label className="document-selector" aria-label={`选择 ${doc.name}`}><input type="checkbox" checked={selected} onChange={() => toggleDocument(doc.id)} /></label>}
         <Link href={href} className="document-row card" onClick={selectionMode ? (event) => { event.preventDefault(); toggleDocument(doc.id); } : undefined}>
           <span className={`document-icon ${doc.subject}`}>{doc.subject.slice(0, 1)}</span>
-          <div className="document-main"><strong>{doc.name}</strong><span><Clock3 size={12} /> {new Date(doc.createdAt).toLocaleString("zh-CN")} · {doc.pageCount} 页 · {doc.grade}</span></div>
+          <div className="document-main"><strong>{doc.name}</strong><span><Clock3 size={12} /> {new Date(doc.createdAt).toLocaleString("zh-CN")} · {doc.pageCount} 页 · {doc.grade}</span><span className="document-model" title={doc.modelName && doc.modelName !== modelLabel ? `${modelLabel}（${doc.modelName}）` : modelLabel}><Sparkles size={11} /> 识别模型 · {modelLabel}</span></div>
           <div className="document-progress" title={doc.lastError ?? undefined}><div><span>{statusLabel}</span><b>{progress}%</b></div><div className="progress"><span style={{ width: `${progress}%` }} /></div></div>
           <ArrowRight size={17} className="row-arrow" />
         </Link>
         {!selectionMode && <div className="document-actions">
-          {paused && <button type="button" className="document-retry" disabled={retrying} title="重新识别未完成页面" aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
+          {doc.jobStatus === "failed" && <button type="button" className="document-retry" disabled={retrying} title="重新识别未完成页面" aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
           <button type="button" className="document-delete" title="删除试卷" aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
         </div>}
       </div>
@@ -294,6 +352,9 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
           <div className="document-bulk-toolbar">
             {!selectionMode ? <>
               <span>共 {activeDocuments.length} 份</span>
+              {activeGroup === "preprocessing" && activeDocuments.length > 0 && (queueState.paused
+                ? <button type="button" className="queue-resume" disabled={queueBusy} onClick={() => void controlQueue("resume")}>{queueBusy ? <LoaderCircle className="spin" size={14} /> : <Play size={14} fill="currentColor" />} 全部开始</button>
+                : <button type="button" className="queue-pause" disabled={queueBusy} onClick={() => void controlQueue("pause")}>{queueBusy ? <LoaderCircle className="spin" size={14} /> : <Pause size={14} fill="currentColor" />} 全部暂停</button>)}
               {activeDocuments.length > 0 && <button type="button" onClick={() => { setSelectionMode(true); setBatchNotice(""); }}><ListChecks size={14} /> 批量处理</button>}
             </> : <>
               <button type="button" className="bulk-select-all" onClick={() => setSelectedIds(allActiveSelected ? new Set() : new Set(activeDocuments.map((document) => document.id)))}>{allActiveSelected ? "取消全选" : "全选"}</button>
@@ -304,6 +365,11 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
             </>}
           </div>
         </div>
+        {queueState.paused && activeGroup === "preprocessing" && <div className="queue-paused-banner" role="status">
+          <span><Pause size={16} /></span>
+          <div><strong>全部识别已暂停</strong><small>{queueState.pauseReason ?? "修复网络或模型配置后，点击“全部开始”立即继续所有未完成任务。"}</small></div>
+          <button type="button" disabled={queueBusy} onClick={() => void controlQueue("resume")}>{queueBusy ? <LoaderCircle className="spin" size={14} /> : <Play size={13} fill="currentColor" />} 全部开始</button>
+        </div>}
         {batchNotice && <p className="document-bulk-notice"><Check size={14} /> {batchNotice}</p>}
         <div className="document-list">
           {activeDocuments.map(renderDocument)}

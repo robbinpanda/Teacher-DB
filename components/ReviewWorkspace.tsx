@@ -112,6 +112,7 @@ export function ReviewWorkspace({
   const activeRegion = active?.regions.find((region) => region.page === currentPage);
   const editableBox = activeAsset?.bbox ?? activeRegion?.bbox;
   const currentPageInfo = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates[0];
+  const currentModelLabel = currentPageInfo.modelDisplayName ?? sourceDocument.modelDisplayName ?? currentPageInfo.modelName ?? sourceDocument.modelName ?? "模型记录缺失";
   const pageQuestions = questions.filter((question) => question.regions.some((region) => region.page === currentPage));
   const approvedCount = questions.filter((question) => question.status === "approved").length;
   const unapprovedQuestions = questions.filter((question) => question.status !== "approved");
@@ -227,8 +228,9 @@ export function ReviewWorkspace({
             <h1>{sourceDocument.name}</h1>
             <p>原卷和分页图已保存。识别在服务端可靠队列中逐页执行，已完成的页面不会重新开始。</p>
             <strong>页面识别 {pageStates.length - incompletePages.length} / {pageStates.length}</strong>
-            <div className="page-state-grid">{pageStates.map((page) => <span key={page.id} className={page.extractionStatus === "complete" ? "complete" : page.extractionStatus === "failed" ? "failed" : page.extractionStatus === "retry_wait" ? "retry" : ""}>第 {page.pageNumber} 页 · {page.extractionStatus === "complete" ? "完成" : page.extractionStatus === "running" ? "识别中" : page.extractionStatus === "retry_wait" ? "退避" : page.extractionStatus === "failed" ? "失败" : "排队"}</span>)}</div>
+            <div className="page-state-grid">{pageStates.map((page) => <span key={page.id} className={page.extractionStatus === "complete" ? "complete" : page.extractionStatus === "failed" ? "failed" : page.extractionStatus === "retry_wait" ? "retry" : page.extractionStatus === "paused" ? "paused" : ""}>第 {page.pageNumber} 页 · {page.extractionStatus === "complete" ? "完成" : page.extractionStatus === "running" ? "识别中" : page.extractionStatus === "retry_wait" ? "退避" : page.extractionStatus === "paused" ? "已暂停" : page.extractionStatus === "failed" ? "失败" : "排队"}</span>)}</div>
             {job.status === "retry_wait" && job.nextAttemptAt && <p className="queue-notice">网络退避中，将在 {new Date(job.nextAttemptAt).toLocaleString()} 自动继续。</p>}
+            {job.status === "paused" && <p className="queue-notice">全部识别任务已暂停。请在工作台点击“全部开始”，所有未完成页面会立即重新排队。</p>}
             {(job.lastError || sourceDocument.error) && <p className="form-error">{job.lastError || sourceDocument.error}</p>}
             <div className="header-actions">
               <button type="button" className="btn btn-primary" disabled={retrying || ["queued", "processing"].includes(job.status ?? "")} onClick={() => void retryExtraction()}><RefreshCw size={15} /> {retrying ? "正在加入队列…" : ["queued", "processing", "retry_wait"].includes(job.status ?? "") ? "可靠队列处理中" : "继续未完成页面"}</button>
@@ -519,7 +521,7 @@ export function ReviewWorkspace({
       <header className="review-topbar no-print">
         <div className="review-title">
           <Link href="/" className="icon-btn" aria-label="返回"><ArrowLeft size={18} /></Link>
-          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {sourceDocument.pageCount} 页　·　发现 {questions.length} 道题　·　识别 {pageStates.length - incompletePages.length}/{sourceDocument.pageCount} 页</span></div>
+          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {sourceDocument.pageCount} 页　·　发现 {questions.length} 道题　·　识别 {pageStates.length - incompletePages.length}/{sourceDocument.pageCount} 页　·　模型 {sourceDocument.modelDisplayName ?? sourceDocument.modelName ?? "记录缺失"}</span></div>
         </div>
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
@@ -579,8 +581,8 @@ export function ReviewWorkspace({
 
         <section className="source-panel">
           <div className="source-toolbar no-print">
-            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className={`pill ${currentPageInfo.extractionStatus === "complete" ? "green" : currentPageInfo.extractionStatus === "failed" ? "orange" : "gray"}`}>{currentPageInfo.extractionStatus === "complete" ? "识别完成" : currentPageInfo.extractionStatus === "failed" ? `识别失败 · 第 ${currentPageInfo.extractionAttempt} 次` : currentPageInfo.extractionStatus === "running" ? "识别中" : currentPageInfo.extractionStatus === "retry_wait" ? "网络退避中" : "等待识别"}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
-            <div className="source-actions">{!activeRegion && <button type="button" className="add-current-region" onClick={() => addQuestionRegion(currentPage)}><Plus size={13} /> 将本页加入第 {active.number} 题</button>}<div className="zoom-control"><button type="button" onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span>{zoom}%</span><button type="button" onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div></div>
+            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className={`pill ${currentPageInfo.extractionStatus === "complete" ? "green" : currentPageInfo.extractionStatus === "failed" ? "orange" : "gray"}`}>{currentPageInfo.extractionStatus === "complete" ? "识别完成" : currentPageInfo.extractionStatus === "failed" ? `识别失败 · 第 ${currentPageInfo.extractionAttempt} 次` : currentPageInfo.extractionStatus === "running" ? "识别中" : currentPageInfo.extractionStatus === "retry_wait" ? "网络退避中" : currentPageInfo.extractionStatus === "paused" ? "全部识别已暂停" : "等待识别"}</span><span className="pill source-model-pill" title={currentPageInfo.modelName && currentPageInfo.modelName !== currentModelLabel ? `${currentModelLabel}（${currentPageInfo.modelName}）` : currentModelLabel}><Sparkles size={11} />{currentModelLabel}</span><span className="hint"><Crop size={13} /> 拖动选框；右下角缩放</span></div>
+            <div className="source-actions">{!activeRegion && <button type="button" className="add-current-region" onClick={() => addQuestionRegion(currentPage)}><Plus size={13} /> 将本页加入第 {active.number} 题</button>}<div className="zoom-control" aria-label="原卷缩放"><button type="button" aria-label="缩小原卷" title="缩小原卷" disabled={zoom <= 55} onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span aria-live="polite">{zoom}%</span><button type="button" aria-label="放大原卷" title="放大原卷" disabled={zoom >= 120} onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div></div>
           </div>
           <div className="page-stage">
             <div
