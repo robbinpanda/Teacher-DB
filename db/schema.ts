@@ -228,6 +228,7 @@ export const modelProfiles = sqliteTable("model_profiles", {
 export const appSettings = sqliteTable("app_settings", {
   ownerId: text("owner_id").primaryKey(),
   selectedModelProfileId: text("selected_model_profile_id"),
+  extractionConcurrency: integer("extraction_concurrency").notNull().default(2),
   updatedAt: text("updated_at").notNull(),
 });
 

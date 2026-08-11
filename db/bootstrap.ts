@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS model_profiles (
 CREATE INDEX IF NOT EXISTS model_profiles_owner_idx ON model_profiles(owner_id, enabled);
 CREATE UNIQUE INDEX IF NOT EXISTS model_profiles_owner_name_idx ON model_profiles(owner_id, display_name);
 CREATE TABLE IF NOT EXISTS app_settings (
-  owner_id TEXT PRIMARY KEY NOT NULL, selected_model_profile_id TEXT, updated_at TEXT NOT NULL
+  owner_id TEXT PRIMARY KEY NOT NULL, selected_model_profile_id TEXT,
+  extraction_concurrency INTEGER NOT NULL DEFAULT 2, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS document_jobs (
   document_id TEXT PRIMARY KEY NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -159,6 +160,9 @@ const upgrades: Record<string, Record<string, string>> = {
     folder_id: "TEXT REFERENCES paper_folders(id) ON DELETE SET NULL",
     subtitle: "TEXT",
     settings_json: "TEXT NOT NULL DEFAULT '{}'",
+  },
+  app_settings: {
+    extraction_concurrency: "INTEGER NOT NULL DEFAULT 2",
   },
 };
 

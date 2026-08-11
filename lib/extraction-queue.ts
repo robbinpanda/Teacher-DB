@@ -12,8 +12,8 @@ import {
 } from "./extraction-retry";
 import { getDocumentIntegrity, integrityError } from "./document-integrity";
 import { assertDocumentLease, LostDocumentLeaseError, renewDocumentLease } from "./job-lease";
+import { availableQueueCapacity, DEFAULT_UPLOAD_CONCURRENCY, normalizeUploadConcurrency } from "./upload-concurrency";
 
-const MAX_ACTIVE_DOCUMENTS = 2;
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 25_000;
 
@@ -144,6 +144,40 @@ export async function listDocumentJobs(ownerId: string) {
   return jobs;
 }
 
+export async function getExtractionQueueSettings(ownerId: string) {
+  await ensureDatabase();
+  const sqlite = getSqlite();
+  const settings = sqlite.prepare(
+    "SELECT extraction_concurrency AS concurrency FROM app_settings WHERE owner_id = ?",
+  ).get(ownerId) as { concurrency: number } | undefined;
+  const counts = sqlite.prepare(
+    `SELECT
+       SUM(CASE WHEN status = 'processing' AND lease_expires_at >= ? THEN 1 ELSE 0 END) AS activeCount,
+       SUM(CASE WHEN status IN ('queued', 'retry_wait') THEN 1 ELSE 0 END) AS queuedCount
+     FROM document_jobs WHERE owner_id = ?`,
+  ).get(now(), ownerId) as { activeCount: number | null; queuedCount: number | null };
+  return {
+    concurrency: normalizeUploadConcurrency(settings?.concurrency, DEFAULT_UPLOAD_CONCURRENCY),
+    activeCount: Number(counts.activeCount ?? 0),
+    queuedCount: Number(counts.queuedCount ?? 0),
+  };
+}
+
+export async function setExtractionQueueConcurrency(ownerId: string, value: unknown) {
+  await ensureDatabase();
+  const concurrency = normalizeUploadConcurrency(value);
+  const timestamp = now();
+  getSqlite().prepare(
+    `INSERT INTO app_settings (owner_id, extraction_concurrency, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(owner_id) DO UPDATE SET
+       extraction_concurrency = excluded.extraction_concurrency,
+       updated_at = excluded.updated_at`,
+  ).run(ownerId, concurrency, timestamp);
+  schedulePump();
+  return getExtractionQueueSettings(ownerId);
+}
+
 function claimJobs() {
   const timestamp = now();
   return sqliteTransaction((transaction) => {
@@ -159,29 +193,42 @@ function claimJobs() {
          SELECT document_id FROM document_jobs WHERE status = 'retry_wait' AND next_attempt_at = ?
        )`,
     ).run(timestamp, timestamp);
-    const active = (transaction.prepare(
-      "SELECT COUNT(*) AS count FROM document_jobs WHERE status = 'processing' AND lease_expires_at >= ?",
-    ).get(timestamp) as { count: number }).count;
-    const capacity = Math.max(0, MAX_ACTIVE_DOCUMENTS - active);
-    if (!capacity) return [] as JobRow[];
-    const candidates = transaction.prepare(
-      `SELECT document_id AS documentId, owner_id AS ownerId, profile_id AS profileId, attempt
-       FROM document_jobs
-       WHERE status IN ('queued', 'retry_wait') AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-       ORDER BY priority DESC, queued_at ASC LIMIT ?`,
-    ).all(timestamp, capacity) as JobRow[];
-    for (const job of candidates) {
-      const workerId = crypto.randomUUID();
-      transaction.prepare(
-        `UPDATE document_jobs SET status = 'processing', lease_owner = ?, lease_expires_at = ?,
-           next_attempt_at = NULL, last_error = NULL,
-           started_at = COALESCE(started_at, ?), attempt = attempt + 1, updated_at = ?
-         WHERE document_id = ?`,
-      ).run(workerId, futureIso(LEASE_MS), timestamp, timestamp, job.documentId);
-      (job as JobRow & { workerId: string }).workerId = workerId;
-      job.attempt += 1;
+    const owners = transaction.prepare(
+      `SELECT DISTINCT owner_id AS ownerId FROM document_jobs
+       WHERE status = 'processing'
+          OR (status IN ('queued', 'retry_wait') AND (next_attempt_at IS NULL OR next_attempt_at <= ?))`,
+    ).all(timestamp) as Array<{ ownerId: string }>;
+    const claimed: JobRow[] = [];
+    for (const { ownerId } of owners) {
+      const setting = transaction.prepare(
+        "SELECT extraction_concurrency AS concurrency FROM app_settings WHERE owner_id = ?",
+      ).get(ownerId) as { concurrency: number } | undefined;
+      const active = (transaction.prepare(
+        "SELECT COUNT(*) AS count FROM document_jobs WHERE owner_id = ? AND status = 'processing' AND lease_expires_at >= ?",
+      ).get(ownerId, timestamp) as { count: number }).count;
+      const capacity = availableQueueCapacity(setting?.concurrency ?? DEFAULT_UPLOAD_CONCURRENCY, active);
+      if (!capacity) continue;
+      const candidates = transaction.prepare(
+        `SELECT document_id AS documentId, owner_id AS ownerId, profile_id AS profileId, attempt
+         FROM document_jobs
+         WHERE owner_id = ? AND status IN ('queued', 'retry_wait')
+           AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+         ORDER BY priority DESC, queued_at ASC LIMIT ?`,
+      ).all(ownerId, timestamp, capacity) as JobRow[];
+      for (const job of candidates) {
+        const workerId = crypto.randomUUID();
+        transaction.prepare(
+          `UPDATE document_jobs SET status = 'processing', lease_owner = ?, lease_expires_at = ?,
+             next_attempt_at = NULL, last_error = NULL,
+             started_at = COALESCE(started_at, ?), attempt = attempt + 1, updated_at = ?
+           WHERE document_id = ?`,
+        ).run(workerId, futureIso(LEASE_MS), timestamp, timestamp, job.documentId);
+        (job as JobRow & { workerId: string }).workerId = workerId;
+        job.attempt += 1;
+        claimed.push(job);
+      }
     }
-    return candidates;
+    return claimed;
   }) as Array<JobRow & { workerId: string }>;
 }
 

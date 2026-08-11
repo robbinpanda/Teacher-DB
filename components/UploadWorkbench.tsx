@@ -5,12 +5,19 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, FileText, Gauge, LoaderCircle, ShieldCheck, UploadCloud } from "lucide-react";
 import { educationStages } from "../lib/education-taxonomy";
-import { DEFAULT_UPLOAD_CONCURRENCY, mapWithConcurrency, MAX_UPLOAD_CONCURRENCY, normalizeUploadConcurrency } from "../lib/upload-concurrency";
+import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
 
 type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
 type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; documentId?: string; renderer?: string };
+type QueueSnapshot = {
+  concurrency?: number;
+  activeCount?: number;
+  queuedCount?: number;
+  jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; nextAttemptAt?: string; lastError?: string }>;
+  error?: string;
+};
 
 async function canvasToPage(canvas: HTMLCanvasElement): Promise<RenderedPage> {
   const blob = await new Promise<Blob>((resolve, reject) => {
@@ -64,11 +71,41 @@ export function UploadWorkbench() {
   const router = useRouter();
   const { subject, stage } = useEducationScope();
   const inputRef = useRef<HTMLInputElement>(null);
+  const concurrencyRef = useRef(DEFAULT_UPLOAD_CONCURRENCY);
+  const concurrencyDraftDirtyRef = useRef(false);
+  const batchControllerRef = useRef<{ setConcurrency: (value: unknown) => void } | null>(null);
   const [tasks, setTasks] = useState<UploadTask[]>([]);
-  const [concurrency, setConcurrency] = useState(DEFAULT_UPLOAD_CONCURRENCY);
+  const [concurrencyDraft, setConcurrencyDraft] = useState(String(DEFAULT_UPLOAD_CONCURRENCY));
+  const [appliedConcurrency, setAppliedConcurrency] = useState(DEFAULT_UPLOAD_CONCURRENCY);
+  const [concurrencySaving, setConcurrencySaving] = useState(false);
+  const [concurrencyFeedback, setConcurrencyFeedback] = useState("");
+  const [concurrencyError, setConcurrencyError] = useState(false);
+  const [queueCounts, setQueueCounts] = useState({ active: 0, queued: 0 });
   const [batchActive, setBatchActive] = useState(false);
   const sourceMeta = { subject, grade: educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级", sourceYear: "", sourceExamType: "", sourceRegion: "", sourceSchool: "" };
   const working = tasks.some((task) => ["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
+
+  function syncQueueSettings(result: QueueSnapshot, syncDraft = false) {
+    if (typeof result.concurrency === "number") {
+      concurrencyRef.current = result.concurrency;
+      setAppliedConcurrency(result.concurrency);
+      batchControllerRef.current?.setConcurrency(result.concurrency);
+      if (syncDraft || !concurrencyDraftDirtyRef.current) setConcurrencyDraft(String(result.concurrency));
+    }
+    setQueueCounts({ active: Number(result.activeCount ?? 0), queued: Number(result.queuedCount ?? 0) });
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/extraction-queue", { cache: "no-store" })
+      .then(async (response) => ({ response, result: await response.json() as QueueSnapshot }))
+      .then(({ response, result }) => {
+        if (cancelled || !response.ok) return;
+        syncQueueSettings(result, true);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!tasks.some((task) => task.documentId && !["done", "error", "waiting_model"].includes(task.stage))) return;
@@ -76,7 +113,8 @@ export function UploadWorkbench() {
     const poll = async () => {
       const response = await fetch("/api/extraction-queue", { cache: "no-store" }).catch(() => undefined);
       if (!response?.ok || cancelled) return;
-      const result = await response.json() as { jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; nextAttemptAt?: string; lastError?: string }> };
+      const result = await response.json() as QueueSnapshot;
+      syncQueueSettings(result);
       setTasks((items) => items.map((task) => {
         const job = result.jobs?.find((candidate) => candidate.documentId === task.documentId);
         if (!job || ["rendering", "uploading"].includes(task.stage)) return task;
@@ -96,6 +134,35 @@ export function UploadWorkbench() {
 
   function patchTask(taskId: string, patch: Partial<UploadTask>) {
     setTasks((items) => items.map((item) => item.id === taskId ? { ...item, ...patch } : item));
+  }
+
+  async function applyConcurrency() {
+    const concurrency = Number(concurrencyDraft);
+    if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_UPLOAD_CONCURRENCY) {
+      setConcurrencyError(true);
+      setConcurrencyFeedback(`请输入 1–${MAX_UPLOAD_CONCURRENCY} 的整数`);
+      return;
+    }
+    setConcurrencySaving(true);
+    setConcurrencyError(false);
+    setConcurrencyFeedback("");
+    try {
+      const response = await fetch("/api/extraction-queue", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ concurrency }),
+      });
+      const result = await response.json().catch(() => ({})) as QueueSnapshot;
+      if (!response.ok || typeof result.concurrency !== "number") throw new Error(result.error ?? "并发设置应用失败");
+      concurrencyDraftDirtyRef.current = false;
+      syncQueueSettings(result, true);
+      setConcurrencyFeedback(`已应用 ${result.concurrency} 份并发，浏览器任务与后台队列已同步调整`);
+    } catch (error) {
+      setConcurrencyError(true);
+      setConcurrencyFeedback(error instanceof Error ? error.message : "并发设置应用失败");
+    } finally {
+      setConcurrencySaving(false);
+    }
   }
 
   async function ensureModelReady() {
@@ -185,14 +252,20 @@ export function UploadWorkbench() {
     if (!files.length || batchActive) return;
     setBatchActive(true);
     const metadata = { ...sourceMeta };
-    const batchConcurrency = normalizeUploadConcurrency(concurrency);
     const queued = files.slice(0, 100).map((file) => ({ id: crypto.randomUUID(), file }));
     setTasks((items) => [...queued.map((item) => ({
       id: item.id, fileName: item.file.name, stage: "idle" as Stage, message: "等待处理…", pageCount: 0, completedPages: 0,
     })), ...items]);
+    const controller = createDynamicConcurrencyController(
+      queued,
+      concurrencyRef.current,
+      (item) => processFile(item.file, item.id, metadata),
+    );
+    batchControllerRef.current = controller;
     try {
-      await mapWithConcurrency(queued, batchConcurrency, (item) => processFile(item.file, item.id, metadata));
+      await controller.promise;
     } finally {
+      if (batchControllerRef.current === controller) batchControllerRef.current = null;
       setBatchActive(false);
     }
   }
@@ -204,15 +277,15 @@ export function UploadWorkbench() {
 
   return (
     <div className="upload-card card">
-      <div className="section-title upload-title"><div><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
+      <div className="section-title upload-title"><div><span className="section-kicker">第一步 · 导入</span><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
       <div className="upload-scope-note"><b>{educationStages.find((item) => item.value === stage)?.label} · {subject}</b><span>年份、考试类型、地区和学校会从卷面标题自动推测，可在试卷详情中随时修改。</span></div>
       <section className="upload-concurrency" aria-label="批量处理设置">
-        <div className="upload-concurrency-copy"><span><Gauge size={16} /></span><div><strong>同时处理试卷</strong><small>控制 PDF 渲染、分页上传和入队并发；普通电脑建议 2–4 份</small></div></div>
+        <div className="upload-concurrency-copy"><span><Gauge size={16} /></span><div><strong>同时处理试卷</strong><small>同时控制 PDF 渲染、上传与后台识别；普通电脑建议 2–4 份</small></div></div>
         <div className="upload-concurrency-inputs">
-          <input aria-label="并发处理数量滑杆" type="range" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrency} disabled={batchActive} onChange={(event) => setConcurrency(normalizeUploadConcurrency(event.target.value))} />
-          <label><input aria-label="并发处理数量" type="number" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrency} disabled={batchActive} onChange={(event) => setConcurrency(normalizeUploadConcurrency(event.target.value))} /><span>份</span></label>
+          <label><input aria-label="同时处理试卷数" inputMode="numeric" type="number" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={(event) => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") void applyConcurrency(); }} /><span>份</span></label>
+          <button type="button" className="btn btn-primary" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button>
         </div>
-        <p>{batchActive ? `当前批次已锁定为 ${concurrency} 份并发` : `下一批最多同时处理 ${concurrency} 份；单批最多选择 100 份`}</p>
+        <p className={concurrencyError ? "error" : concurrencyFeedback ? "success" : ""}>{concurrencyFeedback || `当前已应用 ${appliedConcurrency} 份并发 · 后台处理中 ${queueCounts.active} 份${queueCounts.queued ? ` · 等待 ${queueCounts.queued} 份` : ""}；处理中也可随时修改`}</p>
       </section>
       <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div

@@ -12,6 +12,7 @@ import {
   FolderOpen,
   House,
   Settings2,
+  Sparkles,
   SlidersHorizontal,
 } from "lucide-react";
 import { educationStages, subjects, type EducationStage } from "../lib/education-taxonomy";
@@ -37,8 +38,8 @@ export function useEducationScope() {
 const navigation = [
   { href: "/", label: "工作台", icon: House },
   { href: "/bank", label: "题库", icon: LibraryBig },
-  { href: "/papers", label: "试卷库", icon: FolderOpen },
   { href: "/papers/new", label: "组卷", icon: FilePlus2 },
+  { href: "/papers", label: "试卷库", icon: FolderOpen },
   { href: "/settings/models", label: "识别设置", icon: SlidersHorizontal },
 ];
 
@@ -96,7 +97,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside className="sidebar">
           <Link href="/" className="brand">
             <span className="brand-mark"><BookOpen size={21} strokeWidth={2.2} /></span>
-            <span><strong>拾题</strong><small>试卷工作台</small></span>
+            <span><strong>拾题</strong><small>教师智能工作台</small></span>
           </Link>
           <div ref={switcherRef} className={`education-switcher${scopeOpen ? " open" : ""}`} aria-label="教学范围">
             <button
@@ -152,6 +153,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </div>
+          <span className="nav-kicker">工作空间</span>
           <nav className="side-nav" aria-label="主导航">
             {navigation.map(({ href, label, icon: Icon }) => {
               const active = href === "/"
@@ -161,9 +163,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   : href === "/papers"
                     ? pathname === "/papers" || (/^\/papers\/[^/]+$/.test(pathname) && pathname !== "/papers/new")
                     : pathname.startsWith(href);
-              return <Link key={href} href={href} className={active ? "active" : ""}><Icon size={18} /><span>{label}</span></Link>;
+              return <Link key={href} href={href} className={active ? "active" : ""}><i><Icon size={18} /></i><span>{label}</span></Link>;
             })}
           </nav>
+          <div className="sidebar-footnote">
+            <span><Sparkles size={15} /></span>
+            <div><strong>从原卷到成卷</strong><small>识别、审核、入库、组卷，一处完成</small></div>
+          </div>
         </aside>
         <main className="app-main">{children}</main>
       </div>
