@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.13.0 <23"
   },
   "scripts": {
     "dev": "next dev -p 3050",
@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@types/better-sqlite3": "^9.6.0",
-    "better-sqlite3": "^13.0.2",
+    "better-sqlite3": "^12.6.2",
     "drizzle-orm": "0.45.2",
     "katex": "^0.18.1",
     "lucide-react": "^1.28.0",

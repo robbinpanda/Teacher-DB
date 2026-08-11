@@ -10,23 +10,61 @@ echo   Teacher Question Bank
 echo ========================================
 echo.
 
+set "REQUIRED_NODE_VERSION=22.22.0"
+if exist ".nvmrc" set /p "REQUIRED_NODE_VERSION="<".nvmrc"
+
+set "NVM_EXE="
+if defined NVM_HOME if exist "%NVM_HOME%\nvm.exe" set "NVM_EXE=%NVM_HOME%\nvm.exe"
+if not defined NVM_EXE for /f "delims=" %%N in ('where nvm.exe 2^>nul') do if not defined NVM_EXE set "NVM_EXE=%%N"
+
 where node >nul 2>nul
-if errorlevel 1 (
-  echo [ERROR] Node.js was not found.
-  echo Install Node.js 22.13 or newer, then run this file again.
+if errorlevel 1 goto :activate_required_node
+
+for /f "delims=" %%V in ('node -p "process.versions.node"') do set "NODE_VERSION=%%V"
+if /i "%NODE_VERSION%"=="%REQUIRED_NODE_VERSION%" goto :node_ready
+
+echo [SETUP] Node.js %NODE_VERSION% is active, but this project requires %REQUIRED_NODE_VERSION%.
+
+:activate_required_node
+if not defined NVM_EXE (
+  echo [ERROR] Node.js %REQUIRED_NODE_VERSION% is required.
+  echo Install Node.js %REQUIRED_NODE_VERSION%, or install NVM for Windows, then run this file again.
   goto :failed
 )
 
+:switch_node
+echo [SETUP] Switching to Node.js %REQUIRED_NODE_VERSION% with NVM for Windows...
+"%NVM_EXE%" use %REQUIRED_NODE_VERSION%
+if errorlevel 1 (
+  echo [SETUP] Node.js %REQUIRED_NODE_VERSION% is not installed. Installing it now...
+  "%NVM_EXE%" install %REQUIRED_NODE_VERSION%
+  if errorlevel 1 (
+    echo [ERROR] Could not install Node.js %REQUIRED_NODE_VERSION%.
+    goto :failed
+  )
+  "%NVM_EXE%" use %REQUIRED_NODE_VERSION%
+  if errorlevel 1 (
+    echo [ERROR] Could not activate Node.js %REQUIRED_NODE_VERSION%.
+    goto :failed
+  )
+)
+
+set "NODE_VERSION="
+for /l %%R in (1,1,10) do if not defined NODE_VERSION call :detect_node_version
+if not defined NODE_VERSION (
+  echo [ERROR] Node.js is still unavailable after the NVM switch.
+  goto :failed
+)
+if /i not "%NODE_VERSION%"=="%REQUIRED_NODE_VERSION%" (
+  echo [ERROR] NVM reported success, but Node.js %NODE_VERSION% is still active.
+  echo Check that NVM_SYMLINK is present in PATH, then run this file again.
+  goto :failed
+)
+
+:node_ready
 where npm.cmd >nul 2>nul
 if errorlevel 1 (
   echo [ERROR] npm was not found. Reinstall Node.js with npm included.
-  goto :failed
-)
-
-for /f "delims=" %%V in ('node -p "process.versions.node"') do set "NODE_VERSION=%%V"
-node -e "const [major,minor]=process.versions.node.split('.').map(Number);process.exit(major>22||(major===22&&minor>=13)?0:1)"
-if errorlevel 1 (
-  echo [ERROR] Node.js %NODE_VERSION% is installed, but version 22.13 or newer is required.
   goto :failed
 )
 
@@ -78,4 +116,9 @@ exit /b 1
 :finished
 echo.
 pause
+exit /b 0
+
+:detect_node_version
+for /f "delims=" %%V in ('node -p "process.versions.node" 2^>nul') do set "NODE_VERSION=%%V"
+if not defined NODE_VERSION ping 127.0.0.1 -n 2 >nul
 exit /b 0
