@@ -60,6 +60,10 @@ export type SourceDocument = {
   jobAttempt?: number | null;
   nextAttemptAt?: string | null;
   lastError?: string | null;
+  modelProfileId?: string | null;
+  modelDisplayName?: string | null;
+  modelName?: string | null;
+  modelProvider?: string | null;
 };
 
 export type QuestionSource = {
@@ -84,10 +88,13 @@ export type ReviewPage = {
   imageUrl: string;
   width: number;
   height: number;
-  extractionStatus: "queued" | "running" | "retry_wait" | "complete" | "failed";
+  extractionStatus: "queued" | "running" | "retry_wait" | "paused" | "complete" | "failed";
   extractionAttempt: number;
   extractionError?: string | null;
   nextAttemptAt?: string | null;
+  modelDisplayName?: string | null;
+  modelName?: string | null;
+  modelProvider?: string | null;
 };
 
 export type ReviewDocument = {
@@ -108,4 +115,8 @@ export type ReviewDocument = {
   error?: string | null;
   jobStatus?: string | null;
   nextAttemptAt?: string | null;
+  modelProfileId?: string | null;
+  modelDisplayName?: string | null;
+  modelName?: string | null;
+  modelProvider?: string | null;
 };
