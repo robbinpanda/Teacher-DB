@@ -1,5 +1,7 @@
 import { resolveModelProfile } from "./model-profiles";
 import { buildVisionHttpRequest, extractVisionResponseText, MODEL_PROTOCOL_LABELS } from "./model-protocols";
+import { getSqlite } from "../db";
+import { extractModelTokenUsage, recordModelUsage } from "./model-usage";
 
 type VisionCall = {
   ownerId: string;
@@ -9,6 +11,9 @@ type VisionCall = {
   image?: string;
   images?: Array<{ page: number; dataUrl: string }>;
   jsonMode?: boolean;
+  purpose?: "page_extraction" | "question_reextract" | "answer_import" | "connection_test" | "other";
+  documentId?: string;
+  pageNumber?: number;
 };
 
 export class ModelCallError extends Error {
@@ -111,7 +116,19 @@ export async function callVisionModel(input: VisionCall) {
     const result = await response.json() as unknown;
     const content = extractVisionResponseText(request.protocol, result);
     if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
-    return { content, profile };
+    const usage = extractModelTokenUsage(request.protocol, result);
+    if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens) {
+      try {
+        recordModelUsage(getSqlite(), profile, usage, {
+          purpose: input.purpose ?? "other",
+          documentId: input.documentId,
+          pageNumber: input.pageNumber,
+        }, new Date().toISOString());
+      } catch (usageError) {
+        console.error("模型 Token 用量记录失败", usageError);
+      }
+    }
+    return { content, profile, usage };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new ModelCallError(`模型调用超过 ${Math.round(profile.timeoutMs / 1000)} 秒，已安全中止`, "timeout", true);

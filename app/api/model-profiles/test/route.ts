@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     const result = await callVisionModel({
       ownerId,
       profileId: profile.id,
+      purpose: "connection_test",
       system: "你是视觉结构化输出连通性测试助手。只输出严格 JSON。",
       text: "确认你能读取图片，并输出 {\"ok\":true,\"text\":\"你看到的短文本\"}。",
       image: await modelTestImage(),

@@ -6,6 +6,7 @@ import { encryptSecret, maskSecret } from "../../../lib/secret-box";
 import { now, requestOwner } from "../../../lib/server";
 import { validateModelBaseUrl } from "../../../lib/model-profiles";
 import { normalizeModelProtocol } from "../../../lib/model-protocols";
+import { normalizeOptionalTokenPrice } from "../../../lib/model-usage";
 
 function publicProfile<T extends { provider: string; apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
   const safe = { ...profile, provider: normalizeModelProtocol(profile.provider) };
@@ -34,6 +35,9 @@ export async function POST(request: Request) {
   await ensureOwnerModelSettings(ownerId);
   const payload = await request.json() as {
     displayName?: string; provider?: string; baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; select?: boolean;
+    inputPricePerMillion?: number | string | null;
+    outputPricePerMillion?: number | string | null;
+    cachePricePerMillion?: number | string | null;
   };
   const displayName = payload.displayName?.trim();
   const model = payload.model?.trim();
@@ -49,6 +53,16 @@ export async function POST(request: Request) {
   try { provider = normalizeModelProtocol(payload.provider ?? "openai-chat-completions"); } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "接口协议无效" }, { status: 400 });
   }
+  let inputPricePerMillion: number | null;
+  let outputPricePerMillion: number | null;
+  let cachePricePerMillion: number | null;
+  try {
+    inputPricePerMillion = normalizeOptionalTokenPrice(payload.inputPricePerMillion, "输入价格");
+    outputPricePerMillion = normalizeOptionalTokenPrice(payload.outputPricePerMillion, "输出价格");
+    cachePricePerMillion = normalizeOptionalTokenPrice(payload.cachePricePerMillion, "缓存价格");
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "价格格式无效" }, { status: 400 });
+  }
   const encrypted = await encryptSecret(apiKey);
   const id = crypto.randomUUID();
   const timestamp = now();
@@ -58,11 +72,13 @@ export async function POST(request: Request) {
       transaction.prepare(
         `INSERT INTO model_profiles
           (id, owner_id, display_name, provider, base_url, model, api_key_ciphertext, api_key_iv, api_key_mask,
-           is_managed, is_multimodal, enabled, timeout_ms, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, ?, ?)`,
+           is_managed, is_multimodal, enabled, timeout_ms, input_price_per_million,
+           output_price_per_million, cache_price_per_million, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id, ownerId, displayName, provider, baseUrl, model, encrypted.ciphertext, encrypted.iv,
-        maskSecret(apiKey), timeoutMs, timestamp, timestamp,
+        maskSecret(apiKey), timeoutMs, inputPricePerMillion, outputPricePerMillion,
+        cachePricePerMillion, timestamp, timestamp,
       );
       if (payload.select !== false) {
         transaction.prepare("UPDATE app_settings SET selected_model_profile_id = ?, updated_at = ? WHERE owner_id = ?")

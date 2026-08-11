@@ -40,7 +40,7 @@ const navigation = [
   { href: "/bank", label: "题库", icon: LibraryBig },
   { href: "/papers/new", label: "组卷", icon: FilePlus2 },
   { href: "/papers", label: "试卷库", icon: FolderOpen },
-  { href: "/settings/models", label: "识别设置", icon: SlidersHorizontal },
+  { href: "/settings/models", label: "模型设置", icon: SlidersHorizontal },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

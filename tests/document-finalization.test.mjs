@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { finalizeDocumentState } from "../lib/document-finalization.ts";
+import { finalizeDocumentState, unresolvedAnswerUpdateNumbers } from "../lib/document-finalization.ts";
+
+test("收尾时忽略后来已经落库的暂时未匹配答案", () => {
+  assert.deepEqual(
+    unresolvedAnswerUpdateNumbers(["12", "21"], ["21", "22", "0", "bad"], ["1", "12", "21"]),
+    ["22"],
+  );
+});
 
 test("收尾事务只更新文档与任务状态，不重放原始模型内容", () => {
   const sqlite = new Database(":memory:");

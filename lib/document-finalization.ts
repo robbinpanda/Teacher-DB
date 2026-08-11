@@ -1,5 +1,18 @@
 import type Database from "better-sqlite3";
 
+export function unresolvedAnswerUpdateNumbers(
+  pipelineUnmatchedNumbers: unknown[],
+  answerUpdateNumbers: unknown[],
+  existingQuestionNumbers: Iterable<string>,
+) {
+  const existing = new Set(existingQuestionNumbers);
+  return Array.from(new Set(
+    [...pipelineUnmatchedNumbers, ...answerUpdateNumbers]
+      .map((number) => String(number ?? "").trim())
+      .filter((number) => /^[1-9]\d*$/.test(number) && !existing.has(number)),
+  )).sort((left, right) => Number(left) - Number(right));
+}
+
 export function finalizeDocumentState(
   sqlite: Database.Database,
   input: { documentId: string; terminalError: string | null; timestamp: string },

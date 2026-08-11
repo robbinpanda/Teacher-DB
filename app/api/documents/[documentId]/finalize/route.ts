@@ -3,7 +3,7 @@ import { ensureDatabase } from "../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../lib/server";
 import { getDocumentIntegrity, integrityError } from "../../../../../lib/document-integrity";
 import { assertDocumentLease, LostDocumentLeaseError } from "../../../../../lib/job-lease";
-import { finalizeDocumentState } from "../../../../../lib/document-finalization";
+import { finalizeDocumentState, unresolvedAnswerUpdateNumbers } from "../../../../../lib/document-finalization";
 
 export const runtime = "nodejs";
 
@@ -63,13 +63,14 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     (sqlite.prepare("SELECT number FROM questions WHERE document_id = ?").all(documentId) as Array<{ number: string }>)
       .map((question) => question.number),
   );
-  const unmatchedAnswerUpdateNumbers = Array.from(new Set(
-    [
-      ...pipelineUnmatchedNumbers,
-      ...updates.map((update) => String(update.number ?? "").trim())
-        .filter((number) => /^\d+$/.test(number) && !existingQuestionNumbers.has(number)),
-    ].filter((number) => /^[1-9]\d*$/.test(number)),
-  )).sort((left, right) => Number(left) - Number(right));
+  // Earlier pages can report an answer as unmatched before a later page creates
+  // that question. Reconcile every historical hint against the final question
+  // table instead of treating a transient page-level result as a terminal error.
+  const unmatchedAnswerUpdateNumbers = unresolvedAnswerUpdateNumbers(
+    pipelineUnmatchedNumbers,
+    updates.map((update) => update.number),
+    existingQuestionNumbers,
+  );
   const integrityFailure = failedRuns.length
     ? null
     : unmatchedAnswerUpdateNumbers.length

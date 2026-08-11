@@ -44,6 +44,8 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     const result = await callVisionModel({
       ownerId,
       profileId: payload.profileId,
+      purpose: "answer_import",
+      documentId,
       system: [
         "你是答案页匹配专家。只读取图片中明确可见的答案和解析，并匹配到给定题号。",
         "不得创造题号；没有明确答案的题不要输出。若页面重复出现同题，合并更完整的答案和解析。",

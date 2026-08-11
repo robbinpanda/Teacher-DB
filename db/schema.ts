@@ -215,6 +215,9 @@ export const modelProfiles = sqliteTable("model_profiles", {
   isMultimodal: integer("is_multimodal", { mode: "boolean" }).notNull().default(true),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   timeoutMs: integer("timeout_ms").notNull().default(90000),
+  inputPricePerMillion: real("input_price_per_million"),
+  outputPricePerMillion: real("output_price_per_million"),
+  cachePricePerMillion: real("cache_price_per_million"),
   lastTestStatus: text("last_test_status"),
   lastTestMessage: text("last_test_message"),
   lastTestedAt: text("last_tested_at"),
@@ -223,6 +226,29 @@ export const modelProfiles = sqliteTable("model_profiles", {
 }, (table) => [
   index("model_profiles_owner_idx").on(table.ownerId, table.enabled),
   uniqueIndex("model_profiles_owner_name_idx").on(table.ownerId, table.displayName),
+]);
+
+export const modelUsageEvents = sqliteTable("model_usage_events", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  modelProfileId: text("model_profile_id"),
+  documentId: text("document_id").references(() => documents.id, { onDelete: "set null" }),
+  pageNumber: integer("page_number"),
+  purpose: text("purpose").notNull(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
+  inputPricePerMillion: real("input_price_per_million"),
+  outputPricePerMillion: real("output_price_per_million"),
+  cachePricePerMillion: real("cache_price_per_million"),
+  costUsd: real("cost_usd"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("model_usage_owner_created_idx").on(table.ownerId, table.createdAt),
+  index("model_usage_profile_created_idx").on(table.modelProfileId, table.createdAt),
+  index("model_usage_document_idx").on(table.documentId),
 ]);
 
 export const appSettings = sqliteTable("app_settings", {

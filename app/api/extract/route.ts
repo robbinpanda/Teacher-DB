@@ -314,6 +314,9 @@ export async function POST(request: Request) {
     const result = await callVisionModel({
       ownerId,
       profileId: profile.id,
+      purpose: "page_extraction",
+      documentId,
+      pageNumber,
       system: `${systemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
       text: `文件：${payload.fileName ?? "未命名试卷"}。主页面是第 ${pageNumber} 页${nextPage ? `，并附带第 ${nextPage.pageNumber} 页用于交叉复核和补全跨页题` : "，这是最后一页"}。${pageNumber === 1 ? "请从卷面标题和卷头推测 documentMeta；看不清的字段使用空字符串，年份无法确认时使用 null。" : "documentMeta 使用空对象。"}两页中所有带清晰印刷顶层题号的新题都必须输出，重复题系统会幂等合并；已保存候选可以在确认连续时接力。${continuationContext} 本轮必须先做版面切分：逐页定位所有独立顶层题号并写入 pageAudit；检查页面顶部是否为前题续页；检查每道含（1）（2）等小问的大题是否一直读取到全部小问解析结束。若页面上方是前题续页、下方才出现新题号，必须分别给前题上半页 region 和新题下半页 region，新题框从其印刷题号行开始。页面原始尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
       images: modelImages,

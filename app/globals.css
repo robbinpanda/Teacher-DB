@@ -660,3 +660,83 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   body { background: white; }
   .sidebar { display: none !important; }
 }
+
+/* Model settings and usage */
+.model-settings-page { max-width: 1380px; padding-top: 29px; }
+.model-settings-header { align-items: center; margin-bottom: 20px; }
+.model-settings-header h1 { font-size: 36px; }
+.section-kicker { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.usage-panel { padding: 25px; box-shadow: 0 18px 50px rgba(26,55,47,.055); }
+.usage-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.usage-panel-head h2, .model-manager-heading h2 { margin: 5px 0 4px; font-family: Georgia, "Songti SC", serif; font-size: 23px; }
+.usage-panel-head p, .model-manager-heading p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.usage-controls { display: flex; align-items: center; gap: 8px; }
+.usage-controls select { height: 38px; min-width: 130px; border: 1px solid var(--line); border-radius: 9px; padding: 0 31px 0 11px; background: #fbfcfb; color: #43514b; font-size: 11px; outline: none; }
+.month-stepper { height: 38px; display: grid; grid-template-columns: 36px 112px 36px; align-items: center; border: 1px solid var(--line); border-radius: 9px; background: #fbfcfb; }
+.month-stepper button { height: 36px; display: grid; place-items: center; border: 0; background: transparent; color: #75817c; cursor: pointer; }
+.month-stepper button:hover { color: var(--green); }.month-stepper button:disabled { opacity: .28; cursor: not-allowed; }
+.month-stepper strong { text-align: center; font-size: 11px; }
+.metric-switch { height: 38px; display: flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #eef2ef; }
+.metric-switch button { min-width: 50px; border: 0; border-radius: 6px; background: transparent; color: #6c7973; font-size: 10px; font-weight: 700; cursor: pointer; }
+.metric-switch button.active { background: white; color: var(--green-dark); box-shadow: 0 2px 7px rgba(24,52,44,.09); }
+.usage-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin: 22px 0 17px; }
+.usage-metric { min-width: 0; display: grid; grid-template-columns: 35px minmax(0,1fr); gap: 10px; padding: 14px; border: 1px solid #e2e7e4; border-radius: 12px; background: #fafbf9; }
+.usage-metric > i { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 10px; background: var(--green-soft); color: var(--green); font-style: normal; }
+.usage-metric span, .usage-metric strong, .usage-metric small { display: block; }
+.usage-metric span { color: #68756f; font-size: 9px; font-weight: 700; }
+.usage-metric strong { margin-top: 3px; overflow: hidden; font-family: Georgia, serif; font-size: 20px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.usage-metric small { margin-top: 4px; color: #929c97; font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-chart-shell { position: relative; border: 1px solid #e1e6e3; border-radius: 13px; background: white; }
+.usage-chart-scroll { position: relative; min-height: 280px; overflow-x: auto; }
+.usage-chart { display: block; width: 100%; min-width: 730px; height: 280px; }
+.usage-chart line { stroke: #e7ebe8; stroke-width: 1; }.usage-chart text { fill: #85908b; font-family: inherit; font-size: 9px; }
+.usage-chart rect { opacity: .82; transition: opacity .15s ease; }.usage-chart rect:hover { opacity: 1; }
+.chart-empty { position: absolute; inset: 42px 30px 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #9aa49f; pointer-events: none; }
+.chart-empty svg { margin-bottom: 8px; color: #aab5b0; }.chart-empty strong { color: #65726c; font-size: 12px; }.chart-empty span { margin-top: 4px; font-size: 9px; }
+.usage-legend { min-height: 39px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 15px; padding: 7px 15px; border-top: 1px solid #edf0ee; color: #5f6c66; font-size: 9px; }
+.usage-legend span { display: inline-flex; align-items: center; gap: 5px; }.usage-legend i { width: 8px; height: 8px; border-radius: 3px; }
+.usage-loading { height: 320px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #e1e6e3; border-radius: 13px; color: var(--muted); font-size: 11px; }
+.usage-model-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-top: 13px; }
+.usage-model-card { padding: 13px 14px; border: 1px solid #e1e6e3; border-radius: 11px; background: #fbfcfb; }
+.usage-model-title { display: grid; grid-template-columns: 9px minmax(0,1fr) auto; gap: 9px; align-items: center; }
+.usage-model-title > i { width: 9px; height: 32px; border-radius: 5px; }.usage-model-title strong, .usage-model-title small { display: block; }.usage-model-title strong { font-size: 11px; }.usage-model-title small { margin-top: 2px; color: var(--muted); font-size: 8px; }.usage-model-title b { color: var(--green-dark); font-family: Georgia, serif; font-size: 13px; }
+.token-breakdown { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; margin-top: 11px; }
+.token-breakdown span { padding-left: 10px; border-left: 1px solid #e4e8e5; }.token-breakdown small, .token-breakdown strong { display: block; }.token-breakdown small { color: #89948f; font-size: 8px; }.token-breakdown strong { margin-top: 3px; font-size: 10px; }
+.usage-empty { grid-column: 1 / -1; padding: 23px; border: 1px dashed #d8dfdb; border-radius: 10px; color: #87928d; font-size: 10px; text-align: center; }
+.usage-footnote { margin: 12px 1px 0; color: #818c87; font-size: 9px; line-height: 1.6; }
+.model-manager { margin-top: 31px; }
+.model-manager-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 13px; padding: 0 2px; }
+.model-manager-grid { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(390px,.95fr); gap: 15px; align-items: start; }
+.model-profile-list { gap: 9px; }
+.model-profile-card { padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: white; transition: border-color .15s ease, box-shadow .15s ease; }
+.model-profile-card.selected { border-color: #94bdaa; box-shadow: inset 3px 0 var(--green); }.model-profile-card.editing { box-shadow: inset 3px 0 var(--green), 0 0 0 2px rgba(31,122,90,.07); }
+.model-profile-main { display: grid; grid-template-columns: 23px minmax(0,1fr); gap: 10px; align-items: start; }
+.profile-default { width: 23px; height: 23px; display: grid; place-items: center; margin-top: 1px; border: 1px solid #b9c6c0; border-radius: 50%; background: white; color: white; cursor: pointer; }.selected .profile-default { border-color: var(--green); background: var(--green); }
+.model-profile-copy { min-width: 0; }.model-profile-copy > div { display: flex; align-items: center; gap: 6px; }.model-profile-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.model-profile-copy em { border-radius: 99px; padding: 2px 6px; background: var(--green-soft); color: var(--green-dark); font-size: 7px; font-style: normal; font-weight: 800; }.model-profile-copy em.neutral { background: #eef1ef; color: #64716b; }.model-profile-copy p { margin: 3px 0 0; color: #43514b; font-size: 10px; font-weight: 650; }.model-profile-copy small { display: block; margin-top: 3px; overflow: hidden; color: #8a9590; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.model-price-line { display: flex; flex-wrap: wrap; gap: 5px 13px; margin: 11px 0 0 33px; color: #68756f; font-size: 8px; }
+.model-profile-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 11px 0 0 33px; padding-top: 10px; border-top: 1px solid #edf0ee; }
+.model-profile-footer > div { display: flex; align-items: center; gap: 5px; }.connection-state { display: inline-flex; align-items: center; gap: 5px; color: #8a9590; font-size: 8px; }.connection-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #abb4b0; }.connection-state.success { color: var(--green); }.connection-state.success::before { background: var(--green); }.connection-state.failed { color: #a95332; }.connection-state.failed::before { background: #b75f3d; }
+.icon-button { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: white; color: #697670; cursor: pointer; }
+.model-editor { position: sticky; top: 15px; display: grid; gap: 14px; padding: 20px; box-shadow: none; }
+.model-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }.model-editor-head h3 { margin: 0; font-size: 16px; }.model-editor-head p { margin: 4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.model-editor-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }.model-editor-fields label, .price-fields label { display: grid; gap: 5px; }.model-editor-fields label.wide { grid-column: 1 / -1; }.model-editor-fields label > span, .price-fields label > span { color: #596660; font-size: 9px; font-weight: 750; }.model-editor-fields label > span small { margin-left: 5px; color: #929b97; font-weight: 500; }
+.model-editor input, .model-editor select { width: 100%; min-width: 0; height: 38px; border: 1px solid #d6ddd9; border-radius: 8px; padding: 0 10px; background: #fbfcfb; color: var(--ink); font-size: 11px; outline: none; }.model-editor input:focus, .model-editor select:focus { border-color: #72a88f; box-shadow: 0 0 0 3px rgba(31,122,90,.07); }.model-editor input:disabled, .model-editor select:disabled { color: #6f7b75; background: #f0f2f0; cursor: not-allowed; }
+.price-editor { padding: 12px; border-radius: 10px; background: #f3f6f4; }.price-editor > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }.price-editor > div:first-child strong { font-size: 10px; }.price-editor > div:first-child span { color: #7c8983; font-size: 8px; }
+.price-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; margin-top: 10px; }.price-fields label > div { position: relative; }.price-fields label b { position: absolute; left: 9px; top: 50%; z-index: 1; transform: translateY(-50%); color: #718079; font-size: 10px; }.price-fields input { padding-left: 21px; background: white; }
+.model-save { width: 100%; }.model-editor .security-note { font-size: 8px; }
+
+@media (max-width: 1080px) {
+  .usage-panel-head { display: block; }.usage-controls { margin-top: 14px; flex-wrap: wrap; }
+  .usage-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .model-manager-grid { grid-template-columns: 1fr; }.model-editor { position: static; }
+}
+
+@media (max-width: 650px) {
+  .model-settings-page { padding: 22px 10px 45px; }.model-settings-header { align-items: flex-start; }.model-settings-header h1 { font-size: 30px; }
+  .usage-panel { padding: 14px; }.usage-controls { display: grid; grid-template-columns: 1fr 1fr; }.month-stepper { grid-column: 1 / -1; grid-template-columns: 36px 1fr 36px; }.usage-controls select { min-width: 0; width: 100%; }.metric-switch { width: 100%; }.metric-switch button { flex: 1; }
+  .usage-metrics { grid-template-columns: 1fr 1fr; gap: 7px; }.usage-metric { grid-template-columns: 1fr; padding: 11px; }.usage-metric > i { width: 29px; height: 29px; }.usage-metric strong { font-size: 16px; }.usage-metric small { white-space: normal; }
+  .usage-model-grid { grid-template-columns: 1fr; }.token-breakdown { grid-template-columns: repeat(2,minmax(0,1fr)); }.usage-model-title b { max-width: 100px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .model-manager-heading { align-items: center; }.model-manager-heading p { display: none; }.model-manager-heading .btn { padding: 8px 10px; }
+  .model-profile-footer { align-items: flex-end; }.model-profile-footer > div { flex-wrap: wrap; justify-content: flex-end; }
+  .model-editor { padding: 15px; }.model-editor-fields { grid-template-columns: 1fr; }.model-editor-fields label.wide { grid-column: auto; }.price-fields { grid-template-columns: 1fr; }
+}

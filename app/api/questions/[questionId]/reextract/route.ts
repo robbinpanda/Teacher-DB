@@ -89,6 +89,9 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     const result = await callVisionModel({
       ownerId,
       profileId: payload.profileId,
+      purpose: "question_reextract",
+      documentId: question.documentId,
+      pageNumber: Math.min(...uniqueRegions.map((region) => region.page)),
       system: [
         "你是中文中学试题转录专家。用户已人工校正题目框，所有图片按页码顺序组成同一道题。",
         "只转录框内确实可见的内容，并把跨页内容按阅读顺序合并。禁止补写框外或不可见文字。",

@@ -265,13 +265,16 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
       ? (doc.questionCount ? Math.round(doc.approvedCount / doc.questionCount * 100) : 0)
       : recognitionProgress;
     const retrying = retryingIds.has(doc.id);
-    const paused = doc.jobStatus === "failed" || doc.jobStatus === "paused";
+    const blocked = doc.jobStatus === "failed" || doc.jobStatus === "paused";
+    const pagesFinished = doc.pageCount > 0 && doc.completedPageCount >= doc.pageCount;
     const selected = selectedIds.has(doc.id);
     const modelLabel = doc.modelDisplayName ?? doc.modelName ?? "模型记录缺失";
     const queueLabel = doc.jobStatus === "paused"
       ? "已暂停 · 等待全部开始"
       : doc.jobStatus === "failed"
-        ? `已暂停 · 连续失败 ${doc.jobAttempt ?? 8} 次`
+        ? pagesFinished
+          ? "识别完成 · 收尾校验未通过"
+          : `识别失败 · 第 ${doc.jobAttempt ?? 1} 次`
       : doc.jobStatus === "retry_wait"
         ? `退避中${doc.nextAttemptAt ? ` · ${new Date(doc.nextAttemptAt).toLocaleTimeString("zh-CN")} 自动继续` : ""}`
         : doc.jobStatus === "queued"
@@ -290,7 +293,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
             : `待审核 · 已确认 ${doc.approvedCount}/${doc.questionCount}`);
     const href = doc.status === "uploading" ? "/" : `/review/${doc.id}`;
     return (
-      <div className={`document-row-wrap ${paused ? "paused" : ""} ${selectionMode ? "selection-active" : ""} ${selected ? "selected" : ""}`} key={doc.id}>
+      <div className={`document-row-wrap ${blocked ? "paused" : ""} ${selectionMode ? "selection-active" : ""} ${selected ? "selected" : ""}`} key={doc.id}>
         {selectionMode && <label className="document-selector" aria-label={`选择 ${doc.name}`}><input type="checkbox" checked={selected} onChange={() => toggleDocument(doc.id)} /></label>}
         <Link href={href} className="document-row card" onClick={selectionMode ? (event) => { event.preventDefault(); toggleDocument(doc.id); } : undefined}>
           <span className={`document-icon ${doc.subject}`}>{doc.subject.slice(0, 1)}</span>
@@ -299,7 +302,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
           <ArrowRight size={17} className="row-arrow" />
         </Link>
         {!selectionMode && <div className="document-actions">
-          {doc.jobStatus === "failed" && <button type="button" className="document-retry" disabled={retrying} title="重新识别未完成页面" aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
+          {doc.jobStatus === "failed" && <button type="button" className="document-retry" disabled={retrying} title={pagesFinished ? "重新执行收尾校验" : "重新识别未完成页面"} aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
           <button type="button" className="document-delete" title="删除试卷" aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
         </div>}
       </div>
