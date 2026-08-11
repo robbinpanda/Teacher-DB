@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import Database from "better-sqlite3";
 import {
   calculateModelUsageCost,
   extractModelTokenUsage,
   normalizeOptionalTokenPrice,
+  repriceModelUsageHistory,
 } from "../lib/model-usage.ts";
 
 test("解析 Chat Completions 输入、输出与缓存 Token", () => {
@@ -42,4 +44,30 @@ test("价格字段允许留空和零，但拒绝负数或非数字", () => {
   assert.equal(normalizeOptionalTokenPrice("2.5", "输入价格"), 2.5);
   assert.throws(() => normalizeOptionalTokenPrice("-1", "输入价格"));
   assert.throws(() => normalizeOptionalTokenPrice("abc", "输入价格"));
+});
+
+test("保存模型价格后重算该模型的全部历史调用", () => {
+  const sqlite = new Database(":memory:");
+  sqlite.exec(`
+    CREATE TABLE model_usage_events (
+      id TEXT PRIMARY KEY, owner_id TEXT, model_profile_id TEXT,
+      input_tokens INTEGER, output_tokens INTEGER, cached_input_tokens INTEGER,
+      input_price_per_million REAL, output_price_per_million REAL,
+      cache_price_per_million REAL, cost_cny REAL
+    );
+    INSERT INTO model_usage_events VALUES
+      ('a-1', 'owner', 'model-a', 1000000, 500000, 250000, NULL, NULL, NULL, NULL),
+      ('a-2', 'owner', 'model-a', 500000, 0, 500000, 1, 1, 1, 1),
+      ('b-1', 'owner', 'model-b', 1000000, 0, 0, NULL, NULL, NULL, NULL);
+  `);
+  const changed = sqlite.transaction(() => repriceModelUsageHistory(sqlite, {
+    id: "model-a", ownerId: "owner", inputPricePerMillion: 2,
+    outputPricePerMillion: 6, cachePricePerMillion: 1,
+  }))();
+  assert.equal(changed, 2);
+  assert.deepEqual(
+    sqlite.prepare("SELECT id, cost_cny AS cost FROM model_usage_events ORDER BY id").all(),
+    [{ id: "a-1", cost: 5.25 }, { id: "a-2", cost: 1.5 }, { id: "b-1", cost: null }],
+  );
+  sqlite.close();
 });

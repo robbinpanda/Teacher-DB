@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS model_usage_events (
   provider TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0, cached_input_tokens INTEGER NOT NULL DEFAULT 0,
   input_price_per_million REAL, output_price_per_million REAL, cache_price_per_million REAL,
-  cost_usd REAL, created_at TEXT NOT NULL
+    cost_cny REAL, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS model_usage_owner_created_idx ON model_usage_events(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS model_usage_profile_created_idx ON model_usage_events(model_profile_id, created_at);
@@ -175,11 +175,14 @@ const upgrades: Record<string, Record<string, string>> = {
     subtitle: "TEXT",
     settings_json: "TEXT NOT NULL DEFAULT '{}'",
   },
-  model_profiles: {
+    model_profiles: {
     input_price_per_million: "REAL",
     output_price_per_million: "REAL",
-    cache_price_per_million: "REAL",
-  },
+      cache_price_per_million: "REAL",
+    },
+    model_usage_events: {
+      cost_cny: "REAL",
+    },
   app_settings: {
     extraction_concurrency: "INTEGER NOT NULL DEFAULT 2",
     extraction_paused: "INTEGER NOT NULL DEFAULT 0",
@@ -200,6 +203,12 @@ function initialize() {
     for (const [name, definition] of Object.entries(columns)) {
       if (!existing.has(name)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
     }
+  }
+  const usageColumns = new Set(
+    (sqlite.prepare("PRAGMA table_info(model_usage_events)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (usageColumns.has("cost_usd") && usageColumns.has("cost_cny")) {
+    sqlite.exec("UPDATE model_usage_events SET cost_cny = cost_usd WHERE cost_cny IS NULL AND cost_usd IS NOT NULL");
   }
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_idx ON extraction_runs(idempotency_key)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS runs_queue_idx ON extraction_runs(status, next_attempt_at)");

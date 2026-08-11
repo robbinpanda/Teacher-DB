@@ -44,7 +44,7 @@ export async function GET(request: Request) {
             usage.provider, usage.model, usage.purpose, usage.document_id AS documentId,
             usage.page_number AS pageNumber, usage.input_tokens AS inputTokens,
             usage.output_tokens AS outputTokens, usage.cached_input_tokens AS cachedInputTokens,
-            usage.cost_usd AS costUsd, usage.created_at AS createdAt
+            usage.cost_cny AS costCny, usage.created_at AS createdAt
        FROM model_usage_events usage
        LEFT JOIN model_profiles profile ON profile.id = usage.model_profile_id
       WHERE usage.owner_id = ? AND usage.created_at >= ? AND usage.created_at < ?

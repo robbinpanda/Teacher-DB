@@ -3,7 +3,7 @@ import { getDb, sqliteTransaction } from "../../../../db";
 import { modelProfiles } from "../../../../db/schema";
 import { ensureOwnerModelSettings, ownerMimoProfileId, validateModelBaseUrl } from "../../../../lib/model-profiles";
 import { normalizeModelProtocol } from "../../../../lib/model-protocols";
-import { normalizeOptionalTokenPrice } from "../../../../lib/model-usage";
+import { normalizeOptionalTokenPrice, repriceModelUsageHistory } from "../../../../lib/model-usage";
 import { encryptSecret, maskSecret } from "../../../../lib/secret-box";
 import { now, requestOwner } from "../../../../lib/server";
 
@@ -109,22 +109,32 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
       || Boolean(apiKey);
   }
 
+  let repricedEvents = 0;
   try {
-    await db.update(modelProfiles).set({
-      displayName,
-      provider,
-      baseUrl,
-      model,
-      timeoutMs,
-      apiKeyCiphertext,
-      apiKeyIv,
-      apiKeyMask,
-      inputPricePerMillion,
-      outputPricePerMillion,
-      cachePricePerMillion,
-      ...(connectionChanged ? { lastTestStatus: null, lastTestMessage: null, lastTestedAt: null } : {}),
-      updatedAt: now(),
-    }).where(and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)));
+    const timestamp = now();
+    repricedEvents = sqliteTransaction((transaction) => {
+      transaction.prepare(
+        `UPDATE model_profiles SET display_name = ?, provider = ?, base_url = ?, model = ?,
+           timeout_ms = ?, api_key_ciphertext = ?, api_key_iv = ?, api_key_mask = ?,
+           input_price_per_million = ?, output_price_per_million = ?, cache_price_per_million = ?,
+           last_test_status = CASE WHEN ? THEN NULL ELSE last_test_status END,
+           last_test_message = CASE WHEN ? THEN NULL ELSE last_test_message END,
+           last_tested_at = CASE WHEN ? THEN NULL ELSE last_tested_at END,
+           updated_at = ? WHERE id = ? AND owner_id = ?`,
+      ).run(
+        displayName, provider, baseUrl, model, timeoutMs, apiKeyCiphertext, apiKeyIv, apiKeyMask,
+        inputPricePerMillion, outputPricePerMillion, cachePricePerMillion,
+        connectionChanged ? 1 : 0, connectionChanged ? 1 : 0, connectionChanged ? 1 : 0,
+        timestamp, profileId, ownerId,
+      );
+      return repriceModelUsageHistory(transaction, {
+        id: profileId,
+        ownerId,
+        inputPricePerMillion,
+        outputPricePerMillion,
+        cachePricePerMillion,
+      });
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "保存失败";
     if (message.toLowerCase().includes("unique")) return Response.json({ error: "模型配置名称已存在" }, { status: 409 });
@@ -132,5 +142,5 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
   }
 
   const updated = await db.query.modelProfiles.findFirst({ where: and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)) });
-  return Response.json({ profile: updated && publicProfile(updated) });
+  return Response.json({ profile: updated && publicProfile(updated), repricedEvents });
 }

@@ -26,6 +26,11 @@ type UsageContext = {
   pageNumber?: number;
 };
 
+type RepriceProfile = ModelTokenPrices & {
+  id: string;
+  ownerId: string;
+};
+
 function objectValue(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
@@ -87,6 +92,28 @@ export function calculateModelUsageCost(usage: ModelTokenUsage, prices: ModelTok
   ) / 1_000_000;
 }
 
+export function repriceModelUsageHistory(sqlite: Database.Database, profile: RepriceProfile) {
+  const rows = sqlite.prepare(
+    `SELECT id, input_tokens AS inputTokens, output_tokens AS outputTokens,
+            cached_input_tokens AS cachedInputTokens
+       FROM model_usage_events WHERE owner_id = ? AND model_profile_id = ?`,
+  ).all(profile.ownerId, profile.id) as Array<ModelTokenUsage & { id: string }>;
+  const update = sqlite.prepare(
+    `UPDATE model_usage_events SET input_price_per_million = ?, output_price_per_million = ?,
+       cache_price_per_million = ?, cost_cny = ? WHERE id = ?`,
+  );
+  for (const row of rows) {
+    update.run(
+      profile.inputPricePerMillion ?? null,
+      profile.outputPricePerMillion ?? null,
+      profile.cachePricePerMillion ?? null,
+      calculateModelUsageCost(row, profile),
+      row.id,
+    );
+  }
+  return rows.length;
+}
+
 export function recordModelUsage(
   sqlite: Database.Database,
   profile: UsageProfile,
@@ -94,19 +121,19 @@ export function recordModelUsage(
   context: UsageContext,
   timestamp: string,
 ) {
-  const costUsd = calculateModelUsageCost(usage, profile);
+  const costCny = calculateModelUsageCost(usage, profile);
   const id = crypto.randomUUID();
   sqlite.prepare(
     `INSERT INTO model_usage_events
       (id, owner_id, model_profile_id, document_id, page_number, purpose, provider, model,
        input_tokens, output_tokens, cached_input_tokens, input_price_per_million,
-       output_price_per_million, cache_price_per_million, cost_usd, created_at)
+       output_price_per_million, cache_price_per_million, cost_cny, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id, profile.ownerId, profile.id, context.documentId ?? null, context.pageNumber ?? null,
     context.purpose, profile.provider, profile.model, usage.inputTokens, usage.outputTokens,
     usage.cachedInputTokens, profile.inputPricePerMillion ?? null, profile.outputPricePerMillion ?? null,
-    profile.cachePricePerMillion ?? null, costUsd, timestamp,
+    profile.cachePricePerMillion ?? null, costCny, timestamp,
   );
-  return { id, costUsd };
+  return { id, costCny };
 }

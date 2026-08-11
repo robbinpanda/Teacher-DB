@@ -19,7 +19,7 @@ export type UsageEventRow = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
-  costUsd: number | null;
+  costCny: number | null;
   createdAt: string;
 };
 
@@ -32,23 +32,23 @@ type MutableSummary = {
   outputTokens: number;
   cachedInputTokens: number;
   totalTokens: number;
-  costUsd: number;
+  costCny: number;
   pricedEventCount: number;
   processedPages: Set<string>;
   pricedPages: Set<string>;
-  pageCostUsd: number;
+  pageCostCny: number;
   pagePricedEventCount: number;
   todayTokens: number;
-  todayCostUsd: number;
+  todayCostCny: number;
   todayPricedEventCount: number;
 };
 
-export type ModelUsageSummary = Omit<MutableSummary, "processedPages" | "pricedPages" | "costUsd" | "todayCostUsd"> & {
+export type ModelUsageSummary = Omit<MutableSummary, "processedPages" | "pricedPages" | "costCny" | "todayCostCny"> & {
   processedPages: number;
   pricedPages: number;
   averageCostPerPage: number | null;
-  costUsd: number | null;
-  todayCostUsd: number | null;
+  costCny: number | null;
+  todayCostCny: number | null;
 };
 
 export function localDateKey(isoTimestamp: string, timezoneOffset: number) {
@@ -65,14 +65,14 @@ function createSummary(profileId: string, displayName: string, provider: string,
     outputTokens: 0,
     cachedInputTokens: 0,
     totalTokens: 0,
-    costUsd: 0,
+    costCny: 0,
     pricedEventCount: 0,
     processedPages: new Set<string>(),
     pricedPages: new Set<string>(),
-    pageCostUsd: 0,
+    pageCostCny: 0,
     pagePricedEventCount: 0,
     todayTokens: 0,
-    todayCostUsd: 0,
+    todayCostCny: 0,
     todayPricedEventCount: 0,
   };
 }
@@ -87,7 +87,7 @@ export function summarizeModelUsage(
   for (const profile of profiles) {
     summaries.set(profile.id, createSummary(profile.id, profile.displayName, profile.provider, profile.model));
   }
-  const daily = new Map<string, Map<string, { tokens: number; costUsd: number; pricedEventCount: number }>>();
+  const daily = new Map<string, Map<string, { tokens: number; costCny: number; pricedEventCount: number }>>();
 
   for (const event of events) {
     const key = event.modelProfileId ?? `deleted:${event.provider}:${event.model}`;
@@ -103,15 +103,15 @@ export function summarizeModelUsage(
     summary.outputTokens += event.outputTokens;
     summary.cachedInputTokens += event.cachedInputTokens;
     summary.totalTokens += tokens;
-    if (event.costUsd !== null) {
-      summary.costUsd += event.costUsd;
+    if (event.costCny !== null) {
+      summary.costCny += event.costCny;
       summary.pricedEventCount += 1;
     }
     if (event.purpose === "page_extraction" && event.documentId && event.pageNumber !== null) {
       summary.processedPages.add(`${event.documentId}:${event.pageNumber}`);
-      if (event.costUsd !== null) {
+      if (event.costCny !== null) {
         summary.pricedPages.add(`${event.documentId}:${event.pageNumber}`);
-        summary.pageCostUsd += event.costUsd;
+        summary.pageCostCny += event.costCny;
         summary.pagePricedEventCount += 1;
       }
     }
@@ -119,16 +119,16 @@ export function summarizeModelUsage(
     const date = localDateKey(event.createdAt, timezoneOffset);
     if (date === today) {
       summary.todayTokens += tokens;
-      if (event.costUsd !== null) {
-        summary.todayCostUsd += event.costUsd;
+      if (event.costCny !== null) {
+        summary.todayCostCny += event.costCny;
         summary.todayPricedEventCount += 1;
       }
     }
-    const day = daily.get(date) ?? new Map<string, { tokens: number; costUsd: number; pricedEventCount: number }>();
-    const point = day.get(key) ?? { tokens: 0, costUsd: 0, pricedEventCount: 0 };
+    const day = daily.get(date) ?? new Map<string, { tokens: number; costCny: number; pricedEventCount: number }>();
+    const point = day.get(key) ?? { tokens: 0, costCny: 0, pricedEventCount: 0 };
     point.tokens += tokens;
-    if (event.costUsd !== null) {
-      point.costUsd += event.costUsd;
+    if (event.costCny !== null) {
+      point.costCny += event.costCny;
       point.pricedEventCount += 1;
     }
     day.set(key, point);
@@ -142,9 +142,9 @@ export function summarizeModelUsage(
       ...summary,
       processedPages,
       pricedPages,
-      averageCostPerPage: pricedPages > 0 ? summary.pageCostUsd / pricedPages : null,
-      costUsd: summary.pricedEventCount > 0 ? summary.costUsd : null,
-      todayCostUsd: summary.todayPricedEventCount > 0 ? summary.todayCostUsd : null,
+      averageCostPerPage: pricedPages > 0 ? summary.pageCostCny / pricedPages : null,
+      costCny: summary.pricedEventCount > 0 ? summary.costCny : null,
+      todayCostCny: summary.todayPricedEventCount > 0 ? summary.todayCostCny : null,
     };
   });
 
@@ -155,7 +155,7 @@ export function summarizeModelUsage(
       models: Array.from(values.entries()).map(([profileId, point]) => ({
         profileId,
         tokens: point.tokens,
-        costUsd: point.pricedEventCount > 0 ? point.costUsd : null,
+        costCny: point.pricedEventCount > 0 ? point.costCny : null,
       })),
     })),
   };

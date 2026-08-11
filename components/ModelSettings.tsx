@@ -34,21 +34,21 @@ type UsageSummary = {
   outputTokens: number;
   cachedInputTokens: number;
   totalTokens: number;
-  costUsd: number | null;
+  costCny: number | null;
   processedPages: number;
   pricedPages: number;
-  pageCostUsd: number;
+  pageCostCny: number;
   pagePricedEventCount: number;
   averageCostPerPage: number | null;
   todayTokens: number;
-  todayCostUsd: number | null;
+  todayCostCny: number | null;
 };
 
 type UsageResponse = {
   month: string;
   today: string;
   summaries: UsageSummary[];
-  daily: Array<{ date: string; models: Array<{ profileId: string; tokens: number; costUsd: number | null }> }>;
+  daily: Array<{ date: string; models: Array<{ profileId: string; tokens: number; costCny: number | null }> }>;
   trackingStartedAt: string | null;
   error?: string;
 };
@@ -106,13 +106,13 @@ function numberText(value: number) {
 
 function moneyText(value: number | null, compact = false) {
   if (value === null) return "未配置价格";
-  if (value === 0) return "$0.00";
-  if (compact && value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(value < 1 ? 4 : 2)}`;
+  if (value === 0) return "¥0.00";
+  if (compact && value < 0.01) return `¥${value.toFixed(4)}`;
+  return `¥${value.toFixed(value < 1 ? 4 : 2)}`;
 }
 
 function priceText(value: number | null) {
-  return value === null ? "—" : `$${value}/1M`;
+  return value === null ? "—" : `¥${value}/1M`;
 }
 
 export function ModelSettings() {
@@ -172,11 +172,11 @@ export function ModelSettings() {
   const totals = useMemo(() => {
     const current = month === localMonth();
     const tokens = visibleSummaries.reduce((sum, item) => sum + (current ? item.todayTokens : item.totalTokens), 0);
-    const costs = visibleSummaries.map((item) => current ? item.todayCostUsd : item.costUsd).filter((value): value is number => value !== null);
+    const costs = visibleSummaries.map((item) => current ? item.todayCostCny : item.costCny).filter((value): value is number => value !== null);
     const pricedPages = visibleSummaries.filter((item) => item.pagePricedEventCount > 0);
     const pageCount = visibleSummaries.reduce((sum, item) => sum + item.processedPages, 0);
     const pricedPageCount = pricedPages.reduce((sum, item) => sum + item.pricedPages, 0);
-    const pageCost = pricedPages.reduce((sum, item) => sum + item.pageCostUsd, 0);
+    const pageCost = pricedPages.reduce((sum, item) => sum + item.pageCostCny, 0);
     return {
       current,
       tokens,
@@ -248,9 +248,11 @@ export function ModelSettings() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...form, ...(!editingId ? { select: true } : {}) }),
       });
-      const result = await response.json() as { error?: string };
+      const result = await response.json() as { error?: string; repricedEvents?: number };
       if (!response.ok) throw new Error(result.error ?? "保存失败");
-      setMessage(editingId ? "模型配置已更新；新价格只用于此后的调用" : "模型配置已加密保存并设为默认");
+      setMessage(editingId
+        ? `模型配置已更新，${result.repricedEvents ?? 0} 条历史调用已按当前价格重新计算`
+        : "模型配置已加密保存并设为默认");
       resetEditor();
       await refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "保存失败"); }
@@ -286,7 +288,7 @@ export function ModelSettings() {
 
       <section className="card usage-panel" aria-labelledby="usage-heading">
         <div className="usage-panel-head">
-          <div><span className="section-kicker"><BarChart3 size={14} /> Usage</span><h2 id="usage-heading">用量与成本</h2><p>费用按调用发生时保存的价格快照估算，修改价格不会改写历史记录。</p></div>
+          <div><span className="section-kicker"><BarChart3 size={14} /> Usage</span><h2 id="usage-heading">用量与成本</h2><p>费用按模型当前配置的价格估算；保存价格后，全部历史调用会立即重新计算。</p></div>
           <div className="usage-controls">
             <div className="month-stepper">
               <button type="button" aria-label="上个月" onClick={() => setMonth((value) => shiftMonth(value, -1))}><ChevronLeft size={16} /></button>
@@ -318,7 +320,7 @@ export function ModelSettings() {
         <div className="usage-model-grid">
           {visibleSummaries.map((summary, index) => (
             <article className="usage-model-card" key={summary.profileId}>
-              <div className="usage-model-title"><i style={{ background: chartColors[index % chartColors.length] }} /><div><strong>{summary.displayName}</strong><small>{summary.model}</small></div><b>{moneyText(summary.costUsd)}</b></div>
+              <div className="usage-model-title"><i style={{ background: chartColors[index % chartColors.length] }} /><div><strong>{summary.displayName}</strong><small>{summary.model}</small></div><b>{moneyText(summary.costCny)}</b></div>
               <div className="token-breakdown">
                 <span><small>输入</small><strong>{numberText(summary.inputTokens)}</strong></span>
                 <span><small>缓存</small><strong>{numberText(summary.cachedInputTokens)}</strong></span>
@@ -329,7 +331,7 @@ export function ModelSettings() {
           ))}
           {!loading && visibleSummaries.length === 0 && <div className="usage-empty">尚无模型用量。启用本版本后，新的模型调用会从这里开始记录。</div>}
         </div>
-        <p className="usage-footnote">Token 用量从本版本启用后开始记录，不会虚构补齐历史数据。价格未填写时仍记录 Token，但费用显示为“未配置价格”；缓存价格留空时按输入价格估算。</p>
+        <p className="usage-footnote">Token 用量从本版本启用后开始记录，不会虚构补齐历史数据。费用始终按当前配置价格估算；价格全部留空时费用显示为“未配置价格”，缓存价格留空时按输入价格估算。</p>
       </section>
 
       <section className="model-manager" aria-labelledby="models-heading">
@@ -368,11 +370,11 @@ export function ModelSettings() {
               {!editingProfile?.isManaged && <label className="wide"><span>API Key {editingProfile && <small>留空则保持原密钥</small>}</span><input required={!editingProfile} type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder={editingProfile ? `当前 ${editingProfile.apiKeyMask ?? "已保存"}` : "sk-…"} /></label>}
             </div>
             <div className="price-editor">
-              <div><strong>Token 价格</strong><span>美元 / 1M Token · 选填</span></div>
+              <div><strong>Token 价格</strong><span>人民币 / 1M Token · 选填</span></div>
               <div className="price-fields">
-                <label><span>输入</span><div><b>$</b><input type="number" min="0" step="any" value={form.inputPricePerMillion} onChange={(event) => setForm({ ...form, inputPricePerMillion: event.target.value })} placeholder="选填" /></div></label>
-                <label><span>输出</span><div><b>$</b><input type="number" min="0" step="any" value={form.outputPricePerMillion} onChange={(event) => setForm({ ...form, outputPricePerMillion: event.target.value })} placeholder="选填" /></div></label>
-                <label><span>缓存</span><div><b>$</b><input type="number" min="0" step="any" value={form.cachePricePerMillion} onChange={(event) => setForm({ ...form, cachePricePerMillion: event.target.value })} placeholder="默认按输入价" /></div></label>
+                <label><span>输入</span><div><b>¥</b><input type="number" min="0" step="any" value={form.inputPricePerMillion} onChange={(event) => setForm({ ...form, inputPricePerMillion: event.target.value })} placeholder="选填" /></div></label>
+                <label><span>输出</span><div><b>¥</b><input type="number" min="0" step="any" value={form.outputPricePerMillion} onChange={(event) => setForm({ ...form, outputPricePerMillion: event.target.value })} placeholder="选填" /></div></label>
+                <label><span>缓存</span><div><b>¥</b><input type="number" min="0" step="any" value={form.cachePricePerMillion} onChange={(event) => setForm({ ...form, cachePricePerMillion: event.target.value })} placeholder="默认按输入价" /></div></label>
               </div>
             </div>
             <p className="security-note"><ShieldCheck size={14} /> API Key 使用 AES-GCM 加密且接口不回传明文。价格仅用于本地估算，实际账单以模型服务商为准。</p>
@@ -400,7 +402,7 @@ function UsageChart({ month, summaries, daily, metric }: {
   const values = new Map(daily.map((day) => [day.date, new Map(day.models.map((item) => [item.profileId, item]))]));
   const data = dates.flatMap((date) => summaries.map((summary) => {
     const point = values.get(date)?.get(summary.profileId);
-    return metric === "tokens" ? (point?.tokens ?? 0) : (point?.costUsd ?? 0);
+    return metric === "tokens" ? (point?.tokens ?? 0) : (point?.costCny ?? 0);
   }));
   const maximum = Math.max(0, ...data);
   const width = 1000;
@@ -426,7 +428,7 @@ function UsageChart({ month, summaries, daily, metric }: {
           })}
           {dates.map((date, dayIndex) => summaries.map((summary, modelIndex) => {
             const point = values.get(date)?.get(summary.profileId);
-            const value = metric === "tokens" ? (point?.tokens ?? 0) : (point?.costUsd ?? 0);
+            const value = metric === "tokens" ? (point?.tokens ?? 0) : (point?.costCny ?? 0);
             const barHeight = maximum > 0 ? value / maximum * plotHeight : 0;
             const x = left + dayIndex * dayWidth + (dayWidth - barWidth * groupCount) / 2 + modelIndex * barWidth;
             return <rect key={`${date}:${summary.profileId}`} x={x} y={top + plotHeight - barHeight} width={Math.max(1, barWidth - 1)} height={barHeight} rx="2" fill={chartColors[modelIndex % chartColors.length]}><title>{`${date.slice(5)} · ${summary.displayName}: ${metric === "tokens" ? numberText(value) + " Token" : moneyText(value, true)}`}</title></rect>;

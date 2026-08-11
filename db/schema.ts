@@ -243,7 +243,7 @@ export const modelUsageEvents = sqliteTable("model_usage_events", {
   inputPricePerMillion: real("input_price_per_million"),
   outputPricePerMillion: real("output_price_per_million"),
   cachePricePerMillion: real("cache_price_per_million"),
-  costUsd: real("cost_usd"),
+  costCny: real("cost_cny"),
   createdAt: text("created_at").notNull(),
 }, (table) => [
   index("model_usage_owner_created_idx").on(table.ownerId, table.createdAt),
