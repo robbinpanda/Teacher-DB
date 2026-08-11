@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   api_key_ciphertext TEXT, api_key_iv TEXT, api_key_mask TEXT, is_managed INTEGER NOT NULL DEFAULT 0,
   is_multimodal INTEGER NOT NULL DEFAULT 1, enabled INTEGER NOT NULL DEFAULT 1, timeout_ms INTEGER NOT NULL DEFAULT 90000,
   input_price_per_million REAL, output_price_per_million REAL, cache_price_per_million REAL,
+  cached_output_price_per_million REAL,
   last_test_status TEXT, last_test_message TEXT, last_tested_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS model_profiles_owner_idx ON model_profiles(owner_id, enabled);
@@ -107,8 +108,9 @@ CREATE TABLE IF NOT EXISTS model_usage_events (
   document_id TEXT REFERENCES documents(id) ON DELETE SET NULL, page_number INTEGER, purpose TEXT NOT NULL,
   provider TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0, cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+  cached_output_tokens INTEGER NOT NULL DEFAULT 0,
   input_price_per_million REAL, output_price_per_million REAL, cache_price_per_million REAL,
-    cost_cny REAL, created_at TEXT NOT NULL
+  cached_output_price_per_million REAL, cost_cny REAL, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS model_usage_owner_created_idx ON model_usage_events(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS model_usage_profile_created_idx ON model_usage_events(model_profile_id, created_at);
@@ -175,14 +177,17 @@ const upgrades: Record<string, Record<string, string>> = {
     subtitle: "TEXT",
     settings_json: "TEXT NOT NULL DEFAULT '{}'",
   },
-    model_profiles: {
+  model_profiles: {
     input_price_per_million: "REAL",
     output_price_per_million: "REAL",
-      cache_price_per_million: "REAL",
-    },
-    model_usage_events: {
-      cost_cny: "REAL",
-    },
+    cache_price_per_million: "REAL",
+    cached_output_price_per_million: "REAL",
+  },
+  model_usage_events: {
+    cached_output_tokens: "INTEGER NOT NULL DEFAULT 0",
+    cached_output_price_per_million: "REAL",
+    cost_cny: "REAL",
+  },
   app_settings: {
     extraction_concurrency: "INTEGER NOT NULL DEFAULT 2",
     extraction_paused: "INTEGER NOT NULL DEFAULT 0",

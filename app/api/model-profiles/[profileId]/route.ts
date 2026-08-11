@@ -16,7 +16,8 @@ type UpdatePayload = {
   timeoutMs?: number;
   inputPricePerMillion?: number | string | null;
   outputPricePerMillion?: number | string | null;
-  cachePricePerMillion?: number | string | null;
+  cachedInputPricePerMillion?: number | string | null;
+  cachedOutputPricePerMillion?: number | string | null;
 };
 
 function publicProfile<T extends { apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
@@ -58,7 +59,8 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
 
   let inputPricePerMillion: number | null;
   let outputPricePerMillion: number | null;
-  let cachePricePerMillion: number | null;
+  let cachedInputPricePerMillion: number | null;
+  let cachedOutputPricePerMillion: number | null;
   try {
     inputPricePerMillion = payload.inputPricePerMillion === undefined
       ? profile.inputPricePerMillion
@@ -66,9 +68,12 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
     outputPricePerMillion = payload.outputPricePerMillion === undefined
       ? profile.outputPricePerMillion
       : normalizeOptionalTokenPrice(payload.outputPricePerMillion, "输出价格");
-    cachePricePerMillion = payload.cachePricePerMillion === undefined
-      ? profile.cachePricePerMillion
-      : normalizeOptionalTokenPrice(payload.cachePricePerMillion, "缓存价格");
+    cachedInputPricePerMillion = payload.cachedInputPricePerMillion === undefined
+      ? profile.cachedInputPricePerMillion
+      : normalizeOptionalTokenPrice(payload.cachedInputPricePerMillion, "缓存输入价格");
+    cachedOutputPricePerMillion = payload.cachedOutputPricePerMillion === undefined
+      ? profile.cachedOutputPricePerMillion
+      : normalizeOptionalTokenPrice(payload.cachedOutputPricePerMillion, "缓存输出价格");
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "价格格式无效" }, { status: 400 });
   }
@@ -117,13 +122,14 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
         `UPDATE model_profiles SET display_name = ?, provider = ?, base_url = ?, model = ?,
            timeout_ms = ?, api_key_ciphertext = ?, api_key_iv = ?, api_key_mask = ?,
            input_price_per_million = ?, output_price_per_million = ?, cache_price_per_million = ?,
+           cached_output_price_per_million = ?,
            last_test_status = CASE WHEN ? THEN NULL ELSE last_test_status END,
            last_test_message = CASE WHEN ? THEN NULL ELSE last_test_message END,
            last_tested_at = CASE WHEN ? THEN NULL ELSE last_tested_at END,
            updated_at = ? WHERE id = ? AND owner_id = ?`,
       ).run(
         displayName, provider, baseUrl, model, timeoutMs, apiKeyCiphertext, apiKeyIv, apiKeyMask,
-        inputPricePerMillion, outputPricePerMillion, cachePricePerMillion,
+        inputPricePerMillion, outputPricePerMillion, cachedInputPricePerMillion, cachedOutputPricePerMillion,
         connectionChanged ? 1 : 0, connectionChanged ? 1 : 0, connectionChanged ? 1 : 0,
         timestamp, profileId, ownerId,
       );
@@ -132,7 +138,8 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
         ownerId,
         inputPricePerMillion,
         outputPricePerMillion,
-        cachePricePerMillion,
+        cachedInputPricePerMillion,
+        cachedOutputPricePerMillion,
       });
     });
   } catch (error) {

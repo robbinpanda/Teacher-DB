@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Activity, BarChart3, Check, ChevronLeft, ChevronRight, CircleDollarSign, Coins,
+  Activity, BarChart3, ChevronLeft, ChevronRight, CircleDollarSign, Coins,
   KeyRound, LoaderCircle, Pencil, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi, X,
 } from "lucide-react";
 import { MODEL_PROTOCOL_LABELS, MODEL_PROTOCOLS, type ModelProtocol } from "../lib/model-protocols";
@@ -19,7 +19,8 @@ type Profile = {
   timeoutMs: number;
   inputPricePerMillion: number | null;
   outputPricePerMillion: number | null;
-  cachePricePerMillion: number | null;
+  cachedInputPricePerMillion: number | null;
+  cachedOutputPricePerMillion: number | null;
   lastTestStatus: string | null;
   lastTestMessage: string | null;
   lastTestedAt: string | null;
@@ -33,6 +34,7 @@ type UsageSummary = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cachedOutputTokens: number;
   totalTokens: number;
   costCny: number | null;
   processedPages: number;
@@ -62,7 +64,8 @@ type ModelForm = {
   timeoutMs: number;
   inputPricePerMillion: string;
   outputPricePerMillion: string;
-  cachePricePerMillion: string;
+  cachedInputPricePerMillion: string;
+  cachedOutputPricePerMillion: string;
 };
 
 const emptyForm: ModelForm = {
@@ -74,7 +77,8 @@ const emptyForm: ModelForm = {
   timeoutMs: 90000,
   inputPricePerMillion: "",
   outputPricePerMillion: "",
-  cachePricePerMillion: "",
+  cachedInputPricePerMillion: "",
+  cachedOutputPricePerMillion: "",
 };
 
 const chartColors = ["#18845d", "#5c6fc5", "#d18342", "#9263bb", "#3194a6", "#b85f75"];
@@ -115,9 +119,12 @@ function priceText(value: number | null) {
   return value === null ? "—" : `¥${value}/1M`;
 }
 
+function cachedPriceText(value: number | null, fallback: "输入" | "输出") {
+  return value === null ? `按${fallback}价` : priceText(value);
+}
+
 export function ModelSettings() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selected, setSelected] = useState("");
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [month, setMonth] = useState(localMonth);
   const [modelFilter, setModelFilter] = useState("all");
@@ -130,10 +137,9 @@ export function ModelSettings() {
 
   async function loadProfiles() {
     const response = await fetch("/api/model-profiles", { cache: "no-store" });
-    const result = await response.json() as { profiles?: Profile[]; selectedProfileId?: string; error?: string };
+    const result = await response.json() as { profiles?: Profile[]; error?: string };
     if (!response.ok) throw new Error(result.error ?? "模型配置读取失败");
     setProfiles(result.profiles ?? []);
-    setSelected(result.selectedProfileId ?? "");
   }
 
   async function loadUsage(targetMonth = month) {
@@ -186,21 +192,6 @@ export function ModelSettings() {
     };
   }, [month, visibleSummaries]);
 
-  async function selectProfile(profileId: string) {
-    setBusy(`select:${profileId}`);
-    setMessage("");
-    try {
-      const response = await fetch("/api/model-profiles", {
-        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ selectedProfileId: profileId }),
-      });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "切换失败");
-      setSelected(profileId);
-      setMessage("默认识别模型已切换");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "切换失败"); }
-    finally { setBusy(""); }
-  }
-
   async function testProfile(profileId: string) {
     setBusy(`test:${profileId}`);
     setMessage("正在发送一张最小测试图片…");
@@ -227,7 +218,8 @@ export function ModelSettings() {
       timeoutMs: profile.timeoutMs,
       inputPricePerMillion: profile.inputPricePerMillion?.toString() ?? "",
       outputPricePerMillion: profile.outputPricePerMillion?.toString() ?? "",
-      cachePricePerMillion: profile.cachePricePerMillion?.toString() ?? "",
+      cachedInputPricePerMillion: profile.cachedInputPricePerMillion?.toString() ?? "",
+      cachedOutputPricePerMillion: profile.cachedOutputPricePerMillion?.toString() ?? "",
     });
     window.setTimeout(() => document.getElementById("model-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
@@ -246,13 +238,13 @@ export function ModelSettings() {
       const response = await fetch(editingId ? `/api/model-profiles/${editingId}` : "/api/model-profiles", {
         method: editingId ? "PUT" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...form, ...(!editingId ? { select: true } : {}) }),
+        body: JSON.stringify({ ...form, ...(!editingId ? { select: false } : {}) }),
       });
       const result = await response.json() as { error?: string; repricedEvents?: number };
       if (!response.ok) throw new Error(result.error ?? "保存失败");
       setMessage(editingId
         ? `模型配置已更新，${result.repricedEvents ?? 0} 条历史调用已按当前价格重新计算`
-        : "模型配置已加密保存并设为默认");
+        : "模型配置已加密保存，可在工作台选择使用");
       resetEditor();
       await refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "保存失败"); }
@@ -307,7 +299,7 @@ export function ModelSettings() {
         </div>
 
         <div className="usage-metrics">
-          <MetricCard icon={<Activity size={18} />} label={totals.current ? "今日 Token" : "本月 Token"} value={numberText(totals.tokens)} detail="输入 + 缓存 + 输出" />
+          <MetricCard icon={<Activity size={18} />} label={totals.current ? "今日 Token" : "本月 Token"} value={numberText(totals.tokens)} detail="输入与输出（含缓存）" />
           <MetricCard icon={<CircleDollarSign size={18} />} label={totals.current ? "今日估算费用" : "本月估算费用"} value={moneyText(totals.cost)} detail="仅统计已配置价格的调用" />
           <MetricCard icon={<BarChart3 size={18} />} label="本月处理页次" value={numberText(totals.pageCount)} detail="按模型去重页面，重试不重复计页" />
           <MetricCard icon={<Coins size={18} />} label="平均每页" value={moneyText(totals.averageCostPerPage, true)} detail="页面识别成本 ÷ 去重页数" />
@@ -323,30 +315,28 @@ export function ModelSettings() {
               <div className="usage-model-title"><i style={{ background: chartColors[index % chartColors.length] }} /><div><strong>{summary.displayName}</strong><small>{summary.model}</small></div><b>{moneyText(summary.costCny)}</b></div>
               <div className="token-breakdown">
                 <span><small>输入</small><strong>{numberText(summary.inputTokens)}</strong></span>
-                <span><small>缓存</small><strong>{numberText(summary.cachedInputTokens)}</strong></span>
+                <span><small>缓存输入</small><strong>{numberText(summary.cachedInputTokens)}</strong></span>
                 <span><small>输出</small><strong>{numberText(summary.outputTokens)}</strong></span>
+                <span><small>缓存输出</small><strong>{numberText(summary.cachedOutputTokens)}</strong></span>
                 <span><small>每页均价</small><strong>{moneyText(summary.averageCostPerPage, true)}</strong></span>
               </div>
             </article>
           ))}
           {!loading && visibleSummaries.length === 0 && <div className="usage-empty">尚无模型用量。启用本版本后，新的模型调用会从这里开始记录。</div>}
         </div>
-        <p className="usage-footnote">Token 用量从本版本启用后开始记录，不会虚构补齐历史数据。费用始终按当前配置价格估算；价格全部留空时费用显示为“未配置价格”，缓存价格留空时按输入价格估算。</p>
+        <p className="usage-footnote">Token 用量从本版本启用后开始记录，不会虚构补齐历史数据。模型未返回缓存输出量时按 0 记录。缓存输入、缓存输出价格留空时，分别按普通输入、普通输出价格估算。</p>
       </section>
 
       <section className="model-manager" aria-labelledby="models-heading">
-        <div className="model-manager-heading"><div><span className="section-kicker"><KeyRound size={14} /> Configuration</span><h2 id="models-heading">模型配置</h2><p>选择默认识别模型，测试连接或修改服务参数和价格。</p></div><button className="btn btn-primary" type="button" onClick={resetEditor}><Plus size={15} /> 添加模型</button></div>
+        <div className="model-manager-heading"><div><span className="section-kicker"><KeyRound size={14} /> Configuration</span><h2 id="models-heading">模型配置</h2><p>添加、测试、编辑或删除识别模型；当前使用的模型请在工作台选择。</p></div><button className="btn btn-primary" type="button" onClick={resetEditor}><Plus size={15} /> 添加模型</button></div>
         <div className="model-manager-grid">
           <div className="profile-list model-profile-list">
             {profiles.map((profile) => (
-              <article key={profile.id} className={`model-profile-card${selected === profile.id ? " selected" : ""}${editingId === profile.id ? " editing" : ""}`}>
+              <article key={profile.id} className={`model-profile-card${editingId === profile.id ? " editing" : ""}`}>
                 <div className="model-profile-main">
-                  <button className="profile-default" type="button" onClick={() => void selectProfile(profile.id)} disabled={Boolean(busy)} aria-label={`将 ${profile.displayName} 设为默认模型`}>
-                    <span>{selected === profile.id && <Check size={13} />}</span>
-                  </button>
-                  <div className="model-profile-copy"><div><strong>{profile.displayName}</strong>{selected === profile.id && <em>默认</em>}{profile.isManaged && <em className="neutral">内置</em>}</div><p>{profile.model}</p><small>{MODEL_PROTOCOL_LABELS[profile.provider]} · {profile.baseUrl}</small></div>
+                  <div className="model-profile-copy"><div><strong>{profile.displayName}</strong>{profile.isManaged && <em className="neutral">内置</em>}</div><p>{profile.model}</p><small>{MODEL_PROTOCOL_LABELS[profile.provider]} · {profile.baseUrl}</small></div>
                 </div>
-                <div className="model-price-line"><span>输入 {priceText(profile.inputPricePerMillion)}</span><span>输出 {priceText(profile.outputPricePerMillion)}</span><span>缓存 {priceText(profile.cachePricePerMillion)}</span></div>
+                <div className="model-price-line"><span>输入 {priceText(profile.inputPricePerMillion)}</span><span>缓存输入 {cachedPriceText(profile.cachedInputPricePerMillion, "输入")}</span><span>输出 {priceText(profile.outputPricePerMillion)}</span><span>缓存输出 {cachedPriceText(profile.cachedOutputPricePerMillion, "输出")}</span></div>
                 <div className="model-profile-footer">
                   <span className={`connection-state ${profile.lastTestStatus ?? "unknown"}`}>{profile.lastTestedAt ? (profile.lastTestStatus === "success" ? "连接正常" : "连接异常") : "尚未测试"}</span>
                   <div>
@@ -373,12 +363,13 @@ export function ModelSettings() {
               <div><strong>Token 价格</strong><span>人民币 / 1M Token · 选填</span></div>
               <div className="price-fields">
                 <label><span>输入</span><div><b>¥</b><input type="number" min="0" step="any" value={form.inputPricePerMillion} onChange={(event) => setForm({ ...form, inputPricePerMillion: event.target.value })} placeholder="选填" /></div></label>
+                <label><span>缓存输入</span><div><b>¥</b><input type="number" min="0" step="any" value={form.cachedInputPricePerMillion} onChange={(event) => setForm({ ...form, cachedInputPricePerMillion: event.target.value })} placeholder="默认按输入价" /></div></label>
                 <label><span>输出</span><div><b>¥</b><input type="number" min="0" step="any" value={form.outputPricePerMillion} onChange={(event) => setForm({ ...form, outputPricePerMillion: event.target.value })} placeholder="选填" /></div></label>
-                <label><span>缓存</span><div><b>¥</b><input type="number" min="0" step="any" value={form.cachePricePerMillion} onChange={(event) => setForm({ ...form, cachePricePerMillion: event.target.value })} placeholder="默认按输入价" /></div></label>
+                <label><span>缓存输出</span><div><b>¥</b><input type="number" min="0" step="any" value={form.cachedOutputPricePerMillion} onChange={(event) => setForm({ ...form, cachedOutputPricePerMillion: event.target.value })} placeholder="默认按输出价" /></div></label>
               </div>
             </div>
             <p className="security-note"><ShieldCheck size={14} /> API Key 使用 AES-GCM 加密且接口不回传明文。价格仅用于本地估算，实际账单以模型服务商为准。</p>
-            <button className="btn btn-primary model-save" disabled={Boolean(busy)} type="submit">{busy === (editingId ? `save:${editingId}` : "create") ? <LoaderCircle className="spin" size={15} /> : editingId ? <Save size={15} /> : <Plus size={15} />} {editingId ? "保存修改" : "保存并设为默认"}</button>
+            <button className="btn btn-primary model-save" disabled={Boolean(busy)} type="submit">{busy === (editingId ? `save:${editingId}` : "create") ? <LoaderCircle className="spin" size={15} /> : editingId ? <Save size={15} /> : <Plus size={15} />} {editingId ? "保存修改" : "保存模型"}</button>
           </form>
         </div>
       </section>
@@ -400,11 +391,15 @@ function UsageChart({ month, summaries, daily, metric }: {
   const dayCount = new Date(year, monthNumber, 0).getDate();
   const dates = Array.from({ length: dayCount }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`);
   const values = new Map(daily.map((day) => [day.date, new Map(day.models.map((item) => [item.profileId, item]))]));
-  const data = dates.flatMap((date) => summaries.map((summary) => {
-    const point = values.get(date)?.get(summary.profileId);
+  const pointValue = (date: string, profileId: string) => {
+    const point = values.get(date)?.get(profileId);
     return metric === "tokens" ? (point?.tokens ?? 0) : (point?.costCny ?? 0);
-  }));
-  const maximum = Math.max(0, ...data);
+  };
+  const dailyTotals = dates.map((date) => summaries.reduce((total, summary) => {
+    const point = values.get(date)?.get(summary.profileId);
+    return total + (metric === "tokens" ? (point?.tokens ?? 0) : (point?.costCny ?? 0));
+  }, 0));
+  const maximum = Math.max(0, ...dailyTotals);
   const width = 1000;
   const height = 280;
   const left = 58;
@@ -414,25 +409,29 @@ function UsageChart({ month, summaries, daily, metric }: {
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const dayWidth = plotWidth / dayCount;
-  const groupCount = Math.max(1, summaries.length);
-  const barWidth = Math.max(1.5, Math.min(11, (dayWidth - 2) / groupCount));
+  const barWidth = Math.max(6, Math.min(18, dayWidth * 0.58));
   const tickValue = (ratio: number) => metric === "tokens" ? numberText(maximum * ratio) : moneyText(maximum * ratio, true);
 
   return (
     <div className="usage-chart-shell">
       <div className="usage-chart-scroll">
-        <svg className="usage-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${monthLabel(month)}按模型统计的${metric === "tokens" ? "Token" : "费用"}图表`}>
+        <svg className="usage-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${monthLabel(month)}按日期与模型堆叠统计的${metric === "tokens" ? "Token" : "费用"}图表`}>
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
             const y = top + plotHeight * (1 - ratio);
             return <g key={ratio}><line x1={left} x2={width - right} y1={y} y2={y} /><text x={left - 9} y={y + 4} textAnchor="end">{tickValue(ratio)}</text></g>;
           })}
-          {dates.map((date, dayIndex) => summaries.map((summary, modelIndex) => {
-            const point = values.get(date)?.get(summary.profileId);
-            const value = metric === "tokens" ? (point?.tokens ?? 0) : (point?.costCny ?? 0);
+          {dates.flatMap((date, dayIndex) => {
+            let accumulated = 0;
+            return summaries.map((summary, modelIndex) => {
+            const value = pointValue(date, summary.profileId);
+            const segmentTop = accumulated + value;
             const barHeight = maximum > 0 ? value / maximum * plotHeight : 0;
-            const x = left + dayIndex * dayWidth + (dayWidth - barWidth * groupCount) / 2 + modelIndex * barWidth;
-            return <rect key={`${date}:${summary.profileId}`} x={x} y={top + plotHeight - barHeight} width={Math.max(1, barWidth - 1)} height={barHeight} rx="2" fill={chartColors[modelIndex % chartColors.length]}><title>{`${date.slice(5)} · ${summary.displayName}: ${metric === "tokens" ? numberText(value) + " Token" : moneyText(value, true)}`}</title></rect>;
-          }))}
+            const y = top + plotHeight - (maximum > 0 ? segmentTop / maximum * plotHeight : 0);
+            const x = left + dayIndex * dayWidth + (dayWidth - barWidth) / 2;
+            accumulated = segmentTop;
+            return <rect key={`${date}:${summary.profileId}`} x={x} y={y} width={barWidth} height={barHeight} rx="2" fill={chartColors[modelIndex % chartColors.length]}><title>{`${date.slice(5)} · ${summary.displayName}: ${metric === "tokens" ? numberText(value) + " Token" : moneyText(value, true)}；当日合计 ${metric === "tokens" ? numberText(dailyTotals[dayIndex]) + " Token" : moneyText(dailyTotals[dayIndex], true)}`}</title></rect>;
+            });
+          })}
           {dates.map((date, index) => ((index === 0 || index === dates.length - 1 || (index + 1) % 5 === 0) ? <text key={date} x={left + index * dayWidth + dayWidth / 2} y={height - 17} textAnchor="middle">{date.slice(8)}</text> : null))}
         </svg>
         {maximum === 0 && <div className="chart-empty"><BarChart3 size={22} /><strong>这个月还没有用量</strong><span>新调用完成后，Token 会按模型出现在这里。</span></div>}

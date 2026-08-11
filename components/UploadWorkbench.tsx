@@ -21,6 +21,17 @@ type QueueSnapshot = {
   jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; nextAttemptAt?: string; lastError?: string; modelDisplayName?: string; modelName?: string }>;
   error?: string;
 };
+type WorkbenchModelProfile = {
+  id: string;
+  displayName: string;
+  model: string;
+  apiKeyMask: string | null;
+};
+type ModelProfilesResponse = {
+  profiles?: WorkbenchModelProfile[];
+  selectedProfileId?: string;
+  error?: string;
+};
 
 async function canvasToPage(canvas: HTMLCanvasElement): Promise<RenderedPage> {
   const blob = await new Promise<Blob>((resolve, reject) => {
@@ -87,8 +98,15 @@ export function UploadWorkbench() {
   const [queuePaused, setQueuePaused] = useState(false);
   const [queuePauseReason, setQueuePauseReason] = useState("");
   const [batchActive, setBatchActive] = useState(false);
+  const [modelProfiles, setModelProfiles] = useState<WorkbenchModelProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [modelLoading, setModelLoading] = useState(true);
+  const [modelSaving, setModelSaving] = useState(false);
+  const [modelFeedback, setModelFeedback] = useState("");
+  const [modelError, setModelError] = useState(false);
   const sourceMeta = { subject, grade: educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级", sourceYear: "", sourceExamType: "", sourceRegion: "", sourceSchool: "" };
   const working = tasks.some((task) => ["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
+  const uploadDisabled = batchActive || modelLoading || modelSaving;
 
   function syncQueueSettings(result: QueueSnapshot, syncDraft = false) {
     if (typeof result.concurrency === "number") {
@@ -111,6 +129,26 @@ export function UploadWorkbench() {
         syncQueueSettings(result, true);
       })
       .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/model-profiles", { cache: "no-store" })
+      .then(async (response) => ({ response, result: await response.json() as ModelProfilesResponse }))
+      .then(({ response, result }) => {
+        if (cancelled) return;
+        if (!response.ok) throw new Error(result.error ?? "无法读取模型配置");
+        setModelProfiles(result.profiles ?? []);
+        setSelectedProfileId(result.selectedProfileId ?? "");
+        setModelError(false);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setModelError(true);
+        setModelFeedback(error instanceof Error ? error.message : "无法读取模型配置");
+      })
+      .finally(() => { if (!cancelled) setModelLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -177,19 +215,40 @@ export function UploadWorkbench() {
     }
   }
 
-  async function ensureModelReady() {
+  async function selectModel(profileId: string) {
+    const previousProfileId = selectedProfileId;
+    const profile = modelProfiles.find((item) => item.id === profileId);
+    setSelectedProfileId(profileId);
+    setModelSaving(true);
+    setModelError(false);
+    setModelFeedback("");
+    try {
+      const response = await fetch("/api/model-profiles", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ selectedProfileId: profileId }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "识别模型切换失败");
+      setModelFeedback(`已选择 ${profile?.displayName ?? "识别模型"}，之后加入队列的试卷将使用它`);
+    } catch (error) {
+      setSelectedProfileId(previousProfileId);
+      setModelError(true);
+      setModelFeedback(error instanceof Error ? error.message : "识别模型切换失败");
+    } finally {
+      setModelSaving(false);
+    }
+  }
+
+  async function ensureModelReady(profileId?: string) {
     const response = await fetch("/api/model-profiles", { cache: "no-store" });
-    const result = await response.json().catch(() => ({})) as {
-      profiles?: Array<{ id: string; displayName: string; apiKeyMask: string | null }>;
-      selectedProfileId?: string;
-      error?: string;
-    };
+    const result = await response.json().catch(() => ({})) as ModelProfilesResponse;
     if (!response.ok) throw new Error(result.error ?? "无法读取模型配置");
-    const selected = result.profiles?.find((profile) => profile.id === result.selectedProfileId);
+    const selected = result.profiles?.find((profile) => profile.id === (profileId ?? result.selectedProfileId));
     if (!selected?.apiKeyMask) throw new Error("识题模型尚未配置 API Key，请先到“模型设置”填写并测试连接。");
   }
 
-  async function processFile(file: File, taskId: string, metadata: typeof sourceMeta) {
+  async function processFile(file: File, taskId: string, metadata: typeof sourceMeta, profileId?: string) {
     patchTask(taskId, { stage: "rendering", message: "正在把原卷渲染为高清页面…" });
     let persistedDocumentId: string | undefined;
     try {
@@ -233,14 +292,14 @@ export function UploadWorkbench() {
         patchTask(taskId, { completedPages: pageNumber, message: `页面证据已安全保存（${pageNumber}/${pageCount}）…` });
       });
       try {
-        await ensureModelReady();
+        await ensureModelReady(profileId);
       } catch (error) {
         patchTask(taskId, { stage: "waiting_model", message: (error instanceof Error ? error.message : "识题模型尚未配置") + " 原卷和分页图已经安全保存，可配置模型后在审核页重试识别。" });
         router.refresh();
         return;
       }
       const queueResponse = await fetchWithBackoff(`/api/documents/${currentDocumentId}/queue`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ retry: true }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ retry: true, profileId }),
       });
       const queueResult = await queueResponse.json().catch(() => ({})) as { error?: string };
       if (!queueResponse.ok) throw new Error(queueResult.error ?? "加入识别队列失败");
@@ -261,17 +320,20 @@ export function UploadWorkbench() {
   }
 
   async function processFiles(files: File[]) {
-    if (!files.length || batchActive) return;
+    if (!files.length || uploadDisabled) return;
     setBatchActive(true);
     const metadata = { ...sourceMeta };
+    const batchProfileId = selectedProfileId || undefined;
+    const batchProfile = modelProfiles.find((profile) => profile.id === batchProfileId);
     const queued = files.slice(0, 100).map((file) => ({ id: crypto.randomUUID(), file }));
     setTasks((items) => [...queued.map((item) => ({
       id: item.id, fileName: item.file.name, stage: "idle" as Stage, message: "等待处理…", pageCount: 0, completedPages: 0,
+      modelDisplayName: batchProfile?.displayName,
     })), ...items]);
     const controller = createDynamicConcurrencyController(
       queued,
       concurrencyRef.current,
-      (item) => processFile(item.file, item.id, metadata),
+      (item) => processFile(item.file, item.id, metadata, batchProfileId),
     );
     batchControllerRef.current = controller;
     try {
@@ -291,6 +353,17 @@ export function UploadWorkbench() {
     <div className="upload-card card">
       <div className="section-title upload-title"><div><span className="section-kicker">第一步 · 导入</span><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
       <div className="upload-scope-note"><b>{educationStages.find((item) => item.value === stage)?.label} · {subject}</b><span>年份、考试类型、地区和学校会从卷面标题自动推测，可在试卷详情中随时修改。</span></div>
+      <section className="upload-model-setting" aria-label="识别模型选择">
+        <div className="upload-model-copy"><span><Sparkles size={16} /></span><div><strong>识别模型</strong><small>仅影响之后加入队列的试卷，处理中任务保持原模型</small></div></div>
+        <div className="upload-model-controls">
+          <select aria-label="选择识别模型" value={selectedProfileId} disabled={modelLoading || modelSaving || modelProfiles.length === 0} onChange={(event) => void selectModel(event.target.value)}>
+            {modelProfiles.length === 0 && <option value="">{modelLoading ? "正在读取模型…" : "暂无可用模型"}</option>}
+            {modelProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.displayName} · {profile.model}</option>)}
+          </select>
+          <Link className="btn" href="/settings/models">管理模型</Link>
+        </div>
+        <p className={modelError ? "error" : modelFeedback ? "success" : ""}>{modelFeedback || (modelLoading ? "正在同步模型配置…" : "在模型设置中添加、删除或修改配置")}</p>
+      </section>
       <section className="upload-concurrency" aria-label="批量处理设置">
         <div className="upload-concurrency-copy"><span><Gauge size={16} /></span><div><strong>同时处理试卷</strong><small>同时控制 PDF 渲染、上传与后台识别；普通电脑建议 2–4 份</small></div></div>
         <div className="upload-concurrency-inputs">
@@ -303,10 +376,10 @@ export function UploadWorkbench() {
       <div
         className={"drop-zone " + (working ? "working " : "")}
         onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => { if (batchActive) event.preventDefault(); else onDrop(event); }}
-        onClick={() => { if (!batchActive) inputRef.current?.click(); }}
-        onKeyDown={(event) => { if (!batchActive && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inputRef.current?.click(); } }}
-        aria-disabled={batchActive}
+        onDrop={(event) => { if (uploadDisabled) event.preventDefault(); else onDrop(event); }}
+        onClick={() => { if (!uploadDisabled) inputRef.current?.click(); }}
+        onKeyDown={(event) => { if (!uploadDisabled && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inputRef.current?.click(); } }}
+        aria-disabled={uploadDisabled}
         role="button"
         tabIndex={0}
       >

@@ -9,7 +9,8 @@ const profiles = [{
   model: "vision-a",
   inputPricePerMillion: 1,
   outputPricePerMillion: 2,
-  cachePricePerMillion: null,
+  cachedInputPricePerMillion: null,
+  cachedOutputPricePerMillion: null,
 }];
 
 test("localDateKey applies the browser timezone offset", () => {
@@ -27,6 +28,7 @@ test("usage summary counts unique processed pages and includes retries in page c
     inputTokens: 100,
     outputTokens: 20,
     cachedInputTokens: 10,
+    cachedOutputTokens: 5,
   };
   const result = summarizeModelUsage(profiles, [
     { ...common, pageNumber: 1, costCny: 0.01, createdAt: "2026-08-11T01:00:00.000Z" },
@@ -35,7 +37,7 @@ test("usage summary counts unique processed pages and includes retries in page c
   ], "2026-08-11", -480);
   const summary = result.summaries[0];
   assert.equal(summary.processedPages, 2);
-  assert.equal(summary.totalTokens, 390);
+  assert.equal(summary.totalTokens, 405);
   assert.ok(Math.abs(summary.averageCostPerPage - 0.03) < 1e-12);
   assert.ok(Math.abs(summary.todayCostCny - 0.06) < 1e-12);
 });
@@ -52,6 +54,7 @@ test("unpriced usage reports tokens without inventing costs", () => {
     inputTokens: 500,
     outputTokens: 100,
     cachedInputTokens: 0,
+    cachedOutputTokens: 0,
     costCny: null,
     createdAt: "2026-08-11T02:00:00.000Z",
   }], "2026-08-11", -480);
@@ -63,7 +66,7 @@ test("unpriced usage reports tokens without inventing costs", () => {
 test("average page cost excludes pages captured before pricing was configured", () => {
   const common = {
     modelProfileId: "model-a", displayName: "Model A", provider: "openai-responses", model: "vision-a",
-    purpose: "page_extraction", documentId: "paper-3", inputTokens: 100, outputTokens: 20, cachedInputTokens: 0,
+    purpose: "page_extraction", documentId: "paper-3", inputTokens: 100, outputTokens: 20, cachedInputTokens: 0, cachedOutputTokens: 0,
     createdAt: "2026-08-11T03:00:00.000Z",
   };
   const result = summarizeModelUsage(profiles, [

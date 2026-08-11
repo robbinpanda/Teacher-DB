@@ -117,7 +117,7 @@ export async function callVisionModel(input: VisionCall) {
     const content = extractVisionResponseText(request.protocol, result);
     if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
     const usage = extractModelTokenUsage(request.protocol, result);
-    if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens) {
+    if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens || usage.cachedOutputTokens) {
       try {
         recordModelUsage(getSqlite(), profile, usage, {
           purpose: input.purpose ?? "other",

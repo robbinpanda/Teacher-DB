@@ -50,6 +50,13 @@
       "when": 1786432553368,
       "tag": "0006_model_costs_cny",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786433520586,
+      "tag": "0007_sudden_the_renegades",
+      "breakpoints": true
     }
   ]
 }

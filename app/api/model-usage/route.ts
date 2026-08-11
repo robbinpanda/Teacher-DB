@@ -36,7 +36,8 @@ export async function GET(request: Request) {
     `SELECT id, display_name AS displayName, provider, model,
             input_price_per_million AS inputPricePerMillion,
             output_price_per_million AS outputPricePerMillion,
-            cache_price_per_million AS cachePricePerMillion
+            cache_price_per_million AS cachedInputPricePerMillion,
+            cached_output_price_per_million AS cachedOutputPricePerMillion
        FROM model_profiles WHERE owner_id = ? AND enabled = 1 ORDER BY created_at`,
   ).all(ownerId) as UsageProfileRow[];
   const events = sqlite.prepare(
@@ -44,6 +45,7 @@ export async function GET(request: Request) {
             usage.provider, usage.model, usage.purpose, usage.document_id AS documentId,
             usage.page_number AS pageNumber, usage.input_tokens AS inputTokens,
             usage.output_tokens AS outputTokens, usage.cached_input_tokens AS cachedInputTokens,
+            usage.cached_output_tokens AS cachedOutputTokens,
             usage.cost_cny AS costCny, usage.created_at AS createdAt
        FROM model_usage_events usage
        LEFT JOIN model_profiles profile ON profile.id = usage.model_profile_id

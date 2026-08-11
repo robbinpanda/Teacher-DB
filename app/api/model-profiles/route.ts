@@ -37,7 +37,8 @@ export async function POST(request: Request) {
     displayName?: string; provider?: string; baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; select?: boolean;
     inputPricePerMillion?: number | string | null;
     outputPricePerMillion?: number | string | null;
-    cachePricePerMillion?: number | string | null;
+    cachedInputPricePerMillion?: number | string | null;
+    cachedOutputPricePerMillion?: number | string | null;
   };
   const displayName = payload.displayName?.trim();
   const model = payload.model?.trim();
@@ -55,11 +56,13 @@ export async function POST(request: Request) {
   }
   let inputPricePerMillion: number | null;
   let outputPricePerMillion: number | null;
-  let cachePricePerMillion: number | null;
+  let cachedInputPricePerMillion: number | null;
+  let cachedOutputPricePerMillion: number | null;
   try {
     inputPricePerMillion = normalizeOptionalTokenPrice(payload.inputPricePerMillion, "输入价格");
     outputPricePerMillion = normalizeOptionalTokenPrice(payload.outputPricePerMillion, "输出价格");
-    cachePricePerMillion = normalizeOptionalTokenPrice(payload.cachePricePerMillion, "缓存价格");
+    cachedInputPricePerMillion = normalizeOptionalTokenPrice(payload.cachedInputPricePerMillion, "缓存输入价格");
+    cachedOutputPricePerMillion = normalizeOptionalTokenPrice(payload.cachedOutputPricePerMillion, "缓存输出价格");
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "价格格式无效" }, { status: 400 });
   }
@@ -73,12 +76,13 @@ export async function POST(request: Request) {
         `INSERT INTO model_profiles
           (id, owner_id, display_name, provider, base_url, model, api_key_ciphertext, api_key_iv, api_key_mask,
            is_managed, is_multimodal, enabled, timeout_ms, input_price_per_million,
-           output_price_per_million, cache_price_per_million, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?, ?)`,
+           output_price_per_million, cache_price_per_million, cached_output_price_per_million,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id, ownerId, displayName, provider, baseUrl, model, encrypted.ciphertext, encrypted.iv,
         maskSecret(apiKey), timeoutMs, inputPricePerMillion, outputPricePerMillion,
-        cachePricePerMillion, timestamp, timestamp,
+        cachedInputPricePerMillion, cachedOutputPricePerMillion, timestamp, timestamp,
       );
       if (payload.select !== false) {
         transaction.prepare("UPDATE app_settings SET selected_model_profile_id = ?, updated_at = ? WHERE owner_id = ?")

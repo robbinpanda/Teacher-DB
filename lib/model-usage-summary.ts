@@ -5,7 +5,8 @@ export type UsageProfileRow = {
   model: string;
   inputPricePerMillion: number | null;
   outputPricePerMillion: number | null;
-  cachePricePerMillion: number | null;
+  cachedInputPricePerMillion: number | null;
+  cachedOutputPricePerMillion: number | null;
 };
 
 export type UsageEventRow = {
@@ -19,6 +20,7 @@ export type UsageEventRow = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cachedOutputTokens: number;
   costCny: number | null;
   createdAt: string;
 };
@@ -31,6 +33,7 @@ type MutableSummary = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cachedOutputTokens: number;
   totalTokens: number;
   costCny: number;
   pricedEventCount: number;
@@ -64,6 +67,7 @@ function createSummary(profileId: string, displayName: string, provider: string,
     inputTokens: 0,
     outputTokens: 0,
     cachedInputTokens: 0,
+    cachedOutputTokens: 0,
     totalTokens: 0,
     costCny: 0,
     pricedEventCount: 0,
@@ -98,10 +102,11 @@ export function summarizeModelUsage(
       event.model,
     );
     summaries.set(key, summary);
-    const tokens = event.inputTokens + event.outputTokens + event.cachedInputTokens;
+    const tokens = event.inputTokens + event.outputTokens + event.cachedInputTokens + event.cachedOutputTokens;
     summary.inputTokens += event.inputTokens;
     summary.outputTokens += event.outputTokens;
     summary.cachedInputTokens += event.cachedInputTokens;
+    summary.cachedOutputTokens += event.cachedOutputTokens;
     summary.totalTokens += tokens;
     if (event.costCny !== null) {
       summary.costCny += event.costCny;
