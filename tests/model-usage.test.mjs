@@ -5,6 +5,7 @@ import {
   calculateModelUsageCost,
   extractModelTokenUsage,
   normalizeOptionalTokenPrice,
+  recordModelUsage,
   repriceModelUsageHistory,
 } from "../lib/model-usage.ts";
 
@@ -83,5 +84,26 @@ test("保存模型价格后重算该模型的全部历史调用", () => {
     sqlite.prepare("SELECT id, cost_cny AS cost FROM model_usage_events ORDER BY id").all(),
     [{ id: "a-1", cost: 5.55 }, { id: "a-2", cost: 1.5 }, { id: "b-1", cost: null }],
   );
+  sqlite.close();
+});
+
+test("整卷调用记录实际处理页数", () => {
+  const sqlite = new Database(":memory:");
+  sqlite.exec(`CREATE TABLE model_usage_events (
+    id TEXT PRIMARY KEY, owner_id TEXT, model_profile_id TEXT, document_id TEXT, page_number INTEGER,
+    page_count INTEGER, purpose TEXT, provider TEXT, model TEXT,
+    input_tokens INTEGER, output_tokens INTEGER, cached_input_tokens INTEGER, cached_output_tokens INTEGER,
+    input_price_per_million REAL, output_price_per_million REAL, cache_price_per_million REAL,
+    cached_output_price_per_million REAL, cost_cny REAL, created_at TEXT
+  )`);
+  recordModelUsage(sqlite, {
+    id: "model-a", ownerId: "owner", provider: "openai-chat-completions", model: "vision",
+    inputPricePerMillion: 2, outputPricePerMillion: 6,
+  }, { inputTokens: 100, outputTokens: 20, cachedInputTokens: 0, cachedOutputTokens: 0 }, {
+    purpose: "page_extraction", documentId: "doc", pageCount: 20,
+  }, "2026-08-16T00:00:00.000Z");
+  assert.deepEqual(sqlite.prepare(
+    "SELECT page_number AS pageNumber, page_count AS pageCount, purpose FROM model_usage_events",
+  ).get(), { pageNumber: null, pageCount: 20, purpose: "page_extraction" });
   sqlite.close();
 });

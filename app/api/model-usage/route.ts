@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   const events = sqlite.prepare(
     `SELECT usage.model_profile_id AS modelProfileId, profile.display_name AS displayName,
             usage.provider, usage.model, usage.purpose, usage.document_id AS documentId,
-            usage.page_number AS pageNumber, usage.input_tokens AS inputTokens,
+            usage.page_number AS pageNumber, usage.page_count AS pageCount, usage.input_tokens AS inputTokens,
             usage.output_tokens AS outputTokens, usage.cached_input_tokens AS cachedInputTokens,
             usage.cached_output_tokens AS cachedOutputTokens,
             usage.cost_cny AS costCny, usage.created_at AS createdAt

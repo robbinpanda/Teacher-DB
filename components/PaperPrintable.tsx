@@ -88,16 +88,18 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
             {sectionQuestions.map((question, sectionIndex) => {
               const questionNumber = ++globalIndex;
               const score = scoreForQuestion(section, sectionIndex);
-              const beforeAssets = question.assets.filter((asset) => (settings.assetLayouts[asset.id]?.placement ?? "after-stem") === "after-stem");
-              const afterAssets = question.assets.filter((asset) => settings.assetLayouts[asset.id]?.placement === "before-answer");
-              const renderAsset = (asset: QuestionWithSource["assets"][number]) => {
+              const questionAssets = question.assets.filter((asset) => asset.role === "question");
+              const answerAssets = question.assets.filter((asset) => asset.role === "answer");
+              const beforeAssets = questionAssets.filter((asset) => (settings.assetLayouts[asset.id]?.placement ?? "after-stem") === "after-stem");
+              const afterAssets = questionAssets.filter((asset) => settings.assetLayouts[asset.id]?.placement === "before-answer");
+              const renderAsset = (asset: QuestionWithSource["assets"][number], answerAsset = false) => {
                 if (!asset.url) return null;
                 const layout = settings.assetLayouts[asset.id] ?? defaultAssetLayout(questionNumber);
                 return (
                   <figure className="paper-asset-stage" key={asset.id}>
                     <div style={{ transform: `translate(${layout.x}px, ${layout.y}px) scale(${layout.scale / 100})` }}>
                       <Image src={asset.url} width={asset.width ?? 420} height={asset.height ?? 280} alt={layout.caption} unoptimized />
-                      <figcaption>{layout.caption || `第 ${questionNumber} 题的图片`}</figcaption>
+                      <figcaption>{answerAsset ? asset.label || `第 ${questionNumber} 题答案图` : layout.caption || `第 ${questionNumber} 题的图片`}</figcaption>
                     </div>
                   </figure>
                 );
@@ -105,11 +107,11 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
               return (
                 <section className="paper-question" key={question.id}>
                   <div className="paper-question-line"><b>{formatQuestionNumber(questionNumber, style.questionNumberStyle)}</b><div className="paper-question-stem"><MathText text={question.stem} />{question.type === "fill" && !questionStemHasAnswerBlank(question.stem) && <span className="paper-fill-blank" aria-label="答题空格" />}{score > 0 && style.scoreStyle === "inline" && <span className="paper-question-score inline">（{score} 分）</span>}</div>{score > 0 && style.scoreStyle === "right" && <span className="paper-question-score">（{score} 分）</span>}</div>
-                  {beforeAssets.map(renderAsset)}
+                  {beforeAssets.map((asset) => renderAsset(asset))}
                   {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}><b>{option.key}.</b> <MathText text={option.content} /></span>)}</div>}
-                  {afterAssets.map(renderAsset)}
+                  {afterAssets.map((asset) => renderAsset(asset))}
                   {question.type === "answer" ? <div className="answer-space" style={{ height: settings.answerSpaces[question.id] ?? 180 }} /> : null}
-                  {includeAnswers && <div className="paper-answer printable-answer"><strong>答案：</strong><MathText text={question.answer || "未录入"} /><br /><strong>解析：</strong><MathText text={question.analysis || "未录入"} /></div>}
+                  {includeAnswers && <div className="paper-answer printable-answer"><strong>答案：</strong><MathText text={question.answer || "未录入"} /><br /><strong>解析：</strong><MathText text={question.analysis || "未录入"} />{answerAssets.map((asset) => renderAsset(asset, true))}</div>}
                 </section>
               );
             })}

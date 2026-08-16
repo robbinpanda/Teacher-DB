@@ -54,7 +54,7 @@ export function savePageRecord(transaction: Database.Database, input: SavePageRe
     );
   }
 
-  const idempotencyKey = `${input.documentId}:page:${input.pageNumber}:extract-v3`;
+  const idempotencyKey = `${input.documentId}:page:${input.pageNumber}:extract-v4`;
   transaction.prepare(
     `INSERT INTO extraction_runs
       (id, document_id, page_id, page_number, provider, model, status, attempt, idempotency_key, created_at)

@@ -17,6 +17,7 @@ export type UsageEventRow = {
   purpose: string;
   documentId: string | null;
   pageNumber: number | null;
+  pageCount?: number;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -112,10 +113,13 @@ export function summarizeModelUsage(
       summary.costCny += event.costCny;
       summary.pricedEventCount += 1;
     }
-    if (event.purpose === "page_extraction" && event.documentId && event.pageNumber !== null) {
-      summary.processedPages.add(`${event.documentId}:${event.pageNumber}`);
+    if (event.purpose === "page_extraction" && event.documentId) {
+      const pages = event.pageNumber !== null
+        ? [event.pageNumber]
+        : Array.from({ length: Math.max(1, Number(event.pageCount ?? 1)) }, (_, index) => index + 1);
+      for (const page of pages) summary.processedPages.add(`${event.documentId}:${page}`);
       if (event.costCny !== null) {
-        summary.pricedPages.add(`${event.documentId}:${event.pageNumber}`);
+        for (const page of pages) summary.pricedPages.add(`${event.documentId}:${page}`);
         summary.pageCostCny += event.costCny;
         summary.pagePricedEventCount += 1;
       }

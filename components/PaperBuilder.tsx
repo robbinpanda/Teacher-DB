@@ -48,7 +48,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   const [assetLayouts, setAssetLayouts] = useState<Record<string, PaperAssetLayout>>(initialPaper?.settings.assetLayouts ?? {});
   const [paperId] = useState(() => initialPaper?.id ?? crypto.randomUUID());
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(initialPaper || initialQuestions.length ? "saving" : "idle");
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"paper" | "answers" | null>(null);
   const [pdfError, setPdfError] = useState("");
   const [customName, setCustomName] = useState("");
   const [templateMessage, setTemplateMessage] = useState("");
@@ -170,16 +170,16 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
     if (await saveTemplate()) setTemplateStudioOpen(false);
   }
 
-  async function downloadPdf() {
-    setDownloading(true); setPdfError("");
+  async function downloadPdf(includeAnswers: boolean) {
+    setDownloading(includeAnswers ? "answers" : "paper"); setPdfError("");
     try {
       await new Promise((resolve) => window.setTimeout(resolve, 800));
-      const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/pdf${showAnswers ? "?answers=1" : ""}`);
+      const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/pdf${includeAnswers ? "?answers=1" : ""}`);
       if (!response.ok) { const result = await response.json().catch(() => ({})) as { error?: string }; throw new Error(result.error ?? "PDF 生成失败"); }
       const objectUrl = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a"); anchor.href = objectUrl; anchor.download = `${title.replace(/[\\/:*?"<>|]/g, "_") || "试卷"}${showAnswers ? "-含答案" : ""}.pdf`; anchor.click();
+      const anchor = document.createElement("a"); anchor.href = objectUrl; anchor.download = `${title.replace(/[\\/:*?"<>|]/g, "_") || "试卷"}${includeAnswers ? "-解析答案" : ""}.pdf`; anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    } catch (error) { setPdfError(error instanceof Error ? error.message : "PDF 生成失败"); } finally { setDownloading(false); }
+    } catch (error) { setPdfError(error instanceof Error ? error.message : "PDF 生成失败"); } finally { setDownloading(null); }
   }
 
   let rowNumber = 0;
@@ -189,7 +189,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
       <header className="paper-topbar no-print">
         <div><Link href={initialPaper ? "/papers" : "/bank"} className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>{initialPaper ? "编辑试卷" : "组卷"}</strong><small>{stageLabel(paperStage)} · {paperSubject}</small></span></div>
         <Link href="/papers" title="打开试卷库" className={`paper-save-state ${visibleSaveState}`}><Check size={13} /> {visibleSaveState === "idle" ? "选题后存入试卷库" : visibleSaveState === "saving" ? "正在存入试卷库…" : visibleSaveState === "error" ? "保存失败" : "已存入试卷库"}</Link>
-        <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏答案" : "答案预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={downloading} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading ? "正在生成…" : "下载 PDF"}</button></div>
+        <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏解析" : "解析预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={Boolean(downloading)} onClick={() => void downloadPdf(false)}>{downloading === "paper" ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading === "paper" ? "生成中…" : "下载试卷"}</button><button type="button" className="btn btn-small answer-download" disabled={Boolean(downloading)} onClick={() => void downloadPdf(true)}>{downloading === "answers" ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading === "answers" ? "生成中…" : "解析答案"}</button></div>
       </header>
       <div className="paper-workspace">
         <aside className="paper-settings no-print">
@@ -285,7 +285,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
               const question = questions.find((item) => item.id === id); if (!question) return null; const questionNumber = ++rowNumber;
               return <div className="paper-order-item" key={question.id}><div className="paper-order-main"><GripVertical size={14} /><span>{questionNumber}</span><p><strong>{typeLabels[question.type]}</strong><small>{question.tags[0] || "未标注知识点"}</small></p><select aria-label={`第 ${questionNumber} 题板块`} value={section.id} onChange={(event) => moveToSection(question.id, event.target.value)}>{sections.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select><button type="button" onClick={() => move(section.id, index, -1)}><ArrowUp size={12} /></button><button type="button" onClick={() => move(section.id, index, 1)}><ArrowDown size={12} /></button><button type="button" onClick={() => setSections((items) => items.map((item) => ({ ...item, questionIds: item.questionIds.filter((itemId) => itemId !== question.id) })))}><Trash2 size={12} /></button></div>
                 {question.type === "answer" && <label className="paper-space-control"><span>作答留白</span><input type="range" min="80" max="600" step="10" value={answerSpaces[question.id] ?? 180} onChange={(event) => setAnswerSpaces((items) => ({ ...items, [question.id]: Number(event.target.value) }))} /><i>{answerSpaces[question.id] ?? 180}px</i></label>}
-                {question.assets.map((asset) => { const layout = assetLayouts[asset.id] ?? defaultAssetLayout(questionNumber); return <div className="paper-image-controls" key={asset.id}><span><ImageIcon size={12} /> {layout.caption}</span><label>缩放 <input type="range" min="40" max="200" value={layout.scale} onChange={(event) => patchAsset(asset.id, { scale: Number(event.target.value) }, questionNumber)} /><i>{layout.scale}%</i></label><label>水平 <input type="range" min="-240" max="240" value={layout.x} onChange={(event) => patchAsset(asset.id, { x: Number(event.target.value) }, questionNumber)} /></label><label>垂直 <input type="range" min="-160" max="160" value={layout.y} onChange={(event) => patchAsset(asset.id, { y: Number(event.target.value) }, questionNumber)} /></label><input aria-label="题图说明" value={layout.caption} onChange={(event) => patchAsset(asset.id, { caption: event.target.value }, questionNumber)} /><select value={layout.placement} onChange={(event) => patchAsset(asset.id, { placement: event.target.value as PaperAssetLayout["placement"] }, questionNumber)}><option value="after-stem">题干后</option><option value="before-answer">选项后</option></select></div>; })}
+                {question.assets.filter((asset) => asset.role === "question").map((asset) => { const layout = assetLayouts[asset.id] ?? defaultAssetLayout(questionNumber); return <div className="paper-image-controls" key={asset.id}><span><ImageIcon size={12} /> {layout.caption}</span><label>缩放 <input type="range" min="40" max="200" value={layout.scale} onChange={(event) => patchAsset(asset.id, { scale: Number(event.target.value) }, questionNumber)} /><i>{layout.scale}%</i></label><label>水平 <input type="range" min="-240" max="240" value={layout.x} onChange={(event) => patchAsset(asset.id, { x: Number(event.target.value) }, questionNumber)} /></label><label>垂直 <input type="range" min="-160" max="160" value={layout.y} onChange={(event) => patchAsset(asset.id, { y: Number(event.target.value) }, questionNumber)} /></label><input aria-label="题图说明" value={layout.caption} onChange={(event) => patchAsset(asset.id, { caption: event.target.value }, questionNumber)} /><select value={layout.placement} onChange={(event) => patchAsset(asset.id, { placement: event.target.value as PaperAssetLayout["placement"] }, questionNumber)}><option value="after-stem">题干后</option><option value="before-answer">选项后</option></select></div>; })}
               </div>;
             }))}
           </div>

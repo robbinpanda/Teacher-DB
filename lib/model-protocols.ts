@@ -81,7 +81,7 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
       },
       body: {
         model: input.model,
-        max_tokens: 8192,
+        max_tokens: 32768,
         temperature: 0,
         system: input.system,
         messages: [{ role: "user", content }],

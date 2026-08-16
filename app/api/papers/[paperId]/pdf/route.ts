@@ -30,7 +30,7 @@ export async function GET(request: Request, context: { params: Promise<{ paperId
   if (requestUrl.searchParams.get("answers") === "1") printUrl.searchParams.set("answers", "1");
   try {
     const pdf = await renderUrlToPdf(printUrl.toString());
-    const filename = `${safeFilename(paper.title)}${requestUrl.searchParams.get("answers") === "1" ? "-含答案" : ""}.pdf`;
+    const filename = `${safeFilename(paper.title)}${requestUrl.searchParams.get("answers") === "1" ? "-解析答案" : ""}.pdf`;
     return new Response(new Uint8Array(pdf), {
       headers: {
         "content-type": "application/pdf",

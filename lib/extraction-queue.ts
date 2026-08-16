@@ -91,6 +91,8 @@ export async function enqueueDocumentExtraction(input: {
   const queueStatus = queueSettings?.paused ? "paused" : "queued";
   const pausedReason = queueSettings?.pauseReason ?? "识别队列已暂停，请点击“全部开始”后继续。";
   sqliteTransaction((transaction) => {
+    // 整卷识别必须从同一份页面快照开始；旧的逐页运行记录不能混入新一轮进度。
+    transaction.prepare("DELETE FROM extraction_runs WHERE document_id = ?").run(input.documentId);
     for (const page of pages) {
       transaction.prepare(
         `INSERT OR IGNORE INTO extraction_runs
@@ -98,7 +100,7 @@ export async function enqueueDocumentExtraction(input: {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       ).run(
         crypto.randomUUID(), input.documentId, page.id, page.pageNumber, profile.id,
-        profile.provider, profile.model, queueStatus, `${input.documentId}:page:${page.pageNumber}:extract-v3`, timestamp,
+        profile.provider, profile.model, queueStatus, `${input.documentId}:page:${page.pageNumber}:extract-v4`, timestamp,
       );
     }
     if (input.retry) {
@@ -492,7 +494,7 @@ async function processJob(job: JobRow & { workerId: string }) {
       const attempt = effectiveExtractionAttempt(run.attempt, job.attempt);
       const retryable = failure.retryable !== false && !shouldPauseExtraction(attempt);
       const timestamp = now();
-      const message = (failure.error ?? "页面识别失败").slice(0, 4000);
+      const message = (failure.error ?? "整卷识别失败").slice(0, 4000);
       const circuit = sqliteTransaction((transaction) => {
         assertDocumentLease(transaction, job.documentId, job.workerId, timestamp);
         const state = recordQueueFailure(transaction, job.ownerId, message, timestamp);
@@ -513,9 +515,9 @@ async function processJob(job: JobRow & { workerId: string }) {
             `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
                lease_expires_at = NULL, last_error = ?, updated_at = ?
              WHERE document_id = ? AND lease_owner = ?`,
-          ).run(nextAttemptAt, `第 ${run.pageNumber} 页：${message}`, timestamp, job.documentId, job.workerId);
+          ).run(nextAttemptAt, `整卷识别：${message}`, timestamp, job.documentId, job.workerId);
           transaction.prepare("UPDATE documents SET status = 'extracting', error = ?, updated_at = ? WHERE id = ?")
-            .run(`第 ${run.pageNumber} 页将在 ${nextAttemptAt} 自动重试：${message}`.slice(0, 4000), timestamp, job.documentId);
+            .run(`整卷将在 ${nextAttemptAt} 自动重试：${message}`.slice(0, 4000), timestamp, job.documentId);
         });
       } else {
         sqliteTransaction((transaction) => {
@@ -529,9 +531,9 @@ async function processJob(job: JobRow & { workerId: string }) {
             `UPDATE document_jobs SET status = 'failed', next_attempt_at = NULL, lease_owner = NULL,
                lease_expires_at = NULL, last_error = ?, finished_at = ?, updated_at = ?
              WHERE document_id = ? AND lease_owner = ?`,
-          ).run(`第 ${run.pageNumber} 页：${message}`, timestamp, timestamp, job.documentId, job.workerId);
+          ).run(`整卷识别：${message}`, timestamp, timestamp, job.documentId, job.workerId);
           transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
-            .run(`第 ${run.pageNumber} 页：${message}`.slice(0, 4000), timestamp, job.documentId);
+            .run(`整卷识别：${message}`.slice(0, 4000), timestamp, job.documentId);
         });
       }
       return;

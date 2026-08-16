@@ -353,25 +353,27 @@ export function UploadWorkbench() {
     <div className="upload-card card">
       <div className="section-title upload-title"><div><span className="section-kicker">第一步 · 导入</span><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
       <div className="upload-scope-note"><b>{educationStages.find((item) => item.value === stage)?.label} · {subject}</b><span>年份、考试类型、地区和学校会从卷面标题自动推测，可在试卷详情中随时修改。</span></div>
-      <section className="upload-model-setting" aria-label="识别模型选择">
-        <div className="upload-model-copy"><span><Sparkles size={16} /></span><div><strong>识别模型</strong><small>仅影响之后加入队列的试卷，处理中任务保持原模型</small></div></div>
-        <div className="upload-model-controls">
-          <select aria-label="选择识别模型" value={selectedProfileId} disabled={modelLoading || modelSaving || modelProfiles.length === 0} onChange={(event) => void selectModel(event.target.value)}>
-            {modelProfiles.length === 0 && <option value="">{modelLoading ? "正在读取模型…" : "暂无可用模型"}</option>}
-            {modelProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.displayName} · {profile.model}</option>)}
-          </select>
-          <Link className="btn" href="/settings/models">管理模型</Link>
-        </div>
-        <p className={modelError ? "error" : modelFeedback ? "success" : ""}>{modelFeedback || (modelLoading ? "正在同步模型配置…" : "在模型设置中添加、删除或修改配置")}</p>
-      </section>
-      <section className="upload-concurrency" aria-label="批量处理设置">
-        <div className="upload-concurrency-copy"><span><Gauge size={16} /></span><div><strong>同时处理试卷</strong><small>同时控制 PDF 渲染、上传与后台识别；普通电脑建议 2–4 份</small></div></div>
-        <div className="upload-concurrency-inputs">
-          <label><input aria-label="同时处理试卷数" inputMode="numeric" type="number" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={(event) => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") void applyConcurrency(); }} /><span>份</span></label>
-          <button type="button" className="btn btn-primary" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button>
-        </div>
-        <p className={concurrencyError ? "error" : concurrencyFeedback ? "success" : queuePaused ? "paused" : ""}>{concurrencyFeedback || (queuePaused ? (queuePauseReason || "全部识别已暂停，可在试卷列表中点击“全部开始”。") : `当前已应用 ${appliedConcurrency} 份并发 · 后台处理中 ${queueCounts.active} 份${queueCounts.queued ? ` · 等待 ${queueCounts.queued} 份` : ""}；处理中也可随时修改`)}</p>
-      </section>
+      <div className="upload-control-grid">
+        <section className="upload-model-setting" aria-label="识别模型选择">
+          <div className="upload-model-copy"><span><Sparkles size={16} /></span><div><strong>整卷识别模型</strong><small>一份试卷的全部页面只调用一次模型</small></div></div>
+          <div className="upload-model-controls">
+            <select aria-label="选择识别模型" value={selectedProfileId} disabled={modelLoading || modelSaving || modelProfiles.length === 0} onChange={(event) => void selectModel(event.target.value)}>
+              {modelProfiles.length === 0 && <option value="">{modelLoading ? "正在读取模型…" : "暂无可用模型"}</option>}
+              {modelProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.displayName}</option>)}
+            </select>
+            <Link className="btn" href="/settings/models">管理</Link>
+          </div>
+          <p className={modelError ? "error" : modelFeedback ? "success" : ""}>{modelFeedback || (modelLoading ? "正在同步模型配置…" : "新加入队列的试卷使用此模型")}</p>
+        </section>
+        <section className="upload-concurrency" aria-label="批量处理设置">
+          <div className="upload-concurrency-copy"><span><Gauge size={16} /></span><div><strong>并行试卷数</strong><small>限制同时上传和识别的试卷数量，可随时调整</small></div></div>
+          <div className="upload-concurrency-inputs">
+            <label><input aria-label="同时处理试卷数" inputMode="numeric" type="number" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={(event) => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") void applyConcurrency(); }} /><span>份</span></label>
+            <button type="button" className="btn btn-primary" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button>
+          </div>
+          <p className={concurrencyError ? "error" : concurrencyFeedback ? "success" : queuePaused ? "paused" : ""}>{concurrencyFeedback || (queuePaused ? (queuePauseReason || "全部识别已暂停，可在试卷列表中点击“全部开始”。") : `已应用 ${appliedConcurrency} 份 · 处理中 ${queueCounts.active} 份${queueCounts.queued ? ` · 等待 ${queueCounts.queued} 份` : ""}`)}</p>
+        </section>
+      </div>
       <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div
         className={"drop-zone " + (working ? "working " : "")}

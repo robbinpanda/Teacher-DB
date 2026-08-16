@@ -37,9 +37,9 @@ export async function POST(request: Request, context: { params: Promise<{ docume
   const runs = sqlite.prepare(
     `SELECT page_number AS pageNumber, status, raw_json AS rawJson, error
        FROM extraction_runs
-      WHERE document_id = ? AND idempotency_key LIKE ?
+      WHERE document_id = ? AND (idempotency_key LIKE ? OR idempotency_key LIKE ?)
       ORDER BY page_number`,
-  ).all(documentId, `${documentId}:page:%:extract-v3`) as Array<{ pageNumber: number; status: string; rawJson: string | null; error: string | null }>;
+  ).all(documentId, `${documentId}:page:%:extract-v4`, `${documentId}:page:%:extract-v3`) as Array<{ pageNumber: number; status: string; rawJson: string | null; error: string | null }>;
   const updates: AnswerUpdate[] = [];
   const pipelineUnmatchedNumbers: string[] = [];
   for (const run of runs) {
@@ -74,10 +74,10 @@ export async function POST(request: Request, context: { params: Promise<{ docume
   const integrityFailure = failedRuns.length
     ? null
     : unmatchedAnswerUpdateNumbers.length
-      ? `识别结果包含第 ${unmatchedAnswerUpdateNumbers.join("、")} 题的答案或解析，但题目主体未成功落库，请重新识别对应页面后再审核`
+      ? `识别结果包含第 ${unmatchedAnswerUpdateNumbers.join("、")} 题的答案或解析，但题目主体未成功落库，请重新进行整卷识别`
       : integrity.reviewReady ? null : integrityError(integrity);
   const terminalError = failedRuns.length
-    ? failedRuns.map((run) => `第 ${run.pageNumber} 页：${run.error ?? "识别失败"}`).join("\n").slice(0, 4000)
+    ? `整卷识别失败：${failedRuns[0]?.error ?? "识别失败"}`.slice(0, 4000)
     : integrityFailure;
   const timestamp = now();
   try {

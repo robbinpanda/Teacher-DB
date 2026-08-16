@@ -19,7 +19,11 @@ export async function GET(request: Request, context: { params: Promise<{ documen
             COALESCE(r.attempt, 0) AS attempt, r.error, r.next_attempt_at AS nextAttemptAt,
             r.created_at AS startedAt, r.finished_at AS finishedAt
        FROM pages p LEFT JOIN extraction_runs r
-         ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
+         ON r.id = (
+           SELECT latest.id FROM extraction_runs latest
+            WHERE latest.document_id = p.document_id AND latest.page_number = p.page_number
+            ORDER BY latest.created_at DESC, latest.rowid DESC LIMIT 1
+         )
       WHERE p.document_id = ? ORDER BY p.page_number`,
   ).all(documentId) as Array<{
     pageId: string; pageNumber: number; storageKey: string; width: number; height: number; status: string; attempt: number; error: string | null;

@@ -26,6 +26,7 @@ type UsageContext = {
   purpose: string;
   documentId?: string;
   pageNumber?: number;
+  pageCount?: number;
 };
 
 type RepriceProfile = ModelTokenPrices & {
@@ -169,13 +170,14 @@ export function recordModelUsage(
   const id = crypto.randomUUID();
   sqlite.prepare(
     `INSERT INTO model_usage_events
-      (id, owner_id, model_profile_id, document_id, page_number, purpose, provider, model,
+      (id, owner_id, model_profile_id, document_id, page_number, page_count, purpose, provider, model,
        input_tokens, output_tokens, cached_input_tokens, cached_output_tokens, input_price_per_million,
        output_price_per_million, cache_price_per_million, cached_output_price_per_million, cost_cny, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id, profile.ownerId, profile.id, context.documentId ?? null, context.pageNumber ?? null,
-    context.purpose, profile.provider, profile.model, usage.inputTokens, usage.outputTokens,
+    Math.max(1, Math.trunc(context.pageCount ?? 1)), context.purpose, profile.provider, profile.model,
+    usage.inputTokens, usage.outputTokens,
     usage.cachedInputTokens, usage.cachedOutputTokens, profile.inputPricePerMillion ?? null,
     profile.outputPricePerMillion ?? null, profile.cachedInputPricePerMillion ?? null,
     profile.cachedOutputPricePerMillion ?? null, costCny, timestamp,

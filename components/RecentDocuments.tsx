@@ -302,7 +302,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
           <ArrowRight size={17} className="row-arrow" />
         </Link>
         {!selectionMode && <div className="document-actions">
-          {doc.jobStatus === "failed" && <button type="button" className="document-retry" disabled={retrying} title={pagesFinished ? "重新执行收尾校验" : "重新识别未完成页面"} aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
+          {doc.jobStatus === "failed" && <button type="button" className="document-retry" disabled={retrying} title={pagesFinished ? "重新执行收尾校验" : "重新识别整份试卷"} aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
           <button type="button" className="document-delete" title="删除试卷" aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
         </div>}
       </div>

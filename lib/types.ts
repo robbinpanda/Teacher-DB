@@ -15,6 +15,7 @@ export type QuestionType = "single" | "multiple" | "fill" | "answer";
 export type QuestionAsset = {
   id: string;
   kind: "figure" | "table" | "graph";
+  role: "question" | "answer";
   page: number;
   bbox: BoundingBox;
   label: string;

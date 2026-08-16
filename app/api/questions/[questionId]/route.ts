@@ -59,7 +59,7 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   const allowedTags = new Set((await getTagCatalog(ownerId, ownedQuestion.subject || "数学", stageFromGrade(ownedQuestion.grade))).map((item) => item.name));
   const unknownTags = tagNames.filter((tag) => !allowedTags.has(tag));
   if (unknownTags.length) return Response.json({ error: `请先把标签加入当前学科标签库：${unknownTags.join("、")}` }, { status: 400 });
-  const requestedRegions = payload.regions?.length ? payload.regions : [{ page: payload.page, bbox: payload.bbox }];
+  const requestedRegions = payload.regions ?? [];
   const preparedRegions: Array<{ page: number; pageId: string; bbox: BoundingBox; position: number }> = [];
   try {
     for (const region of requestedRegions) {
@@ -73,8 +73,7 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "题目页面范围无效" }, { status: 422 });
   }
-  if (!preparedRegions.length) return Response.json({ error: "题目至少需要一个页面范围" }, { status: 400 });
-  const primaryRegion = preparedRegions[0];
+  const primaryRegion = preparedRegions[0] ?? { page: payload.page, bbox: safeBox(payload.bbox) };
   const previousAssets = sqlite.prepare(
     "SELECT id, crop_key AS cropKey FROM question_assets WHERE question_id = ?",
   ).all(questionId) as Array<{ id: string; cropKey: string | null }>;
@@ -93,7 +92,7 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       const page = sqlite.prepare(
         `SELECT id, storage_key AS storageKey FROM pages WHERE document_id = ? AND page_number = ?`,
       ).get(ownedQuestion.documentId, asset.page) as { id: string; storageKey: string } | undefined;
-      if (!page) throw new Error(`找不到题图对应的第 ${asset.page} 页原图`);
+      if (!page) throw new Error(`找不到${asset.role === "answer" ? "答案图" : "题图"}对应的第 ${asset.page} 页原图`);
       const sourceBytes = await getFile(page.storageKey);
       const image = sharp(sourceBytes, { failOn: "error" });
       const metadata = await image.metadata();
@@ -141,10 +140,10 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       }
       transaction.prepare(
         `UPDATE questions SET number = ?, type = ?, stem = ?, options_json = ?, answer = ?, analysis = ?,
-           bbox_json = ?, status = ?, needs_human_review = ?, confidence = ?, score = ?, updated_at = ? WHERE id = ?`,
+           page_number = ?, bbox_json = ?, status = ?, needs_human_review = ?, confidence = ?, score = ?, updated_at = ? WHERE id = ?`,
       ).run(
         payload.number, payload.type, payload.stem, JSON.stringify(payload.options ?? []), payload.answer,
-        payload.analysis, JSON.stringify(primaryRegion.bbox), payload.status, payload.needsHumanReview === false ? 0 : 1,
+        payload.analysis, primaryRegion.page, JSON.stringify(primaryRegion.bbox), payload.status, payload.needsHumanReview === false ? 0 : 1,
         Math.max(0, Math.min(1, Number(payload.confidence) || 0)), 0, timestamp, questionId,
       );
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
@@ -157,13 +156,14 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       for (const prepared of preparedAssets) {
         transaction.prepare(
           `INSERT INTO question_assets
-            (id, question_id, page_id, kind, label, source_key, crop_key, bbox_json, position, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, question_id, page_id, kind, role, label, source_key, crop_key, bbox_json, position, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET page_id = excluded.page_id, kind = excluded.kind,
-             label = excluded.label, source_key = excluded.source_key, crop_key = excluded.crop_key,
+             role = excluded.role, label = excluded.label, source_key = excluded.source_key, crop_key = excluded.crop_key,
              bbox_json = excluded.bbox_json, position = excluded.position`,
         ).run(
-          prepared.asset.id, questionId, prepared.pageId, prepared.asset.kind, prepared.asset.label,
+          prepared.asset.id, questionId, prepared.pageId, prepared.asset.kind,
+          prepared.asset.role === "answer" ? "answer" : "question", prepared.asset.label,
           prepared.sourceKey, prepared.cropKey, JSON.stringify(prepared.box), prepared.position, timestamp,
         );
       }

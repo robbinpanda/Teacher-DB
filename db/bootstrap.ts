@@ -44,7 +44,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS question_regions_question_page_idx ON question
 CREATE INDEX IF NOT EXISTS question_regions_page_idx ON question_regions(page_id);
 CREATE TABLE IF NOT EXISTS question_assets (
   id TEXT PRIMARY KEY NOT NULL, question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-  page_id TEXT REFERENCES pages(id) ON DELETE SET NULL, kind TEXT NOT NULL, label TEXT NOT NULL DEFAULT '题图',
+  page_id TEXT REFERENCES pages(id) ON DELETE SET NULL, kind TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'question', label TEXT NOT NULL DEFAULT '题图',
   source_key TEXT, crop_key TEXT, bbox_json TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS assets_question_idx ON question_assets(question_id);
@@ -105,7 +106,8 @@ CREATE INDEX IF NOT EXISTS model_profiles_owner_idx ON model_profiles(owner_id, 
 CREATE UNIQUE INDEX IF NOT EXISTS model_profiles_owner_name_idx ON model_profiles(owner_id, display_name);
 CREATE TABLE IF NOT EXISTS model_usage_events (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', model_profile_id TEXT,
-  document_id TEXT REFERENCES documents(id) ON DELETE SET NULL, page_number INTEGER, purpose TEXT NOT NULL,
+  document_id TEXT REFERENCES documents(id) ON DELETE SET NULL, page_number INTEGER,
+  page_count INTEGER NOT NULL DEFAULT 1, purpose TEXT NOT NULL,
   provider TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0, cached_input_tokens INTEGER NOT NULL DEFAULT 0,
   cached_output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -167,6 +169,7 @@ const upgrades: Record<string, Record<string, string>> = {
   },
   question_assets: {
     page_id: "TEXT",
+    role: "TEXT NOT NULL DEFAULT 'question'",
     source_key: "TEXT",
     crop_key: "TEXT",
     position: "INTEGER NOT NULL DEFAULT 0",
@@ -184,6 +187,7 @@ const upgrades: Record<string, Record<string, string>> = {
     cached_output_price_per_million: "REAL",
   },
   model_usage_events: {
+    page_count: "INTEGER NOT NULL DEFAULT 1",
     cached_output_tokens: "INTEGER NOT NULL DEFAULT 0",
     cached_output_price_per_million: "REAL",
     cost_cny: "REAL",
@@ -367,6 +371,7 @@ function initialize() {
       )`,
   ).run(migrationTime);
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS questions_document_number_idx ON questions(document_id, number)");
+  sqlite.exec("UPDATE question_assets SET role = 'question' WHERE role IS NULL OR role NOT IN ('question', 'answer')");
   sqlite.exec(
     `DELETE FROM question_assets WHERE id IN (
        SELECT id FROM (

@@ -14,6 +14,7 @@ type VisionCall = {
   purpose?: "page_extraction" | "question_reextract" | "answer_import" | "connection_test" | "other";
   documentId?: string;
   pageNumber?: number;
+  pageCount?: number;
 };
 
 export class ModelCallError extends Error {
@@ -123,6 +124,7 @@ export async function callVisionModel(input: VisionCall) {
           purpose: input.purpose ?? "other",
           documentId: input.documentId,
           pageNumber: input.pageNumber,
+          pageCount: input.pageCount,
         }, new Date().toISOString());
       } catch (usageError) {
         console.error("模型 Token 用量记录失败", usageError);

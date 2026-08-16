@@ -42,6 +42,7 @@ type AssetRow = {
   id: string;
   questionId: string;
   kind: string;
+  role: string;
   label: string;
   sourceKey: string | null;
   cropKey: string | null;
@@ -77,7 +78,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
   const sqlite = getSqlite();
   const ids = rows.map((row) => row.id);
   const assets = sqlite.prepare(
-    `SELECT a.id, a.question_id AS questionId, a.kind, a.label, a.source_key AS sourceKey,
+    `SELECT a.id, a.question_id AS questionId, a.kind, a.role, a.label, a.source_key AS sourceKey,
             a.crop_key AS cropKey, a.bbox_json AS bboxJson, p.page_number AS pageNumber,
             p.storage_key AS pageStorageKey, p.width AS pageWidth, p.height AS pageHeight
        FROM question_assets a
@@ -104,6 +105,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       return {
         id: asset.id,
         kind: (["figure", "table", "graph"].includes(asset.kind) ? asset.kind : "figure") as QuestionAsset["kind"],
+        role: asset.role === "answer" ? "answer" : "question",
         page: asset.pageNumber ?? row.pageNumber,
         bbox,
         label: asset.label,
@@ -129,7 +131,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       analysis: row.analysis,
       page: row.pageNumber,
       bbox: legacyBox,
-      regions: questionRegions.length ? questionRegions : [{ page: row.pageNumber, bbox: legacyBox }],
+      regions: questionRegions,
       assets: questionAssets,
       tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
       confidence: row.confidence,
@@ -190,7 +192,11 @@ export async function getReviewData(documentId: string, ownerId: string) {
             COALESCE(rmp.display_name, NULLIF(r.model, 'pending')) AS modelDisplayName,
             NULLIF(r.model, 'pending') AS modelName, r.provider AS modelProvider
        FROM pages p LEFT JOIN extraction_runs r
-         ON r.idempotency_key = p.document_id || ':page:' || p.page_number || ':extract-v3'
+         ON r.id = (
+           SELECT latest.id FROM extraction_runs latest
+            WHERE latest.document_id = p.document_id AND latest.page_number = p.page_number
+            ORDER BY latest.created_at DESC, latest.rowid DESC LIMIT 1
+         )
        LEFT JOIN model_profiles rmp ON rmp.id = r.model_profile_id
       WHERE p.document_id = ? ORDER BY p.page_number`,
   ).all(documentId) as Array<{
@@ -346,9 +352,9 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
             COALESCE(d.grade, '未设置年级') AS grade, d.page_count AS pageCount,
             d.status, d.created_at AS createdAt, COUNT(q.id) AS questionCount,
             COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approvedCount,
-            (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'complete') AS completedPageCount,
-            (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'failed') AS failedPageCount,
-            (SELECT COUNT(*) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'retry_wait') AS retryWaitPageCount,
+            (SELECT COUNT(DISTINCT r.page_number) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'complete') AS completedPageCount,
+            (SELECT COUNT(DISTINCT r.page_number) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'failed') AS failedPageCount,
+            (SELECT COUNT(DISTINCT r.page_number) FROM extraction_runs r WHERE r.document_id = d.id AND r.status = 'retry_wait') AS retryWaitPageCount,
             j.status AS jobStatus, j.attempt AS jobAttempt,
             j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError,
             j.profile_id AS modelProfileId,
