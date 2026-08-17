@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronRight, Code2, Download, Eye, GripVertical, ImageIcon, LayoutTemplate, ListPlus, LoaderCircle, Plus, Save, Settings2, Trash2, X } from "lucide-react";
 import type { QuestionWithSource } from "../lib/types";
 import { stageFromGrade, stageLabel } from "../lib/education-taxonomy";
 import { defaultAssetLayout, paperStyleFromTemplate, paperStyleToLatex, sectionsFromTemplate, type PaperAssetLayout, type PaperSection, type PaperSettings, type PaperStyleConfig, type PaperTemplate } from "../lib/paper-templates";
 import { typeLabels } from "../lib/question-labels";
+import { resolveInitialPaperQuestions } from "../lib/paper-draft";
 import { useEducationScope } from "./AppShell";
 import { PaperPrintable } from "./PaperPrintable";
 
@@ -24,11 +26,12 @@ function MetricControl({ label, value, min, max, step, unit, onChange }: { label
 }
 
 export function PaperBuilder({ questions, initialIds, templates: initialTemplates, initialPaper }: { questions: QuestionWithSource[]; initialIds: string[]; templates: PaperTemplate[]; initialPaper?: { id: string; title: string; subtitle: string; settings: PaperSettings } }) {
+  const router = useRouter();
   const scope = useEducationScope();
   const paperSubject = initialPaper?.settings.subject ?? scope.subject;
   const paperStage = initialPaper?.settings.stage ?? scope.stage;
   const inScope = useMemo(() => questions.filter((question) => question.source.subject === paperSubject && stageFromGrade(question.source.grade) === paperStage), [paperStage, paperSubject, questions]);
-  const initialQuestions = initialIds.length ? initialIds.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as QuestionWithSource[] : inScope.slice(0, 5);
+  const initialQuestions = resolveInitialPaperQuestions(questions, initialIds);
   const [templates, setTemplates] = useState(initialTemplates);
   const availableTemplates = useMemo(() => templates.filter((template) => (template.subject === "*" || template.subject === paperSubject) && (template.subject === "*" || template.stage === paperStage)), [paperStage, paperSubject, templates]);
   const preferredTemplate = availableTemplates.find((template) => template.id === `preset-${paperStage}-math-exam`) ?? availableTemplates[0] ?? initialTemplates[0];
@@ -47,7 +50,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   const [answerSpaces, setAnswerSpaces] = useState<Record<string, number>>(initialPaper?.settings.answerSpaces ?? {});
   const [assetLayouts, setAssetLayouts] = useState<Record<string, PaperAssetLayout>>(initialPaper?.settings.assetLayouts ?? {});
   const [paperId] = useState(() => initialPaper?.id ?? crypto.randomUUID());
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(initialPaper || initialQuestions.length ? "saving" : "idle");
+  const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">(initialPaper ? "saved" : initialQuestions.length ? "dirty" : "idle");
   const [downloading, setDownloading] = useState<"paper" | "answers" | null>(null);
   const [pdfError, setPdfError] = useState("");
   const [customName, setCustomName] = useState("");
@@ -55,20 +58,17 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   const ids = useMemo(() => orderedIds(sections), [sections]);
   const selected = useMemo(() => ids.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as QuestionWithSource[], [ids, questions]);
   const settings: PaperSettings = useMemo(() => ({ templateId, subject: paperSubject, stage: paperStage, showAnswers, answerSpaces, assetLayouts, sections, notice, infoFields, compact, style: paperStyle }), [answerSpaces, assetLayouts, compact, infoFields, notice, paperStage, paperStyle, paperSubject, sections, showAnswers, templateId]);
+  const draftFingerprint = useMemo(() => JSON.stringify({ title, subtitle, ids, settings }), [ids, settings, subtitle, title]);
+  const savedFingerprint = useRef<string | null>(initialPaper ? draftFingerprint : null);
   const typeCount = new Set(selected.map((question) => question.type)).size;
 
   useEffect(() => {
-    if (!initialPaper && !ids.length) return;
-    const timer = window.setTimeout(async () => {
-      try {
-        const scoreById = Object.fromEntries(sections.flatMap((section) => section.questionIds.map((id, index) => [id, section.scoreSequence?.[index] ?? section.defaultScore])));
-        const response = await fetch("/api/papers", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: paperId, title, subtitle, questionIds: ids, scores: scoreById, settings }) });
-        if (!response.ok) throw new Error("保存失败");
-        setSaveState("saved");
-      } catch { setSaveState("error"); }
-    }, 700);
-    return () => window.clearTimeout(timer);
-  }, [ids, initialPaper, paperId, sections, settings, subtitle, title]);
+    setSaveState((current) => {
+      if (current === "saving") return current;
+      if (!ids.length && !initialPaper) return "idle";
+      return savedFingerprint.current === draftFingerprint ? "saved" : "dirty";
+    });
+  }, [draftFingerprint, ids.length, initialPaper]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -85,7 +85,6 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
       setPaperStyle(paperStyleFromTemplate(nextTemplate));
       setSections(sectionsFromTemplate(nextTemplate, selected));
       setTitle(`${stageLabel(paperStage)}${paperSubject}练习卷`);
-      setSaveState("saving");
     });
     return () => window.cancelAnimationFrame(frame);
   }, [initialPaper, paperStage, paperSubject, selected, templateId, templates]);
@@ -108,7 +107,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
     const template = templates.find((item) => item.id === id);
     if (!template) return;
     setTemplateId(id); setNotice(template.config.notice); setInfoFields(template.config.infoFields); setCompact(template.config.compact); setPaperStyle(paperStyleFromTemplate(template));
-    setSections(sectionsFromTemplate(template, selected)); setSaveState("saving");
+    setSections(sectionsFromTemplate(template, selected));
   }
 
   function move(sectionId: string, index: number, offset: number) {
@@ -119,7 +118,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
       const questionIds = [...section.questionIds];
       [questionIds[index], questionIds[target]] = [questionIds[target], questionIds[index]];
       return { ...section, questionIds };
-    })); setSaveState("saving");
+    }));
   }
 
   function moveToSection(questionId: string, targetId: string) {
@@ -133,17 +132,36 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
       const next = items.map((item) => ({ ...item, questionIds: [...item.questionIds] }));
       for (const question of candidates) (next.find((section) => section.acceptedTypes.includes(question.type)) ?? next.at(-1))?.questionIds.push(question.id);
       return next;
-    }); setSaveState("saving");
+    });
   }
 
   function patchAsset(assetId: string, patch: Partial<PaperAssetLayout>, questionNumber: number) {
     setAssetLayouts((items) => ({ ...items, [assetId]: { ...(items[assetId] ?? defaultAssetLayout(questionNumber)), ...patch } }));
-    setSaveState("saving");
   }
 
   function patchPaperStyle(patch: Partial<PaperStyleConfig>) {
     setPaperStyle((current) => ({ ...current, ...patch }));
+  }
+
+  async function savePaper() {
+    if (!ids.length) {
+      setPdfError("请先从题库选择题目");
+      return;
+    }
     setSaveState("saving");
+    setPdfError("");
+    try {
+      const scoreById = Object.fromEntries(sections.flatMap((section) => section.questionIds.map((id, index) => [id, section.scoreSequence?.[index] ?? section.defaultScore])));
+      const response = await fetch("/api/papers", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: paperId, title, subtitle, questionIds: ids, scores: scoreById, settings }) });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "保存失败");
+      savedFingerprint.current = draftFingerprint;
+      setSaveState("saved");
+      if (!initialPaper) router.replace(`/papers/${encodeURIComponent(paperId)}`);
+    } catch (error) {
+      setSaveState("error");
+      setPdfError(error instanceof Error ? error.message : "保存失败");
+    }
   }
 
   function openTemplateStudio() {
@@ -171,9 +189,12 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   }
 
   async function downloadPdf(includeAnswers: boolean) {
+    if (saveState !== "saved") {
+      setPdfError("请先保存试卷，再生成 PDF");
+      return;
+    }
     setDownloading(includeAnswers ? "answers" : "paper"); setPdfError("");
     try {
-      await new Promise((resolve) => window.setTimeout(resolve, 800));
       const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/pdf${includeAnswers ? "?answers=1" : ""}`);
       if (!response.ok) { const result = await response.json().catch(() => ({})) as { error?: string }; throw new Error(result.error ?? "PDF 生成失败"); }
       const objectUrl = URL.createObjectURL(await response.blob());
@@ -183,20 +204,19 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   }
 
   let rowNumber = 0;
-  const visibleSaveState = !initialPaper && !ids.length ? "idle" : saveState;
   return (
     <div className="paper-builder">
       <header className="paper-topbar no-print">
         <div><Link href={initialPaper ? "/papers" : "/bank"} className="icon-btn"><ArrowLeft size={17} /></Link><span><strong>{initialPaper ? "编辑试卷" : "组卷"}</strong><small>{stageLabel(paperStage)} · {paperSubject}</small></span></div>
-        <Link href="/papers" title="打开试卷库" className={`paper-save-state ${visibleSaveState}`}><Check size={13} /> {visibleSaveState === "idle" ? "选题后存入试卷库" : visibleSaveState === "saving" ? "正在存入试卷库…" : visibleSaveState === "error" ? "保存失败" : "已存入试卷库"}</Link>
-        <div className="header-actions"><button type="button" className="btn btn-small" onClick={() => { setSaveState("saving"); setShowAnswers(!showAnswers); }}><Eye size={14} /> {showAnswers ? "隐藏解析" : "解析预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={Boolean(downloading)} onClick={() => void downloadPdf(false)}>{downloading === "paper" ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading === "paper" ? "生成中…" : "下载试卷"}</button><button type="button" className="btn btn-small answer-download" disabled={Boolean(downloading)} onClick={() => void downloadPdf(true)}>{downloading === "answers" ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading === "answers" ? "生成中…" : "解析答案"}</button></div>
+        <span className={`paper-save-state ${saveState}`}>{saveState === "saved" ? <Check size={13} /> : <Save size={13} />} {saveState === "idle" ? "尚未选择题目" : saveState === "dirty" ? "有未保存修改" : saveState === "saving" ? "正在保存…" : saveState === "error" ? "保存失败" : "已保存"}</span>
+        <div className="header-actions"><button type="button" className="btn btn-primary btn-small" disabled={!ids.length || saveState === "saving"} onClick={() => void savePaper()}>{saveState === "saving" ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />} {saveState === "saving" ? "保存中…" : "保存试卷"}</button><button type="button" className="btn btn-small" onClick={() => setShowAnswers(!showAnswers)}><Eye size={14} /> {showAnswers ? "隐藏解析" : "解析预览"}</button><button type="button" className="btn btn-dark btn-small" disabled={Boolean(downloading) || saveState !== "saved"} onClick={() => void downloadPdf(false)}>{downloading === "paper" ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading === "paper" ? "生成中…" : "下载试卷"}</button><button type="button" className="btn btn-small answer-download" disabled={Boolean(downloading) || saveState !== "saved"} onClick={() => void downloadPdf(true)}>{downloading === "answers" ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {downloading === "answers" ? "生成中…" : "解析答案"}</button></div>
       </header>
       <div className="paper-workspace">
         <aside className="paper-settings no-print">
           <div className="section-title"><div><h2>试卷模板与版式</h2><p>板块、分值、题图均可调整</p></div><Settings2 size={17} /></div>
           <label className="edit-field"><span>套用模板</span><select value={templateId} onChange={(event) => applyTemplate(event.target.value)}>{availableTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}{template.isPreset ? " · 预制" : " · 我的"}</option>)}</select></label>
-          <label className="edit-field"><span>试卷标题</span><input value={title} onChange={(event) => { setTitle(event.target.value); setSaveState("saving"); }} /></label>
-          <label className="edit-field"><span>副标题</span><input value={subtitle} onChange={(event) => { setSubtitle(event.target.value); setSaveState("saving"); }} /></label>
+          <label className="edit-field"><span>试卷标题</span><input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
+          <label className="edit-field"><span>副标题</span><input value={subtitle} onChange={(event) => setSubtitle(event.target.value)} /></label>
           <button type="button" className={`template-studio-trigger${templateStudioOpen ? " active" : ""}`} aria-expanded={templateStudioOpen} onClick={openTemplateStudio}><span><LayoutTemplate size={17} /><i><strong>模板排版设置</strong><small>偶尔调整一次，保存后持续复用</small></i></span><ChevronRight size={15} /></button>
           {templateStudioOpen && <><button type="button" className="template-studio-backdrop" aria-label="关闭模板编辑器" onClick={() => setTemplateStudioOpen(false)} /><section className="template-studio" role="dialog" aria-modal="true" aria-labelledby="template-studio-title">
             <header className="template-studio-head"><div><span><LayoutTemplate size={18} /></span><div><h2 id="template-studio-title">模板排版设置</h2><p>精细调整一次，保存后可直接套用到之后的试卷</p></div></div><button type="button" aria-label="关闭模板编辑器" onClick={() => setTemplateStudioOpen(false)}><X size={18} /></button></header>
@@ -277,7 +297,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
             <footer className="template-studio-footer"><label><span>模板名称</span><input placeholder="为这套模板命名" value={customName} onChange={(event) => setCustomName(event.target.value)} /></label><div>{templateMessage && <span className="template-studio-message">{templateMessage}</span>}<button type="button" className="btn" onClick={() => setTemplateStudioOpen(false)}>关闭</button><button type="button" className="btn btn-primary" onClick={() => void saveTemplateAndClose()}><Save size={14} /> 保存并应用</button></div></footer>
           </section></>}
           <div className="paper-summary"><div><span>题目</span><strong>{selected.length}</strong></div><div><span>题型</span><strong>{typeCount}</strong></div><div><span>板块</span><strong>{sections.length}</strong></div></div>
-          <div className="smart-fill"><ListPlus size={17} /><div><strong>按当前范围补齐</strong><p>只从 {stageLabel(paperStage)}{paperSubject}题库补题，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= 12 || ids.length >= inScope.length}>补齐</button></div>
+          {selected.length > 0 && <div className="smart-fill"><ListPlus size={17} /><div><strong>按当前范围补齐</strong><p>只从 {stageLabel(paperStage)}{paperSubject}题库补题，默认补到 12 道。</p></div><button type="button" onClick={smartFill} disabled={ids.length >= 12 || ids.length >= inScope.length}>补齐</button></div>}
           {templateMessage && <p className="form-note">{templateMessage}</p>}{pdfError && <p className="form-error">{pdfError}</p>}
           <div className="paper-order-title"><span>题目与题图</span><b>可换板块、排序和调整题图</b></div>
           <div className="paper-order">
@@ -291,7 +311,7 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
           </div>
           <Link href="/bank" className="btn add-from-bank">＋ 从题库继续选题</Link>
         </aside>
-        <main className="paper-preview-wrap"><PaperPrintable title={title} subtitle={subtitle} questions={selected} settings={settings} includeAnswers={showAnswers} />{!selected.length && <Link className="btn btn-primary no-print" href="/bank">返回题库选题</Link>}</main>
+        <main className={`paper-preview-wrap${selected.length ? "" : " empty"}`}>{selected.length ? <PaperPrintable title={title} subtitle={subtitle} questions={selected} settings={settings} includeAnswers={showAnswers} /> : <section className="paper-empty-state no-print"><div><ListPlus size={28} /></div><h2>还没有选择题目</h2><p>先去题库勾选需要的题目，再回来调整题序、分值和版式。未点击“保存试卷”前，不会写入试卷库。</p><Link className="btn btn-primary" href="/bank">去题库选题</Link></section>}</main>
       </div>
     </div>
   );

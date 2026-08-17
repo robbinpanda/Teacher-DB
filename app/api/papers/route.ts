@@ -18,19 +18,18 @@ export async function POST(request: Request) {
   const title = payload.title?.trim();
   const questionIds = Array.from(new Set(payload.questionIds ?? [])).slice(0, 500);
   if (!title) return Response.json({ error: "试卷标题不能为空" }, { status: 400 });
+  if (!questionIds.length) return Response.json({ error: "请先从题库选择题目" }, { status: 400 });
   const ownerId = requestOwner(request);
   const sqlite = getSqlite();
   const existing = sqlite.prepare("SELECT owner_id AS ownerId FROM papers WHERE id = ?").get(id) as { ownerId: string } | undefined;
   if (existing && existing.ownerId !== ownerId) return Response.json({ error: "试卷不存在" }, { status: 404 });
 
-  if (questionIds.length) {
-    const placeholders = questionIds.map(() => "?").join(",");
-    const row = sqlite.prepare(
-      `SELECT COUNT(*) AS count FROM questions q JOIN documents d ON d.id = q.document_id
-        WHERE d.owner_id = ? AND q.status = 'approved' AND q.id IN (${placeholders})`,
-    ).get(ownerId, ...questionIds) as { count: number };
-    if (row.count !== questionIds.length) return Response.json({ error: "试卷中包含不存在或未审核的题目" }, { status: 400 });
-  }
+  const placeholders = questionIds.map(() => "?").join(",");
+  const row = sqlite.prepare(
+    `SELECT COUNT(*) AS count FROM questions q JOIN documents d ON d.id = q.document_id
+      WHERE d.owner_id = ? AND q.status = 'approved' AND q.id IN (${placeholders})`,
+  ).get(ownerId, ...questionIds) as { count: number };
+  if (row.count !== questionIds.length) return Response.json({ error: "试卷中包含不存在或未审核的题目" }, { status: 400 });
 
   const timestamp = now();
   sqliteTransaction((transaction) => {
