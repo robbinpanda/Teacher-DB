@@ -53,8 +53,8 @@ Windows 生产模式也可使用：
 
 进入“模型设置”：
 
-- MiMo V2.5 Free 已预填 endpoint、model id 和公共凭据 `public`，开箱即用；自定义模型仍需填写自己的 API Key。
-- 也可添加任何支持图片输入的 Chat Completions、OpenAI Responses 或 Anthropic Messages 模型；Base URL 可以填写版本根路径或完整协议 endpoint。
+- 应用不提供任何预设模型、API 地址或公共凭据。使用前必须自行填写 API Key、API Base URL 和模型名称。
+- 可添加任何支持图片输入的 Chat Completions、OpenAI Responses 或 Anthropic Messages 模型；Base URL 可以填写版本根路径或完整协议 endpoint。
 - Chat Completions 和 Responses 使用 Bearer Token；Anthropic Messages 使用 `x-api-key` 和 `anthropic-version: 2023-06-01`。
 - 自定义 Base URL 必须为 HTTPS；仅 `localhost`/`127.0.0.1`/`::1` 允许 HTTP。
 - 应用不会向浏览器回传 API Key 明文。

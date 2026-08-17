@@ -55,7 +55,7 @@
 
 ## 模型配置与安全
 
-- 内置 OpenCode MiMo V2.5 Free，使用 OpenCode 公共凭据，无需个人账号或 API Key。
+- 不提供任何预设模型、API 地址或公共凭据，用户必须自行配置 API Key、API Base URL 和模型名称。
 - 支持 Chat Completions、OpenAI Responses 和 Anthropic Messages 三种多模态协议。
 - 可配置 API Base URL、模型名称、API Key 和超时时间，并使用真实图片测试连接。
 - API Key 使用 AES-GCM 加密存入 SQLite，接口只返回脱敏值。

@@ -14,7 +14,6 @@ type Profile = {
   baseUrl: string;
   model: string;
   apiKeyMask: string | null;
-  isManaged: boolean;
   isMultimodal: boolean;
   timeoutMs: number;
   inputPricePerMillion: number | null;
@@ -272,7 +271,7 @@ export function ModelSettings() {
   return (
     <div className="page-shell model-settings-page">
       <header className="page-header model-settings-header">
-        <div><span className="eyebrow"><Activity size={14} /> 模型与用量</span><h1>模型设置</h1><p>管理识别模型、Token 用量与估算成本。价格按每百万 Token 填写，全部选填。</p></div>
+        <div><span className="eyebrow"><Activity size={14} /> 模型与用量</span><h1>模型设置</h1><p>系统不提供预设模型。请自行配置 API Key、API Base URL 和模型名称；价格按每百万 Token 填写，全部选填。</p></div>
         <button className="btn" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} size={15} /> 刷新数据</button>
       </header>
 
@@ -331,10 +330,11 @@ export function ModelSettings() {
         <div className="model-manager-heading"><div><span className="section-kicker"><KeyRound size={14} /> Configuration</span><h2 id="models-heading">模型配置</h2><p>添加、测试、编辑或删除识别模型；当前使用的模型请在工作台选择。</p></div><button className="btn btn-primary" type="button" onClick={resetEditor}><Plus size={15} /> 添加模型</button></div>
         <div className="model-manager-grid">
           <div className="profile-list model-profile-list">
+            {!loading && profiles.length === 0 && <div className="usage-empty">尚未配置模型。请在右侧填写自己的 API 连接信息。</div>}
             {profiles.map((profile) => (
               <article key={profile.id} className={`model-profile-card${editingId === profile.id ? " editing" : ""}`}>
                 <div className="model-profile-main">
-                  <div className="model-profile-copy"><div><strong>{profile.displayName}</strong>{profile.isManaged && <em className="neutral">内置</em>}</div><p>{profile.model}</p><small>{MODEL_PROTOCOL_LABELS[profile.provider]} · {profile.baseUrl}</small></div>
+                  <div className="model-profile-copy"><div><strong>{profile.displayName}</strong></div><p>{profile.model}</p><small>{MODEL_PROTOCOL_LABELS[profile.provider]} · {profile.baseUrl}</small></div>
                 </div>
                 <div className="model-price-line"><span>输入 {priceText(profile.inputPricePerMillion)}</span><span>缓存输入 {cachedPriceText(profile.cachedInputPricePerMillion, "输入")}</span><span>输出 {priceText(profile.outputPricePerMillion)}</span><span>缓存输出 {cachedPriceText(profile.cachedOutputPricePerMillion, "输出")}</span></div>
                 <div className="model-profile-footer">
@@ -342,7 +342,7 @@ export function ModelSettings() {
                   <div>
                     <button className="btn btn-small" type="button" disabled={Boolean(busy) || !profile.apiKeyMask} onClick={() => void testProfile(profile.id)}>{busy === `test:${profile.id}` ? <LoaderCircle className="spin" size={13} /> : <Wifi size={13} />} 测试</button>
                     <button className="btn btn-small" type="button" disabled={Boolean(busy)} onClick={() => startEdit(profile)}><Pencil size={13} /> 编辑</button>
-                    {!profile.isManaged && <button className="icon-danger" title="删除模型" type="button" disabled={Boolean(busy)} onClick={() => void removeProfile(profile.id)}><Trash2 size={14} /></button>}
+                    <button className="icon-danger" title="删除模型" type="button" disabled={Boolean(busy)} onClick={() => void removeProfile(profile.id)}><Trash2 size={14} /></button>
                   </div>
                 </div>
               </article>
@@ -350,14 +350,14 @@ export function ModelSettings() {
           </div>
 
           <form id="model-editor" className="card model-editor" onSubmit={saveProfile}>
-            <div className="model-editor-head"><div><h3>{editingProfile ? `编辑 ${editingProfile.displayName}` : "添加自定义模型"}</h3><p>{editingProfile?.isManaged ? "内置连接参数由系统管理，你可以补充价格。" : "修改连接参数后，建议重新进行连接测试。"}</p></div>{editingProfile && <button className="icon-button" type="button" aria-label="取消编辑" onClick={resetEditor}><X size={16} /></button>}</div>
+            <div className="model-editor-head"><div><h3>{editingProfile ? `编辑 ${editingProfile.displayName}` : "添加自定义模型"}</h3><p>连接信息由你提供；修改后建议重新进行连接测试。</p></div>{editingProfile && <button className="icon-button" type="button" aria-label="取消编辑" onClick={resetEditor}><X size={16} /></button>}</div>
             <div className="model-editor-fields">
-              <label><span>显示名称</span><input required disabled={Boolean(editingProfile?.isManaged)} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：校内 Qwen-VL" /></label>
-              <label><span>接口协议</span><select required disabled={Boolean(editingProfile?.isManaged)} value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as ModelProtocol })}>{MODEL_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{MODEL_PROTOCOL_LABELS[protocol]}</option>)}</select></label>
-              <label className="wide"><span>API Base URL</span><input required disabled={Boolean(editingProfile?.isManaged)} type="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
-              <label><span>Model Name</span><input required disabled={Boolean(editingProfile?.isManaged)} value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="qwen-vl-max" /></label>
-              <label><span>超时时间（毫秒）</span><input required disabled={Boolean(editingProfile?.isManaged)} type="number" min={15000} max={300000} value={form.timeoutMs} onChange={(event) => setForm({ ...form, timeoutMs: Number(event.target.value) })} /></label>
-              {!editingProfile?.isManaged && <label className="wide"><span>API Key {editingProfile && <small>留空则保持原密钥</small>}</span><input required={!editingProfile} type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder={editingProfile ? `当前 ${editingProfile.apiKeyMask ?? "已保存"}` : "sk-…"} /></label>}
+              <label><span>显示名称</span><input required value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：我的识题模型" /></label>
+              <label><span>接口协议</span><select required value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as ModelProtocol })}>{MODEL_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{MODEL_PROTOCOL_LABELS[protocol]}</option>)}</select></label>
+              <label className="wide"><span>API Base URL</span><input required type="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
+              <label><span>Model Name</span><input required value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="vision-model-name" /></label>
+              <label><span>超时时间（毫秒）</span><input required type="number" min={15000} max={300000} value={form.timeoutMs} onChange={(event) => setForm({ ...form, timeoutMs: Number(event.target.value) })} /></label>
+              <label className="wide"><span>API Key {editingProfile && <small>留空则保持原密钥</small>}</span><input required={!editingProfile} type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder={editingProfile ? `当前 ${editingProfile.apiKeyMask ?? "已保存"}` : "填写服务商提供的 API Key"} /></label>
             </div>
             <div className="price-editor">
               <div><strong>Token 价格</strong><span>人民币 / 1M Token · 选填</span></div>

@@ -229,6 +229,13 @@ function initialize() {
   if (usageColumns.has("cost_usd") && usageColumns.has("cost_cny")) {
     sqlite.exec("UPDATE model_usage_events SET cost_cny = cost_usd WHERE cost_cny IS NULL AND cost_usd IS NOT NULL");
   }
+  sqlite.exec(
+    `UPDATE app_settings SET selected_model_profile_id = NULL
+       WHERE selected_model_profile_id IN (SELECT id FROM model_profiles WHERE is_managed = 1);
+     UPDATE document_jobs SET profile_id = NULL
+       WHERE profile_id IN (SELECT id FROM model_profiles WHERE is_managed = 1);
+     DELETE FROM model_profiles WHERE is_managed = 1;`,
+  );
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_idx ON extraction_runs(idempotency_key)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS runs_queue_idx ON extraction_runs(status, next_attempt_at)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_queue_idx ON document_jobs(status, next_attempt_at, queued_at)");
