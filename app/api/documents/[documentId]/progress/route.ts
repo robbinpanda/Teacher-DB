@@ -35,12 +35,40 @@ export async function GET(request: Request, context: { params: Promise<{ documen
   }, {} as Record<string, number>);
   const job = sqlite.prepare(
     `SELECT status, next_attempt_at AS nextAttemptAt, last_error AS lastError,
-       queued_at AS queuedAt, started_at AS startedAt, finished_at AS finishedAt
+       queued_at AS queuedAt, started_at AS startedAt, finished_at AS finishedAt,
+       question_total AS questionTotal, completed_question_numbers_json AS completedQuestionNumbersJson,
+       stream_phase AS streamPhase, last_stream_event_at AS lastStreamEventAt,
+       stream_message AS streamMessage
      FROM document_jobs WHERE document_id = ?`,
-  ).get(documentId);
+  ).get(documentId) as {
+    status: string; nextAttemptAt: string | null; lastError: string | null;
+    questionTotal: number | null; completedQuestionNumbersJson: string | null;
+    streamPhase: string | null; lastStreamEventAt: string | null; streamMessage: string | null;
+  } | undefined;
+  let completedQuestionNumbers: string[] = [];
+  try {
+    const parsed = JSON.parse(job?.completedQuestionNumbersJson ?? "[]");
+    if (Array.isArray(parsed)) completedQuestionNumbers = parsed.map(String).filter((value) => /^[1-9]\d*$/.test(value));
+  } catch {
+    completedQuestionNumbers = [];
+  }
+  completedQuestionNumbers.sort((left, right) => Number(left) - Number(right));
+  const questionTotal = job?.questionTotal ?? null;
+  const terminalPhase = job && ["paused", "failed", "retry_wait", "complete"].includes(job.status)
+    ? job.status
+    : null;
+  const recognition = {
+    questionTotal,
+    completedQuestionNumbers,
+    completedQuestionCount: completedQuestionNumbers.length,
+    percent: questionTotal ? Math.min(100, Math.round(completedQuestionNumbers.length / questionTotal * 100)) : 0,
+    phase: terminalPhase ?? job?.streamPhase ?? job?.status ?? "queued",
+    lastEventAt: job?.lastStreamEventAt ?? null,
+    message: job?.streamMessage ?? null,
+  };
   const responsePages = pageRows.map(({ storageKey, ...page }) => ({
     ...page,
     imageUrl: "/api/files/" + storageKey.split("/").map(encodeURIComponent).join("/"),
   }));
-  return Response.json({ document, job, counts, pages: responsePages }, { headers: { "cache-control": "no-store" } });
+  return Response.json({ document, job, recognition, counts, pages: responsePages }, { headers: { "cache-control": "no-store" } });
 }

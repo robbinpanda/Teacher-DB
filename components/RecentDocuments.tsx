@@ -259,7 +259,9 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
   }
 
   function renderDocument(doc: SourceDocument) {
-    const recognitionProgress = doc.pageCount ? Math.round(doc.completedPageCount / doc.pageCount * 100) : 0;
+    const recognitionProgress = doc.recognitionQuestionTotal
+      ? Math.round((doc.recognizedQuestionCount ?? 0) / doc.recognitionQuestionTotal * 100)
+      : 0;
     const reviewed = documentGroup(doc) === "reviewed";
     const progress = doc.status === "reviewing" || reviewed
       ? (doc.questionCount ? Math.round(doc.approvedCount / doc.questionCount * 100) : 0)
@@ -269,6 +271,9 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
     const pagesFinished = doc.pageCount > 0 && doc.completedPageCount >= doc.pageCount;
     const selected = selectedIds.has(doc.id);
     const modelLabel = doc.modelDisplayName ?? doc.modelName ?? "模型记录缺失";
+    const questionProgressLabel = doc.recognitionQuestionTotal
+      ? `${doc.recognizedQuestionCount ?? 0}/${doc.recognitionQuestionTotal} 题`
+      : "正在统计题目总数";
     const queueLabel = doc.jobStatus === "paused"
       ? "已暂停 · 等待全部开始"
       : doc.jobStatus === "failed"
@@ -278,16 +283,16 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
       : doc.jobStatus === "retry_wait"
         ? `退避中${doc.nextAttemptAt ? ` · ${new Date(doc.nextAttemptAt).toLocaleTimeString("zh-CN")} 自动继续` : ""}`
         : doc.jobStatus === "queued"
-          ? `队列等待 · 已识别 ${doc.completedPageCount}/${doc.pageCount} 页`
+          ? `队列等待 · ${questionProgressLabel}`
           : doc.jobStatus === "processing"
-            ? `AI 识别 · 已完成 ${doc.completedPageCount}/${doc.pageCount} 页`
+            ? `${doc.recognitionMessage ?? "AI 整卷识别"} · ${questionProgressLabel}`
             : null;
     const statusLabel = queueLabel ?? (doc.status === "uploading"
       ? "原卷页面预处理中"
       : doc.status === "extracting"
-        ? `等待识别 · ${doc.completedPageCount}/${doc.pageCount} 页`
-        : doc.status === "failed"
-          ? `处理已暂停 · 已完成 ${doc.completedPageCount}/${doc.pageCount} 页`
+        ? `等待识别 · ${questionProgressLabel}`
+      : doc.status === "failed"
+          ? `处理已暂停 · 已完成 ${questionProgressLabel}`
           : reviewed
             ? `已入库 ${doc.approvedCount}/${doc.questionCount}`
             : `待审核 · 已确认 ${doc.approvedCount}/${doc.questionCount}`);

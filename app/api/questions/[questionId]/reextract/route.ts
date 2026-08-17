@@ -8,6 +8,7 @@ import { callVisionModel, ModelCallError } from "../../../../../lib/vision-model
 import { stageFromGrade } from "../../../../../lib/education-taxonomy";
 import { getTagCatalog } from "../../../../../lib/tag-catalog";
 import { modelNeedsHumanReview } from "../../../../../lib/model-review";
+import { stripLeadingQuestionNumber } from "../../../../../lib/question-text.js";
 
 export const runtime = "nodejs";
 
@@ -96,8 +97,11 @@ export async function POST(request: Request, context: { params: Promise<{ questi
         "你是中文中学试题转录专家。用户已人工校正题目框，所有图片按页码顺序组成同一道题。",
         "只转录框内确实可见的内容，并把跨页内容按阅读顺序合并。禁止补写框外或不可见文字。",
         "一道大题包含（1）（2）或【小问1详解】【小问2详解】时，必须读取并合并所有小问；【小问1详解】绝不代表整道大题结束，必须继续检查后续图片，直到下一独立顶层题号之前。",
+        "题号已单独保存为 " + question.number + "，stem 必须从题号后的正文开始，不得在开头重复输出“" + question.number + ".”、“" + question.number + "、”等顶层题号；但必须保留题内（1）（2）等小问编号。",
         "输出前逐项核对题干中的每个小问编号在答案和解析中是否完整出现，不得只返回第一小问。",
         "严格区分题干、选项、答案和解析；没有答案或解析时返回空字符串。数学表达式使用单个 $ 包裹的 LaTeX。",
+        "所有表格、统计表和茎叶图均由系统作为图片资产保留。严禁在 stem、options、answer、analysis 中生成 tabular、array 表格、matrix 表格、\\multicolumn、\\multirow、\\hline、\\cline 或 Markdown 表格，也不要把表格摊平成纯文字行列或逗号列表；只转录表格前后的普通文字和公式，绝不重复输出表格内容。",
+        "所有文字必须逐字逐符号按原文顺序转录，完整保留每个小问、步骤、条件、单位、标点和结论；严禁概括、改写、缩写、润色、合并步骤或自行总结。看不清时留空并标记 needsHumanReview，不得猜测。",
         `tags 只能从下列允许标签中逐字选择 1-3 个，禁止自造标签：${JSON.stringify(allowedTags)}`,
         "只返回严格 JSON，不要 Markdown 或解释。",
         "必须输出布尔字段 needsHumanReview；有任何模糊、缺失或不确定就输出 true，只有确认完整且无需再次人工核查才输出 false。confidence 仅供展示，不用于决定核查状态。",
@@ -108,7 +112,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
       jsonMode: true,
     });
     const parsed = parseJsonContent(result.content);
-    const stem = String(parsed.stem ?? "").trim();
+    const stem = stripLeadingQuestionNumber(String(parsed.stem ?? "").trim(), question.number);
     if (!stem) return Response.json({ error: "新题框内未识别到题干，请继续调整框选范围" }, { status: 422 });
     const type = ["single", "multiple", "fill", "answer"].includes(String(parsed.type))
       ? String(parsed.type) as QuestionType

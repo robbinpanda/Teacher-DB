@@ -16,11 +16,12 @@ test("收尾事务只更新文档与任务状态，不重放原始模型内容",
     CREATE TABLE documents (id TEXT PRIMARY KEY, status TEXT, error TEXT, updated_at TEXT);
     CREATE TABLE document_jobs (
       document_id TEXT PRIMARY KEY, status TEXT, next_attempt_at TEXT, lease_owner TEXT,
-      lease_expires_at TEXT, last_error TEXT, finished_at TEXT, updated_at TEXT
+      lease_expires_at TEXT, last_error TEXT, stream_phase TEXT, stream_message TEXT,
+      finished_at TEXT, updated_at TEXT
     );
     CREATE TABLE questions (id TEXT PRIMARY KEY, document_id TEXT, number TEXT, analysis TEXT);
     INSERT INTO documents VALUES ('document-1', 'extracting', NULL, 'before');
-    INSERT INTO document_jobs VALUES ('document-1', 'processing', NULL, 'worker-1', 'future', NULL, NULL, 'before');
+    INSERT INTO document_jobs VALUES ('document-1', 'processing', NULL, 'worker-1', 'future', NULL, 'receiving', NULL, NULL, 'before');
     INSERT INTO questions VALUES ('question-18', 'document-1', '18', '已人工修复的第18题解析');
   `);
 

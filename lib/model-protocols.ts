@@ -42,6 +42,7 @@ type VisionRequestInput = {
   text: string;
   images: VisionImage[];
   jsonMode?: boolean;
+  stream?: boolean;
 };
 
 export type VisionHttpRequest = {
@@ -85,6 +86,7 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
         temperature: 0,
         system: input.system,
         messages: [{ role: "user", content }],
+        ...(input.stream ? { stream: true } : {}),
       },
     };
   }
@@ -103,6 +105,7 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
       temperature: 0,
     };
     if (input.jsonMode) body.text = { format: { type: "json_object" } };
+    if (input.stream) body.stream = true;
     return {
       protocol,
       endpoint,
@@ -126,11 +129,92 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
     ],
   };
   if (input.jsonMode) body.response_format = { type: "json_object" };
+  if (input.stream) {
+    body.stream = true;
+    body.stream_options = { include_usage: true };
+  }
   return {
     protocol,
     endpoint,
     headers: { authorization: `Bearer ${input.apiKey}`, "content-type": "application/json" },
     body,
+  };
+}
+
+export type VisionStreamEvent = {
+  textDelta?: string;
+  thinkingDelta?: string;
+  done?: boolean;
+  error?: string;
+  usagePayload?: unknown;
+};
+
+function stringFromUnknownContent(value: unknown) {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return "";
+  return value.flatMap((block) => {
+    const item = objectValue(block);
+    const text = item?.text ?? item?.content;
+    return typeof text === "string" ? [text] : [];
+  }).join("");
+}
+
+/** Turns one provider SSE payload into the common text/thinking activity protocol. */
+export function extractVisionStreamEvent(protocolValue: string, data: string): VisionStreamEvent {
+  const protocol = normalizeModelProtocol(protocolValue);
+  if (data.trim() === "[DONE]") return { done: true };
+  let value: unknown;
+  try {
+    value = JSON.parse(data);
+  } catch {
+    return {};
+  }
+  const event = objectValue(value);
+  if (!event) return {};
+  const providerError = objectValue(event.error);
+  if (providerError) return { error: String(providerError.message ?? providerError.type ?? "模型流返回错误") };
+
+  if (protocol === "anthropic-messages") {
+    const type = String(event.type ?? "");
+    if (type === "error") {
+      const detail = objectValue(event.error);
+      return { error: String(detail?.message ?? "Anthropic 流返回错误") };
+    }
+    if (type === "content_block_delta") {
+      const delta = objectValue(event.delta);
+      if (delta?.type === "text_delta" && typeof delta.text === "string") return { textDelta: delta.text };
+      if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") return { thinkingDelta: delta.thinking };
+    }
+    if (type === "message_delta") return { usagePayload: event };
+    if (type === "message_stop") return { done: true };
+    return {};
+  }
+
+  if (protocol === "openai-responses") {
+    const type = String(event.type ?? "");
+    if (type === "response.output_text.delta" && typeof event.delta === "string") return { textDelta: event.delta };
+    if ((type.includes("reasoning") || type.includes("thinking")) && type.endsWith(".delta")) {
+      return { thinkingDelta: stringFromUnknownContent(event.delta) || String(event.delta ?? "") };
+    }
+    if (type === "response.completed") return { done: true, usagePayload: event.response };
+    if (type === "response.failed" || type === "error") {
+      const response = objectValue(event.response);
+      const detail = objectValue(response?.error) ?? objectValue(event.error);
+      return { error: String(detail?.message ?? "Responses 流返回错误") };
+    }
+    return {};
+  }
+
+  const choices = Array.isArray(event.choices) ? event.choices : [];
+  const first = objectValue(choices[0]);
+  const delta = objectValue(first?.delta);
+  const textDelta = stringFromUnknownContent(delta?.content);
+  const thinkingDelta = stringFromUnknownContent(delta?.reasoning_content ?? delta?.reasoning ?? delta?.thinking);
+  return {
+    ...(textDelta ? { textDelta } : {}),
+    ...(thinkingDelta ? { thinkingDelta } : {}),
+    ...(event.usage ? { usagePayload: event } : {}),
+    ...(first?.finish_reason ? { done: true } : {}),
   };
 }
 

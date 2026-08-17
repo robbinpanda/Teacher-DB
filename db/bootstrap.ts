@@ -127,7 +127,10 @@ CREATE TABLE IF NOT EXISTS document_jobs (
   document_id TEXT PRIMARY KEY NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   owner_id TEXT NOT NULL DEFAULT 'local-demo', profile_id TEXT, status TEXT NOT NULL DEFAULT 'queued',
   priority INTEGER NOT NULL DEFAULT 0, attempt INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT,
-  lease_owner TEXT, lease_expires_at TEXT, last_error TEXT, queued_at TEXT NOT NULL,
+  lease_owner TEXT, lease_expires_at TEXT, last_error TEXT,
+  question_total INTEGER, completed_question_numbers_json TEXT NOT NULL DEFAULT '[]',
+  stream_phase TEXT NOT NULL DEFAULT 'queued', last_stream_event_at TEXT, stream_message TEXT,
+  queued_at TEXT NOT NULL,
   started_at TEXT, finished_at TEXT, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS document_jobs_queue_idx ON document_jobs(status, next_attempt_at, queued_at);
@@ -198,6 +201,13 @@ const upgrades: Record<string, Record<string, string>> = {
     extraction_pause_reason: "TEXT",
     extraction_paused_at: "TEXT",
     extraction_failure_streak: "INTEGER NOT NULL DEFAULT 0",
+  },
+  document_jobs: {
+    question_total: "INTEGER",
+    completed_question_numbers_json: "TEXT NOT NULL DEFAULT '[]'",
+    stream_phase: "TEXT NOT NULL DEFAULT 'queued'",
+    last_stream_event_at: "TEXT",
+    stream_message: "TEXT",
   },
 };
 

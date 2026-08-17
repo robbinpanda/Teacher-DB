@@ -1,10 +1,11 @@
-import { getDb, sqliteTransaction } from "../../../db";
+import { getDb, getSqlite, sqliteTransaction } from "../../../db";
 import { and, eq } from "drizzle-orm";
 import { ensureDatabase } from "../../../db/bootstrap";
 import { documents } from "../../../db/schema";
 import { now, requestOwner } from "../../../lib/server";
 import { deleteFile, putFile } from "../../../lib/file-storage";
 import { getDocuments } from "../../../lib/question-repository";
+import { findReusableDocument } from "../../../lib/document-upload";
 
 export const runtime = "nodejs";
 
@@ -41,9 +42,9 @@ export async function POST(request: Request) {
   }
   const checksum = hex(await crypto.subtle.digest("SHA-256", bytes));
   const ownerId = requestOwner(request);
-  const existing = await getDb().query.documents.findFirst({
-    where: and(eq(documents.ownerId, ownerId), eq(documents.checksum, checksum)),
-  });
+  // A source-only deletion intentionally preserves its questions and checksum.
+  // It must not hijack a later upload of the same PDF; that upload gets a new document.
+  const existing = findReusableDocument(getSqlite(), ownerId, checksum);
   if (existing) {
     if (pageCount === 0) {
       return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount: existing.pageCount, duplicate: true, resumed: existing.status !== "complete", status: existing.status });
@@ -67,10 +68,7 @@ export async function POST(request: Request) {
   await putFile(originalKey, bytes);
   try {
     const outcome = sqliteTransaction((transaction) => {
-      const racedExisting = transaction.prepare(
-        `SELECT id, original_key AS originalKey, page_count AS pageCount, status
-           FROM documents WHERE owner_id = ? AND checksum = ? LIMIT 1`,
-      ).get(ownerId, checksum) as { id: string; originalKey: string | null; pageCount: number; status: string } | undefined;
+      const racedExisting = findReusableDocument(transaction, ownerId, checksum);
       if (racedExisting) return { existing: racedExisting } as const;
       transaction.prepare(
         `INSERT INTO documents

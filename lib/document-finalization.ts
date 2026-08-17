@@ -22,10 +22,12 @@ export function finalizeDocumentState(
     .run(status, input.terminalError, input.timestamp, input.documentId);
   sqlite.prepare(
     `UPDATE document_jobs SET status = ?, next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL,
-       last_error = ?, finished_at = ?, updated_at = ? WHERE document_id = ?`,
+       last_error = ?, stream_phase = ?, stream_message = ?, finished_at = ?, updated_at = ? WHERE document_id = ?`,
   ).run(
     input.terminalError ? "failed" : "complete",
     input.terminalError,
+    input.terminalError ? "error" : "complete",
+    input.terminalError ?? "整卷识别完成，进入人工审核",
     input.timestamp,
     input.timestamp,
     input.documentId,

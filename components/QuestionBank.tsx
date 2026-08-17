@@ -22,6 +22,7 @@ import {
 import type { QuestionType, QuestionWithSource } from "../lib/types";
 import { typeLabels } from "../lib/question-labels";
 import { moveOrderedItem } from "../lib/ordered-selection";
+import { stripLeadingQuestionNumber } from "../lib/question-text.js";
 import { MathText } from "./MathText";
 import { useEducationScope } from "./AppShell";
 
@@ -55,6 +56,10 @@ export function QuestionBank({
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [bankStats, setBankStats] = useState(stats);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
   const selected = selectedQuestions;
   const selectedIds = new Set(selected.map((question) => question.id));
   const tags = ["全部", ...availableTags];
@@ -85,7 +90,7 @@ export function QuestionBank({
       }
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [activeTag, page, query, source, stage, subject, type]);
+  }, [activeTag, page, query, refreshKey, source, stage, subject, type]);
 
   function toggle(question: QuestionWithSource) {
     if (selectedIds.has(question.id)) {
@@ -128,6 +133,42 @@ export function QuestionBank({
     setPage(1);
   }
 
+  async function deleteSelectedQuestions() {
+    if (!selected.length || deleting) return;
+    const confirmed = window.confirm(
+      `确定永久删除已选的 ${selected.length} 道题吗？\n\n题目会同时从已保存的组卷中移除，此操作无法撤销；原试卷仍会保留。`,
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const ids = selected.map((question) => question.id);
+      const response = await fetch("/api/questions", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const result = await response.json().catch(() => ({})) as { deleted?: number; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "题目删除失败");
+      const deletedIds = new Set(ids);
+      const deletedWithAssets = selected.filter((question) => question.assets.length > 0).length;
+      setQuestions((items) => items.filter((question) => !deletedIds.has(question.id)));
+      setBankStats((value) => ({
+        ...value,
+        total: Math.max(0, value.total - (result.deleted ?? ids.length)),
+        approved: Math.max(0, value.approved - (result.deleted ?? ids.length)),
+        withAssets: Math.max(0, value.withAssets - deletedWithAssets),
+      }));
+      setSelectedQuestions([]);
+      setBasketOpen(false);
+      setRefreshKey((value) => value + 1);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "题目删除失败");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const orderedSelectedIds = selected.map((question) => question.id);
   const paperHref = "/papers/new?ids=" + encodeURIComponent(orderedSelectedIds.join(","));
   const exportIds = selected.length ? "?ids=" + encodeURIComponent(orderedSelectedIds.join(",")) + "&" : "?";
@@ -140,14 +181,15 @@ export function QuestionBank({
         <div className="bank-title-row">
           <h1>题库</h1>
           <div className="bank-summary" aria-label="题库概况">
-            <span><b>{stats.approved}</b> 道已入库</span>
+            <span><b>{bankStats.approved}</b> 道已入库</span>
             <i />
-            <span>{stats.withAssets} 道含图</span>
+            <span>{bankStats.withAssets} 道含图</span>
             <i />
-            <span>{stats.papers} 份试卷</span>
+            <span>{bankStats.papers} 份试卷</span>
           </div>
         </div>
         <div className="bank-header-actions">
+          {selected.length > 0 && <button type="button" className="btn bank-delete-selected" disabled={deleting} onClick={() => void deleteSelectedQuestions()}><Trash2 size={15} /> {deleting ? "删除中…" : `删除已选 ${selected.length} 题`}</button>}
           <details className="export-menu">
             <summary className="btn"><Download size={15} /> 导出 <ChevronDown size={13} /></summary>
             <div>
@@ -180,7 +222,7 @@ export function QuestionBank({
           </div>
           <span>默认精简展示，点击展开查看选项与答案</span>
         </div>
-        {searchError && <p className="form-error">{searchError}</p>}
+        {(searchError || deleteError) && <p className="form-error">{searchError || deleteError}</p>}
         <div className={"question-cards " + (loading ? "loading" : "")}>
           {questions.map((question) => {
             const checked = selectedIds.has(question.id);
@@ -194,13 +236,13 @@ export function QuestionBank({
                     <span className="pill gray">{typeLabels[question.type]}</span>
                     <span>{question.source.grade} · {question.source.subject}</span>
                     <span className="source-label" title={question.source.documentName}>{sourceLabel}</span>
+                    <span className="source-question-number">· 原题号 {question.number}</span>
                     {question.assets.length > 0 && <span className="has-image"><ImageIcon size={12} /> 含图</span>}
                     {question.tags.slice(0, 3).map((tag) => <span className="question-tag" key={tag}>#{tag}</span>)}
                     {question.tags.length > 3 && <span className="question-tag">+{question.tags.length - 3}</span>}
                   </div>
                   <button type="button" className="question-stem" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}>
-                    <b>{question.number}.</b>
-                    <span className="question-stem-text"><MathText text={question.stem} /></span>
+                    <span className="question-stem-text"><MathText text={stripLeadingQuestionNumber(question.stem, question.number)} /></span>
                   </button>
                   {expanded && <div className="question-details">
                     {question.options?.length ? <div className="bank-options">{question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div> : null}
@@ -230,7 +272,7 @@ export function QuestionBank({
             <div><span>{typeLabels[question.type]} · 原题号 {question.number}</span><p><MathText text={question.stem} /></p><small>{question.source.documentName}</small></div>
             <div className="basket-item-actions"><button type="button" aria-label={`上移第 ${index + 1} 题`} disabled={index === 0} onClick={() => moveSelected(index, -1)}><ArrowUp size={13} /></button><button type="button" aria-label={`下移第 ${index + 1} 题`} disabled={index === selected.length - 1} onClick={() => moveSelected(index, 1)}><ArrowDown size={13} /></button><button type="button" className="danger" aria-label={`移除第 ${index + 1} 题`} onClick={() => removeSelected(question.id)}><Trash2 size={13} /></button></div>
           </li>)}</ol>
-          <footer><button type="button" onClick={() => { setSelectedQuestions([]); setBasketOpen(false); }}>清空</button><div><a href={`/api/exports/questions${exportIds}format=markdown`}><Download size={13} /> Markdown</a><a href={`/api/exports/questions${exportIds}format=json`}><Download size={13} /> JSON</a><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={14} /> 去组卷</Link></div></footer>
+          <footer><div className="basket-destructive-actions"><button type="button" onClick={() => { setSelectedQuestions([]); setBasketOpen(false); }}>取消选择</button><button type="button" className="permanent-delete" disabled={deleting} onClick={() => void deleteSelectedQuestions()}><Trash2 size={12} /> {deleting ? "删除中…" : "永久删除"}</button></div><div><a href={`/api/exports/questions${exportIds}format=markdown`}><Download size={13} /> Markdown</a><a href={`/api/exports/questions${exportIds}format=json`}><Download size={13} /> JSON</a><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={14} /> 去组卷</Link></div></footer>
         </aside> : <button type="button" className="question-basket-trigger" aria-expanded="false" onClick={() => setBasketOpen(true)}><span><ShoppingBasket size={20} /><b>{selected.length}</b></span><i><strong>选题篮</strong><small>查看、排序或删除</small></i><ChevronRight size={16} /></button>}
       </>}
     </div>

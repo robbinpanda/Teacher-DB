@@ -49,6 +49,7 @@ export async function POST(request: Request, context: { params: Promise<{ docume
       system: [
         "你是答案页匹配专家。只读取图片中明确可见的答案和解析，并匹配到给定题号。",
         "不得创造题号；没有明确答案的题不要输出。若页面重复出现同题，合并更完整的答案和解析。",
+        "answer 与 analysis 必须逐字、逐符号按原文顺序转录，完整保留每个小问、推导步骤、条件、单位、标点和结论。严禁概括、改写、缩写、润色、合并步骤或用自己的话总结；看不清的部分不要猜测。",
         "数学表达式转为用单个 $ 包裹的 LaTeX。只返回严格 JSON。",
         "格式：{\"matches\":[{\"number\":\"1\",\"answer\":\"\",\"analysis\":\"\",\"confidence\":0.96}],\"unmatchedNotes\":[\"无法确认的内容\"]}",
       ].join("\n"),

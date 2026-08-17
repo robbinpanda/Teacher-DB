@@ -57,6 +57,10 @@ export type SourceDocument = {
   completedPageCount: number;
   failedPageCount: number;
   retryWaitPageCount: number;
+  recognitionQuestionTotal?: number | null;
+  recognizedQuestionCount?: number;
+  recognitionPhase?: string | null;
+  recognitionMessage?: string | null;
   jobStatus?: string | null;
   jobAttempt?: number | null;
   nextAttemptAt?: string | null;
@@ -116,6 +120,11 @@ export type ReviewDocument = {
   error?: string | null;
   jobStatus?: string | null;
   nextAttemptAt?: string | null;
+  recognitionQuestionTotal?: number | null;
+  recognizedQuestionNumbersJson?: string | null;
+  recognitionPhase?: string | null;
+  recognitionLastEventAt?: string | null;
+  recognitionMessage?: string | null;
   modelProfileId?: string | null;
   modelDisplayName?: string | null;
   modelName?: string | null;

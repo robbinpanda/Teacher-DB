@@ -10,7 +10,7 @@ import { useEducationScope } from "./AppShell";
 
 type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "paused" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
-type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; documentId?: string; renderer?: string; modelDisplayName?: string };
+type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; documentId?: string; renderer?: string; modelDisplayName?: string };
 type QueueSnapshot = {
   concurrency?: number;
   activeCount?: number;
@@ -18,7 +18,7 @@ type QueueSnapshot = {
   paused?: boolean;
   pauseReason?: string | null;
   pausedCount?: number;
-  jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; nextAttemptAt?: string; lastError?: string; modelDisplayName?: string; modelName?: string }>;
+  jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; streamPhase?: string; streamMessage?: string; nextAttemptAt?: string; lastError?: string; modelDisplayName?: string; modelName?: string }>;
   error?: string;
 };
 type WorkbenchModelProfile = {
@@ -164,17 +164,20 @@ export function UploadWorkbench() {
         const job = result.jobs?.find((candidate) => candidate.documentId === task.documentId);
         if (!job || ["rendering", "uploading"].includes(task.stage)) return task;
         const modelDisplayName = job.modelDisplayName ?? job.modelName ?? task.modelDisplayName;
-        if (job.status === "complete") return { ...task, modelDisplayName, stage: "done", completedPages: job.totalPages, message: "全部页面识别完成，已进入待审核区。" };
+        const questionTotal = job.questionTotal ?? null;
+        const completedQuestionCount = job.completedQuestionCount ?? 0;
+        const questionProgress = questionTotal ? `${completedQuestionCount}/${questionTotal} 题` : "正在统计题目总数";
+        if (job.status === "complete") return { ...task, modelDisplayName, stage: "done", completedPages: job.totalPages, questionTotal, completedQuestionCount, message: `整卷 ${questionProgress} 已完成，已进入待审核区。` };
         if (job.status === "failed") return { ...task, modelDisplayName, stage: "error", message: job.lastError ?? "识别失败，可进入审核页重新入队。" };
         if (job.status === "retry_wait") return {
-          ...task, modelDisplayName, stage: "retry_wait", completedPages: job.completedPages,
-          message: `已保存 ${job.completedPages}/${job.totalPages} 页；网络退避中${job.nextAttemptAt ? `，${new Date(job.nextAttemptAt).toLocaleTimeString()} 自动继续` : ""}。`,
+          ...task, modelDisplayName, stage: "retry_wait", completedPages: job.completedPages, questionTotal, completedQuestionCount,
+          message: `已保存 ${questionProgress}；退避中${job.nextAttemptAt ? `，${new Date(job.nextAttemptAt).toLocaleTimeString()} 自动继续` : ""}。`,
         };
         if (job.status === "paused") return {
-          ...task, modelDisplayName, stage: "paused", completedPages: job.completedPages,
-          message: `已保存 ${job.completedPages}/${job.totalPages} 页；全部识别已暂停，点击下方“全部开始”后继续。`,
+          ...task, modelDisplayName, stage: "paused", completedPages: job.completedPages, questionTotal, completedQuestionCount,
+          message: `已保存 ${questionProgress}；全部识别已暂停，点击下方“全部开始”后继续。`,
         };
-        return { ...task, modelDisplayName, stage: job.status === "processing" ? "extracting" : "queued", completedPages: job.completedPages, message: `可靠队列中：已完成 ${job.completedPages}/${job.totalPages} 页。` };
+        return { ...task, modelDisplayName, stage: job.status === "processing" ? "extracting" : "queued", completedPages: job.completedPages, questionTotal, completedQuestionCount, message: job.streamMessage ?? `可靠队列中：${questionProgress}。` };
       }));
     };
     void poll();
@@ -396,7 +399,9 @@ export function UploadWorkbench() {
         {tasks.map((task) => <article key={task.id} className={`upload-task ${task.stage}`}>
           <span className="upload-task-icon">{["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage) ? <LoaderCircle className="spin" size={16} /> : task.stage === "done" ? <CheckCircle2 size={16} /> : task.stage === "error" ? <AlertCircle size={16} /> : <FileText size={16} />}</span>
           <div><strong>{task.fileName}</strong><small>{task.message}</small>{task.modelDisplayName && <em className="upload-task-model"><Sparkles size={10} /> 识别模型：{task.modelDisplayName}</em>}{task.renderer && <em>渲染：{task.renderer}</em>}</div>
-          <b>{task.pageCount ? `${Math.min(task.completedPages, task.pageCount)}/${task.pageCount} 页` : task.stage === "idle" ? "排队中" : "准备中"}</b>
+          <b>{["queued", "extracting", "retry_wait", "paused", "done"].includes(task.stage)
+            ? task.questionTotal ? `${task.completedQuestionCount ?? 0}/${task.questionTotal} 题` : task.stage === "done" ? "已完成" : "统计题目"
+            : task.pageCount ? `${Math.min(task.completedPages, task.pageCount)}/${task.pageCount} 页` : task.stage === "idle" ? "排队中" : "准备中"}</b>
           {task.documentId && <Link href={`/review/${task.documentId}`} onClick={(event) => event.stopPropagation()}>{task.stage === "done" ? "审核" : "查看"}</Link>}
         </article>)}
       </div>}

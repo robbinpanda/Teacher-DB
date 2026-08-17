@@ -115,13 +115,21 @@ export async function enqueueDocumentExtraction(input: {
     }
     transaction.prepare(
       `INSERT INTO document_jobs
-        (document_id, owner_id, profile_id, status, priority, attempt, queued_at, updated_at)
-       VALUES (?, ?, ?, ?, 0, 0, ?, ?)
+        (document_id, owner_id, profile_id, status, priority, attempt, question_total,
+         completed_question_numbers_json, stream_phase, stream_message, queued_at, updated_at)
+       VALUES (?, ?, ?, ?, 0, 0, NULL, '[]', ?, ?, ?, ?)
        ON CONFLICT(document_id) DO UPDATE SET
          owner_id = excluded.owner_id, profile_id = excluded.profile_id, status = excluded.status,
          next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL,
-         last_error = NULL, finished_at = NULL, updated_at = excluded.updated_at`,
-    ).run(input.documentId, input.ownerId, profile.id, queueStatus, timestamp, timestamp);
+         last_error = NULL, question_total = NULL, completed_question_numbers_json = '[]',
+         stream_phase = excluded.stream_phase, last_stream_event_at = NULL,
+         stream_message = excluded.stream_message, finished_at = NULL, updated_at = excluded.updated_at`,
+    ).run(
+      input.documentId, input.ownerId, profile.id, queueStatus,
+      queueStatus === "paused" ? "paused" : "queued",
+      queueStatus === "paused" ? pausedReason : "等待整卷模型调用",
+      timestamp, timestamp,
+    );
     transaction.prepare("UPDATE documents SET status = 'extracting', error = ?, updated_at = ? WHERE id = ?")
       .run(queueSettings?.paused ? pausedReason : null, timestamp, input.documentId);
   });
@@ -133,7 +141,10 @@ export function getDocumentJob(ownerId: string, documentId: string) {
   return getSqlite().prepare(
     `SELECT document_id AS documentId, status, attempt, next_attempt_at AS nextAttemptAt,
        last_error AS lastError, queued_at AS queuedAt, started_at AS startedAt,
-       finished_at AS finishedAt, updated_at AS updatedAt
+       finished_at AS finishedAt, updated_at AS updatedAt, question_total AS questionTotal,
+       completed_question_numbers_json AS completedQuestionNumbersJson,
+       stream_phase AS streamPhase, last_stream_event_at AS lastStreamEventAt,
+       stream_message AS streamMessage
      FROM document_jobs WHERE owner_id = ? AND document_id = ?`,
   ).get(ownerId, documentId);
 }
@@ -148,6 +159,9 @@ export async function listDocumentJobs(ownerId: string) {
        COALESCE(mp.provider, MAX(CASE WHEN r.model <> 'pending' THEN r.provider END)) AS modelProvider,
        j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError,
        j.queued_at AS queuedAt, j.started_at AS startedAt, j.finished_at AS finishedAt,
+       j.question_total AS questionTotal,
+       COALESCE(json_array_length(j.completed_question_numbers_json), 0) AS completedQuestionCount,
+       j.stream_phase AS streamPhase, j.stream_message AS streamMessage,
        d.page_count AS totalPages,
        SUM(CASE WHEN r.status = 'complete' THEN 1 ELSE 0 END) AS completedPages,
        SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END) AS failedPages,
@@ -180,9 +194,10 @@ function automaticPauseReason(message: string) {
 function parkWaitingJobs(sqlite: Database.Database, ownerId: string, reason: string, timestamp: string) {
   sqlite.prepare(
     `UPDATE document_jobs SET status = 'paused', next_attempt_at = NULL, lease_owner = NULL,
-       lease_expires_at = NULL, last_error = ?, finished_at = NULL, updated_at = ?
+       lease_expires_at = NULL, last_error = ?, stream_phase = 'paused', stream_message = ?,
+       finished_at = NULL, updated_at = ?
      WHERE owner_id = ? AND status IN ('queued', 'retry_wait', 'failed')`,
-  ).run(reason, timestamp, ownerId);
+  ).run(reason, reason, timestamp, ownerId);
   sqlite.prepare(
     `UPDATE extraction_runs SET status = 'paused', next_attempt_at = NULL,
        lease_owner = NULL, lease_expires_at = NULL, finished_at = NULL
@@ -205,9 +220,10 @@ function parkClaimedJob(sqlite: Database.Database, job: JobRow & { workerId: str
   ).run(job.documentId);
   sqlite.prepare(
     `UPDATE document_jobs SET status = 'paused', next_attempt_at = NULL, lease_owner = NULL,
-       lease_expires_at = NULL, last_error = ?, finished_at = NULL, updated_at = ?
+       lease_expires_at = NULL, last_error = ?, stream_phase = 'paused', stream_message = ?,
+       finished_at = NULL, updated_at = ?
      WHERE document_id = ? AND lease_owner = ?`,
-  ).run(reason, timestamp, job.documentId, job.workerId);
+  ).run(reason, reason, timestamp, job.documentId, job.workerId);
   sqlite.prepare("UPDATE documents SET status = 'extracting', error = ?, updated_at = ? WHERE id = ?")
     .run(reason, timestamp, job.documentId);
 }
@@ -320,7 +336,10 @@ export async function setExtractionQueuePaused(ownerId: string, paused: boolean)
     ).run(ownerId);
     const resumed = transaction.prepare(
       `UPDATE document_jobs SET status = 'queued', attempt = 0, next_attempt_at = NULL,
-         lease_owner = NULL, lease_expires_at = NULL, last_error = NULL, finished_at = NULL, updated_at = ?
+         lease_owner = NULL, lease_expires_at = NULL, last_error = NULL, stream_phase = 'queued',
+         stream_message = '等待整卷模型调用', question_total = NULL,
+         completed_question_numbers_json = '[]', last_stream_event_at = NULL,
+         finished_at = NULL, updated_at = ?
        WHERE owner_id = ? AND status IN ('paused', 'retry_wait', 'failed', 'queued')`,
     ).run(timestamp, ownerId);
     transaction.prepare(
@@ -338,7 +357,8 @@ function claimJobs() {
   return sqliteTransaction((transaction) => {
     transaction.prepare(
       `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
-         lease_expires_at = NULL, last_error = COALESCE(last_error, '工作进程中断，已自动恢复'), updated_at = ?
+         lease_expires_at = NULL, stream_phase = 'retry_wait', stream_message = '工作进程中断，等待自动恢复',
+         last_error = COALESCE(last_error, '工作进程中断，已自动恢复'), updated_at = ?
        WHERE status = 'processing' AND lease_expires_at <= ?`,
     ).run(timestamp, timestamp, timestamp);
     transaction.prepare(
@@ -379,7 +399,9 @@ function claimJobs() {
         const workerId = crypto.randomUUID();
         transaction.prepare(
           `UPDATE document_jobs SET status = 'processing', lease_owner = ?, lease_expires_at = ?,
-             next_attempt_at = NULL, last_error = NULL,
+             next_attempt_at = NULL, last_error = NULL, question_total = NULL,
+             completed_question_numbers_json = '[]', stream_phase = 'connecting',
+             stream_message = '正在连接模型并通读整卷', last_stream_event_at = NULL,
              started_at = COALESCE(started_at, ?), attempt = attempt + 1, updated_at = ?
            WHERE document_id = ?`,
         ).run(workerId, futureIso(LEASE_MS), timestamp, timestamp, job.documentId);
@@ -455,11 +477,13 @@ async function processJob(job: JobRow & { workerId: string }) {
           assertDocumentLease(transaction, job.documentId, job.workerId, timestamp);
           const changed = transaction.prepare(
             `UPDATE document_jobs SET status = ?, next_attempt_at = ?, lease_owner = NULL,
-               lease_expires_at = NULL, last_error = ?, updated_at = ?, finished_at = ?
+               lease_expires_at = NULL, last_error = ?, stream_phase = ?, stream_message = ?,
+               updated_at = ?, finished_at = ?
              WHERE document_id = ? AND lease_owner = ?`,
           ).run(
             failed ? "failed" : "retry_wait", waiting.nextAttemptAt,
-            failed?.error ?? null, timestamp, failed ? timestamp : null, job.documentId, job.workerId,
+            failed?.error ?? null, failed ? "error" : "retry_wait",
+            failed?.error ?? "等待自动重试", timestamp, failed ? timestamp : null, job.documentId, job.workerId,
           );
           if (failed && changed.changes === 1) {
             transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
@@ -513,9 +537,9 @@ async function processJob(job: JobRow & { workerId: string }) {
           ).run(message, failure.code ?? "extraction_error", nextAttemptAt, timestamp, job.documentId, run.pageNumber);
           transaction.prepare(
             `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
-               lease_expires_at = NULL, last_error = ?, updated_at = ?
+               lease_expires_at = NULL, last_error = ?, stream_phase = 'retry_wait', stream_message = ?, updated_at = ?
              WHERE document_id = ? AND lease_owner = ?`,
-          ).run(nextAttemptAt, `整卷识别：${message}`, timestamp, job.documentId, job.workerId);
+          ).run(nextAttemptAt, `整卷识别：${message}`, message, timestamp, job.documentId, job.workerId);
           transaction.prepare("UPDATE documents SET status = 'extracting', error = ?, updated_at = ? WHERE id = ?")
             .run(`整卷将在 ${nextAttemptAt} 自动重试：${message}`.slice(0, 4000), timestamp, job.documentId);
         });
@@ -529,9 +553,9 @@ async function processJob(job: JobRow & { workerId: string }) {
           ).run(message, failure.code ?? "extraction_error", timestamp, job.documentId, run.pageNumber);
           transaction.prepare(
             `UPDATE document_jobs SET status = 'failed', next_attempt_at = NULL, lease_owner = NULL,
-               lease_expires_at = NULL, last_error = ?, finished_at = ?, updated_at = ?
+               lease_expires_at = NULL, last_error = ?, stream_phase = 'error', stream_message = ?, finished_at = ?, updated_at = ?
              WHERE document_id = ? AND lease_owner = ?`,
-          ).run(`整卷识别：${message}`, timestamp, timestamp, job.documentId, job.workerId);
+          ).run(`整卷识别：${message}`, message, timestamp, timestamp, job.documentId, job.workerId);
           transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
             .run(`整卷识别：${message}`.slice(0, 4000), timestamp, job.documentId);
         });
@@ -561,9 +585,9 @@ async function processJob(job: JobRow & { workerId: string }) {
         ).run(message.slice(0, 4000), timestamp, job.documentId);
         transaction.prepare(
           `UPDATE document_jobs SET status = 'failed', next_attempt_at = NULL, lease_owner = NULL,
-             lease_expires_at = NULL, last_error = ?, finished_at = ?, updated_at = ?
+             lease_expires_at = NULL, last_error = ?, stream_phase = 'error', stream_message = ?, finished_at = ?, updated_at = ?
            WHERE document_id = ? AND lease_owner = ?`,
-        ).run(message.slice(0, 4000), timestamp, timestamp, job.documentId, job.workerId);
+        ).run(message.slice(0, 4000), message.slice(0, 1000), timestamp, timestamp, job.documentId, job.workerId);
         transaction.prepare("UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
           .run(`连续 ${MAX_EXTRACTION_ATTEMPTS} 次处理失败，任务已暂停：${message}`.slice(0, 4000), timestamp, job.documentId);
       } else {
@@ -577,9 +601,9 @@ async function processJob(job: JobRow & { workerId: string }) {
         }
         transaction.prepare(
           `UPDATE document_jobs SET status = 'retry_wait', next_attempt_at = ?, lease_owner = NULL,
-             lease_expires_at = NULL, last_error = ?, updated_at = ?
+             lease_expires_at = NULL, last_error = ?, stream_phase = 'retry_wait', stream_message = ?, updated_at = ?
            WHERE document_id = ? AND lease_owner = ?`,
-        ).run(nextAttemptAt, message.slice(0, 4000), timestamp, job.documentId, job.workerId);
+        ).run(nextAttemptAt, message.slice(0, 4000), message.slice(0, 1000), timestamp, job.documentId, job.workerId);
         transaction.prepare("UPDATE documents SET status = 'extracting', error = ?, updated_at = ? WHERE id = ?")
           .run(`处理异常，将在 ${nextAttemptAt} 自动重试：${message}`.slice(0, 4000), timestamp, job.documentId);
       }
