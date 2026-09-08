@@ -93,6 +93,7 @@ export const questions = sqliteTable("questions", {
   score: integer("score").notNull().default(0),
   folderId: text("folder_id").references(() => questionFolders.id, { onDelete: "set null" }),
   parentQuestionId: text("parent_question_id"),
+  parentExternalId: text("parent_external_id"),
   variationKind: text("variation_kind"),
   variationReviewStatus: text("variation_review_status"),
   variationReviewJson: text("variation_review_json"),

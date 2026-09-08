@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowLeft, BarChart3, CheckCircle2, ClipboardPen, FilePlus2, Lock, Printer, RotateCcw, Save, Tag, Users } from "lucide-react";
 import { MathText } from "./MathText";
+import { parseScoreEntries } from "../lib/assignment-scores";
 
 type AssignmentItem = { questionId: string; position: number; maxScore: number; snapshot: { stem?: string; type?: string; answer?: string; tags?: string[] } };
 type Submission = { id: string; classId: string; className: string; studentId: string; studentNo: string; studentName: string; status: string; totalScore: number | null; teacherComment: string; scores: Record<string, number> };
@@ -59,18 +60,25 @@ export function AssignmentWorkspace({ initialDetail }: { initialDetail: Assignme
 }
 
 function SubmissionEditor({ assignmentId, submission, items, disabled, onSaved }: { assignmentId: string; submission: Submission; items: AssignmentItem[]; disabled: boolean; onSaved: () => Promise<void> }) {
-  const [scores, setScores] = useState<Record<string, string>>(() => Object.fromEntries(items.map((item) => [item.questionId, submission.scores[item.questionId]?.toString() ?? "0"])));
+  const [scores, setScores] = useState<Record<string, string>>(() => Object.fromEntries(items.map((item) => [item.questionId, submission.scores[item.questionId]?.toString() ?? ""])));
   const [comment, setComment] = useState(submission.teacherComment);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const total = items.reduce((sum, item) => sum + (Number(scores[item.questionId]) || 0), 0);
   async function save() {
+    if (disabled || busy) return;
     setBusy(true); setError("");
-    const response = await fetch(`/api/assignments/${assignmentId}/scores`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ submissionId: submission.id, scores: Object.fromEntries(Object.entries(scores).map(([id, value]) => [id, Number(value)])), teacherComment: comment }) });
-    const result = await response.json().catch(() => ({})) as { error?: string };
-    setBusy(false);
-    if (!response.ok) { setError(result.error ?? "保存失败"); return; }
-    await onSaved();
+    try {
+      const parsedScores = parseScoreEntries(items, scores);
+      const response = await fetch(`/api/assignments/${assignmentId}/scores`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ submissionId: submission.id, scores: parsedScores, teacherComment: comment }) });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) { setError(result.error ?? "保存失败"); return; }
+      await onSaved();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "保存失败，请检查网络后重试");
+    } finally {
+      setBusy(false);
+    }
   }
   return <><header className="grading-editor-header"><div><span>{submission.studentName.slice(-2)}</span><div><h2>{submission.studentName}</h2><p>{submission.className} · 学号 {submission.studentNo}</p></div></div><strong>{total}/{items.reduce((sum, item) => sum + item.maxScore, 0)} 分</strong></header><div className="score-entry-list">{items.map((item) => <article key={item.questionId}><div className="score-question"><b>{item.position + 1}</b><div><MathText text={item.snapshot.stem ?? "题目快照缺失"} />{item.snapshot.tags?.length ? <small>{item.snapshot.tags.map((tag) => <span key={tag}>#{tag}</span>)}</small> : null}</div></div><label><span>得分</span><div><input disabled={disabled} type="number" min="0" max={item.maxScore} step="0.5" value={scores[item.questionId]} onChange={(event) => setScores({ ...scores, [item.questionId]: event.target.value })} /><i>/ {item.maxScore}</i></div></label></article>)}</div><label className="grading-comment"><span>教师评语（可选）</span><textarea disabled={disabled} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="记录整体表现、需要订正的内容或讲评提醒" /></label>{error && <p className="school-inline-error">{error}</p>}<footer className="grading-save-bar"><span>{disabled ? "作业已结束，如需修改请先重新开放。" : "保存后班级学情会立即重新计算。"}</span><button className="btn btn-primary" type="button" disabled={disabled || busy} onClick={() => void save()}><Save size={14} /> {busy ? "保存中…" : submission.status === "graded" ? "更新得分" : "完成批改"}</button></footer></>;
 }

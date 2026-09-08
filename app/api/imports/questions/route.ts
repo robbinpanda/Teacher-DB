@@ -126,14 +126,15 @@ export async function POST(request: Request) {
         sqlite.prepare(
           `INSERT INTO questions
             (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json,
-             status, needs_human_review, confidence, score, folder_id, parent_question_id, variation_kind,
+             status, needs_human_review, confidence, score, folder_id, parent_question_id, parent_external_id, variation_kind,
              variation_review_status, variation_review_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'approved', 0, 1, 0, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'approved', 0, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           id, documentIds.get(question.source.documentKey), question.number, question.type, question.stem,
           JSON.stringify(question.options), question.answer, question.analysis,
           JSON.stringify({ x: 0, y: 0, width: 100, height: 100 }), folderId,
           null,
+          question.parentExternalId,
           question.variationKind, question.variationReview?.status ?? null,
           question.variationReview ? JSON.stringify(question.variationReview) : null, timestamp, timestamp,
         );

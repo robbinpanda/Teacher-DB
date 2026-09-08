@@ -49,6 +49,7 @@ export type Question = {
   tags: string[];
   folderId?: string | null;
   parentQuestionId?: string | null;
+  parentExternalId?: string | null;
   variationKind?: string | null;
   variationReview?: VariationReview | null;
   confidence: number;

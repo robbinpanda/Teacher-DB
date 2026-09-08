@@ -1,0 +1,1 @@
+ALTER TABLE `questions` ADD `parent_external_id` text;

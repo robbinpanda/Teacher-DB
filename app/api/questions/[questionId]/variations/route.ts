@@ -3,6 +3,7 @@ import { ensureDatabase } from "../../../../../db/bootstrap";
 import { stageFromGrade } from "../../../../../lib/education-taxonomy";
 import { getApprovedQuestions } from "../../../../../lib/question-repository";
 import { boundedText } from "../../../../../lib/question-variations";
+import { isVariationQuestion } from "../../../../../lib/question-provenance";
 import { getTagCatalog } from "../../../../../lib/tag-catalog";
 import { now, requestOwner } from "../../../../../lib/server";
 import type { VariationReview } from "../../../../../lib/types";
@@ -112,7 +113,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     const [source] = await getApprovedQuestions(ownerId, [questionId]);
     if (!source) return Response.json({ error: "原题不存在或尚未入库" }, { status: 404 });
     if (source.needsHumanReview) return Response.json({ error: "请先完成人工核对，再基于这道题生成变式" }, { status: 409 });
-    if (source.parentQuestionId) return Response.json({ error: "为避免知识点逐代漂移，暂不支持继续改写 AI 变式题" }, { status: 409 });
+    if (isVariationQuestion(source)) return Response.json({ error: "为避免知识点逐代漂移，暂不支持继续改写 AI 变式题" }, { status: 409 });
     const count = Number(payload.count);
     if (!Number.isInteger(count) || count < 1 || count > 3) throw new Error("单次只能生成 1–3 道变式题");
     const difficulty = String(payload.difficulty ?? "similar") as VariationDifficulty;
@@ -156,7 +157,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
       ).run(stage, now(), runId, ownerId),
     });
     const currentSource = (await getApprovedQuestions(ownerId, [source.id]))[0];
-    if (!currentSource || variationSourceSnapshotHash(currentSource) !== variationSourceSnapshotHash(source)) {
+    if (!currentSource || isVariationQuestion(currentSource) || variationSourceSnapshotHash(currentSource) !== variationSourceSnapshotHash(source)) {
       throw new Error("生成期间原题发生变化，本批候选题未保存，请重新生成");
     }
     const completedAt = now();

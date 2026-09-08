@@ -3,6 +3,7 @@ import "server-only";
 import { getSqlite, sqliteTransaction } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
 import { calculateAssignmentAnalytics } from "./assignment-analytics";
+import { AssignmentClosedError, normalizeAssignmentScores } from "./assignment-scores";
 import type { RosterRow } from "./roster-csv";
 import { now } from "./server";
 
@@ -245,20 +246,20 @@ export async function saveSubmissionScores(ownerId: string, assignmentId: string
   const scoreInput = input.scores as Record<string, unknown>;
   const teacherComment = typeof input.teacherComment === "string" ? input.teacherComment.trim() : "";
   if (teacherComment.length > 1000) throw new Error("评语不能超过 1000 字");
-  const sqlite = getSqlite();
-  if (!sqlite.prepare(
-    `SELECT 1 FROM submissions s JOIN assignments a ON a.id = s.assignment_id
-     WHERE s.id = ? AND s.assignment_id = ? AND a.owner_id = ?`,
-  ).get(submissionId, assignmentId, ownerId)) throw new Error("学生作答不存在");
-  const items = sqlite.prepare("SELECT question_id AS questionId, max_score AS maxScore FROM assignment_items WHERE assignment_id = ?").all(assignmentId) as Array<{ questionId: string; maxScore: number }>;
-  const normalized = items.map((item) => {
-    const value = Number(scoreInput[item.questionId]);
-    if (!Number.isFinite(value) || value < 0 || value > item.maxScore) throw new Error(`第 ${items.indexOf(item) + 1} 题得分应在 0–${item.maxScore} 之间`);
-    return { ...item, score: Math.round(value * 100) / 100 };
-  });
-  const totalScore = normalized.reduce((sum, item) => sum + item.score, 0);
-  const timestamp = now();
-  sqliteTransaction((transaction) => {
+  return sqliteTransaction((transaction) => {
+    // Check the current status under the same write lock as the score updates.
+    const assignment = transaction.prepare(
+      `SELECT a.status FROM submissions s JOIN assignments a ON a.id = s.assignment_id
+       WHERE s.id = ? AND s.assignment_id = ? AND a.owner_id = ?`,
+    ).get(submissionId, assignmentId, ownerId) as { status: string } | undefined;
+    if (!assignment) throw new Error("学生作答不存在");
+    if (assignment.status !== "active") throw new AssignmentClosedError();
+    const items = transaction.prepare(
+      "SELECT question_id AS questionId, max_score AS maxScore FROM assignment_items WHERE assignment_id = ? ORDER BY position",
+    ).all(assignmentId) as Array<{ questionId: string; maxScore: number }>;
+    const normalized = normalizeAssignmentScores(items, scoreInput);
+    const totalScore = normalized.reduce((sum, item) => sum + item.score, 0);
+    const timestamp = now();
     const upsert = transaction.prepare(
       `INSERT INTO submission_scores (submission_id, question_id, score, comment, updated_at) VALUES (?, ?, ?, '', ?)
        ON CONFLICT(submission_id, question_id) DO UPDATE SET score = excluded.score, updated_at = excluded.updated_at`,
@@ -269,8 +270,8 @@ export async function saveSubmissionScores(ownerId: string, assignmentId: string
        WHERE id = ? AND assignment_id = ?`,
     ).run(totalScore, teacherComment, timestamp, timestamp, submissionId, assignmentId);
     transaction.prepare("UPDATE assignments SET updated_at = ? WHERE id = ?").run(timestamp, assignmentId);
+    return { saved: true, totalScore, gradedAt: timestamp };
   });
-  return { saved: true, totalScore, gradedAt: timestamp };
 }
 
 export async function setAssignmentStatus(ownerId: string, assignmentId: string, status: "active" | "closed") {

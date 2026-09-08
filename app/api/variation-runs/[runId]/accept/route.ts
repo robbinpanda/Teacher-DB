@@ -9,6 +9,7 @@ import type { VariationReview } from "../../../../../lib/types";
 import { variationSourceContentHash, variationSourceSnapshotHash } from "../../../../../lib/variation-workflow";
 import { deleteFile, putFile } from "../../../../../lib/file-storage";
 import { renderQuestionDiagramPng } from "../../../../../lib/question-diagram-renderer";
+import { isVariationQuestion } from "../../../../../lib/question-provenance";
 
 export const runtime = "nodejs";
 
@@ -32,14 +33,16 @@ type CandidateRow = {
 function lockedSourceHash(transaction: Parameters<Parameters<typeof sqliteTransaction>[0]>[0], sourceQuestionId: string, ownerId: string) {
   const row = transaction.prepare(
     `SELECT q.id, q.type, q.stem, q.options_json AS optionsJson, q.answer, q.analysis, q.status,
-            q.needs_human_review AS needsHumanReview, q.parent_question_id AS parentQuestionId
+            q.needs_human_review AS needsHumanReview, q.parent_question_id AS parentQuestionId,
+            q.parent_external_id AS parentExternalId, q.variation_kind AS variationKind, q.variation_review_json AS variationReview
        FROM questions q JOIN documents d ON d.id = q.document_id
       WHERE q.id = ? AND d.owner_id = ?`,
   ).get(sourceQuestionId, ownerId) as {
     id: string; type: string; stem: string; optionsJson: string | null; answer: string; analysis: string;
     status: string; needsHumanReview: number | null; parentQuestionId: string | null;
+    parentExternalId: string | null; variationKind: string | null; variationReview: string | null;
   } | undefined;
-  if (!row || row.status !== "approved" || row.needsHumanReview !== 0 || row.parentQuestionId) return null;
+  if (!row || row.status !== "approved" || row.needsHumanReview !== 0 || isVariationQuestion(row)) return null;
   const tags = (transaction.prepare(
     `SELECT t.name FROM question_tags qt JOIN tags t ON t.id = qt.tag_id
       WHERE qt.question_id = ? ORDER BY t.name`,
@@ -126,7 +129,7 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
     }
 
     const [source] = await getApprovedQuestions(ownerId, [run.sourceQuestionId]);
-    if (!source || source.needsHumanReview || source.parentQuestionId) {
+    if (!source || source.needsHumanReview || isVariationQuestion(source)) {
       return Response.json({ error: "原题已不存在、尚未复核或不再适合作为变式来源" }, { status: 409 });
     }
     if (variationSourceSnapshotHash(source) !== run.sourceSnapshotHash) {

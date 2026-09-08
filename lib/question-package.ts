@@ -74,7 +74,7 @@ export async function createQuestionPackage(ownerId: string, questions: Question
     }
     shared.push({
       externalId: question.id,
-      parentExternalId: question.parentQuestionId ?? null,
+      parentExternalId: question.parentQuestionId ?? question.parentExternalId ?? null,
       variationKind: question.variationKind ?? null,
       variationReview: question.variationReview ?? null,
       folderPath: folderPath(ownerId, question.folderId),

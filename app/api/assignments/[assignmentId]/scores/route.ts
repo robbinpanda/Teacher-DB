@@ -1,6 +1,7 @@
 import { readJsonPayload } from "../../../../../lib/request-payload";
 import { requestOwner } from "../../../../../lib/server";
 import { saveSubmissionScores } from "../../../../../lib/school-workflow";
+import { AssignmentClosedError } from "../../../../../lib/assignment-scores";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ assig
   try {
     return Response.json(await saveSubmissionScores(requestOwner(request), (await context.params).assignmentId, parsed.value.submissionId, parsed.value));
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "保存得分失败" }, { status: 400 });
+    return Response.json({ error: error instanceof Error ? error.message : "保存得分失败" }, { status: error instanceof AssignmentClosedError ? 409 : 400 });
   }
 }
