@@ -43,6 +43,8 @@ type VisionRequestInput = {
   images: VisionImage[];
   jsonMode?: boolean;
   stream?: boolean;
+  maxOutputTokens?: number;
+  temperature?: number;
 };
 
 export type VisionHttpRequest = {
@@ -82,8 +84,8 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
       },
       body: {
         model: input.model,
-        max_tokens: 32768,
-        temperature: 0,
+        max_tokens: input.maxOutputTokens ?? 32768,
+        temperature: input.temperature ?? 0,
         system: input.system,
         messages: [{ role: "user", content }],
         ...(input.stream ? { stream: true } : {}),
@@ -102,8 +104,9 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
       instructions: input.system,
       input: [{ role: "user", content }],
       reasoning: { effort: "none" },
-      temperature: 0,
+      temperature: input.temperature ?? 0,
     };
+    if (input.maxOutputTokens) body.max_output_tokens = input.maxOutputTokens;
     if (input.jsonMode) body.text = { format: { type: "json_object" } };
     if (input.stream) body.stream = true;
     return {
@@ -122,12 +125,13 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
   const body: Record<string, unknown> = {
     model: input.model,
     reasoning_effort: "none",
-    temperature: 0,
+    temperature: input.temperature ?? 0,
     messages: [
       { role: "system", content: input.system },
       { role: "user", content },
     ],
   };
+  if (input.maxOutputTokens) body.max_tokens = input.maxOutputTokens;
   if (input.jsonMode) body.response_format = { type: "json_object" };
   if (input.stream) {
     body.stream = true;

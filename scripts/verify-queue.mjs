@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 
-const dataDirectory = process.env.SHITI_DATA_DIR
-  ? path.resolve(process.env.SHITI_DATA_DIR)
+const dataDirectory = process.env.JIANTI_DATA_DIR
+  ? path.resolve(process.env.JIANTI_DATA_DIR)
   : path.resolve("data");
 const sqlite = new Database(path.join(dataDirectory, "teacher-question-bank.sqlite3"), { readonly: true });
 

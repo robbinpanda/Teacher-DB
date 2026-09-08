@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, FileText, Gauge, LoaderCircle, ShieldCheck, Sparkles, UploadCloud } from "lucide-react";
-import { educationStages } from "../lib/education-taxonomy";
+import { educationStages, gradesByStage } from "../lib/education-taxonomy";
 import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
 
@@ -104,7 +104,17 @@ export function UploadWorkbench() {
   const [modelSaving, setModelSaving] = useState(false);
   const [modelFeedback, setModelFeedback] = useState("");
   const [modelError, setModelError] = useState(false);
-  const sourceMeta = { subject, grade: educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级", sourceYear: "", sourceExamType: "", sourceRegion: "", sourceSchool: "" };
+  const [teachingProfile, setTeachingProfile] = useState({ region: "全国", textbook: "", grades: [] as string[] });
+  const profileGrade = teachingProfile.grades.find((grade) => gradesByStage[stage].includes(grade));
+  const sourceMeta = {
+    subject,
+    grade: profileGrade ?? educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级",
+    sourceYear: "",
+    sourceExamType: "",
+    sourceRegion: teachingProfile.region === "全国" ? "" : teachingProfile.region,
+    sourceTextbook: teachingProfile.textbook,
+    sourceSchool: "",
+  };
   const working = tasks.some((task) => ["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
   const uploadDisabled = batchActive || modelLoading || modelSaving;
 
@@ -119,6 +129,22 @@ export function UploadWorkbench() {
     setQueuePaused(Boolean(result.paused));
     setQueuePauseReason(result.pauseReason ?? "");
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/teacher-profile", { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((result: { profile?: { region?: string; textbook?: string; grades?: string[] } } | null) => {
+        if (cancelled || !result?.profile) return;
+        setTeachingProfile({
+          region: result.profile.region ?? "全国",
+          textbook: result.profile.textbook ?? "",
+          grades: Array.isArray(result.profile.grades) ? result.profile.grades : [],
+        });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -248,7 +274,7 @@ export function UploadWorkbench() {
     const result = await response.json().catch(() => ({})) as ModelProfilesResponse;
     if (!response.ok) throw new Error(result.error ?? "无法读取模型配置");
     const selected = result.profiles?.find((profile) => profile.id === (profileId ?? result.selectedProfileId));
-    if (!selected?.apiKeyMask) throw new Error("识题模型尚未配置 API Key，请先到“模型设置”填写并测试连接。");
+    if (!selected?.apiKeyMask) throw new Error("识题模型尚未配置 API Key，请先到“模型配置”填写并测试连接。");
   }
 
   async function processFile(file: File, taskId: string, metadata: typeof sourceMeta, profileId?: string) {
@@ -355,7 +381,7 @@ export function UploadWorkbench() {
   return (
     <div className="upload-card card">
       <div className="section-title upload-title"><div><span className="section-kicker">第一步 · 导入</span><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
-      <div className="upload-scope-note"><b>{educationStages.find((item) => item.value === stage)?.label} · {subject}</b><span>年份、考试类型、地区和学校会从卷面标题自动推测，可在试卷详情中随时修改。</span></div>
+      <div className="upload-scope-note"><b>{profileGrade ?? educationStages.find((item) => item.value === stage)?.label} · {subject}{teachingProfile.textbook ? ` · ${teachingProfile.textbook}` : ""}</b><span>使用题库中的教学画像作为默认年级、地区和教材；卷面信息识别后仍可在试卷详情中修改。</span></div>
       <div className="upload-control-grid">
         <section className="upload-model-setting" aria-label="识别模型选择">
           <div className="upload-model-copy"><span><Sparkles size={16} /></span><div><strong>整卷识别模型</strong><small>一份试卷的全部页面只调用一次模型</small></div></div>

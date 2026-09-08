@@ -15,21 +15,40 @@ try {
   const foreignKeyErrors = database.pragma("foreign_key_check");
   report.checks.foreignKeyErrors = foreignKeyErrors.length;
   if (foreignKeyErrors.length) report.ok = false;
-  const requiredTables = ["documents", "pages", "extraction_runs", "questions", "question_regions", "question_assets", "tags", "papers", "model_profiles"];
+  const requiredTables = [
+    "documents", "pages", "extraction_runs", "document_jobs", "questions", "question_regions",
+    "question_assets", "question_folders", "question_tags", "tags", "tag_catalog", "paper_folders",
+    "papers", "paper_items", "paper_templates", "answer_imports", "model_profiles", "model_usage_events",
+    "app_settings", "bank_imports", "variation_runs", "variation_candidates", "teaching_classes",
+    "students", "class_students", "assignments", "assignment_classes", "assignment_items",
+    "submissions", "submission_scores",
+  ];
   const existingTables = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
   const missingTables = requiredTables.filter((table) => !existingTables.has(table));
   report.checks.missingTables = missingTables;
   if (missingTables.length) report.ok = false;
 
   const referencedKeys = new Set();
+  const invalidStorageKeys = [];
   for (const query of [
     "SELECT original_key AS storageKey FROM documents WHERE original_key IS NOT NULL",
     "SELECT storage_key AS storageKey FROM pages",
     "SELECT source_key AS storageKey FROM question_assets WHERE source_key IS NOT NULL",
     "SELECT crop_key AS storageKey FROM question_assets WHERE crop_key IS NOT NULL",
   ]) {
-    for (const row of database.prepare(query).all()) referencedKeys.add(row.storageKey.replace(/\\/g, "/"));
+    for (const row of database.prepare(query).all()) {
+      const key = typeof row.storageKey === "string" ? row.storageKey.replace(/\\/g, "/").replace(/^\/+/, "") : "";
+      const resolved = key ? path.resolve(filesRoot, key) : "";
+      if (!key || key.split("/").some((part) => part === "." || part === "..")
+        || (resolved !== filesRoot && !resolved.startsWith(filesRoot + path.sep))) {
+        invalidStorageKeys.push(String(row.storageKey ?? ""));
+      } else {
+        referencedKeys.add(key);
+      }
+    }
   }
+  report.checks.invalidStorageKeys = invalidStorageKeys;
+  if (invalidStorageKeys.length) report.ok = false;
   const missingFiles = [];
   for (const key of referencedKeys) {
     try { await access(path.resolve(filesRoot, key)); } catch { missingFiles.push(key); }
@@ -84,6 +103,62 @@ try {
   ).get().count;
   report.checks.regionPageLinkErrors = regionPageLinkErrors;
   if (regionPageLinkErrors) report.ok = false;
+  const assetPageLinkErrors = database.prepare(
+    `SELECT COUNT(*) AS count FROM question_assets qa
+       JOIN questions q ON q.id = qa.question_id LEFT JOIN pages p ON p.id = qa.page_id
+      WHERE qa.page_id IS NOT NULL AND (p.id IS NULL OR q.document_id <> p.document_id)`,
+  ).get().count;
+  report.checks.assetPageLinkErrors = assetPageLinkErrors;
+  if (assetPageLinkErrors) report.ok = false;
+  const crossOwnerLinkErrors = database.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM paper_items pi JOIN papers p ON p.id = pi.paper_id
+          JOIN questions q ON q.id = pi.question_id JOIN documents d ON d.id = q.document_id
+         WHERE p.owner_id <> d.owner_id)
+       + (SELECT COUNT(*) FROM questions q JOIN documents d ON d.id = q.document_id
+          JOIN question_folders f ON f.id = q.folder_id WHERE d.owner_id <> f.owner_id)
+       + (SELECT COUNT(*) FROM papers p JOIN paper_folders f ON f.id = p.folder_id WHERE p.owner_id <> f.owner_id)
+       + (SELECT COUNT(*) FROM app_settings s JOIN model_profiles m ON m.id = s.selected_model_profile_id
+          WHERE s.owner_id <> m.owner_id)
+       + (SELECT COUNT(*) FROM variation_runs vr JOIN questions q ON q.id = vr.source_question_id
+          JOIN documents d ON d.id = q.document_id WHERE vr.owner_id <> d.owner_id)
+       + (SELECT COUNT(*) FROM class_students cs JOIN teaching_classes c ON c.id = cs.class_id
+          JOIN students s ON s.id = cs.student_id WHERE c.owner_id <> s.owner_id)
+       + (SELECT COUNT(*) FROM assignments a JOIN papers p ON p.id = a.paper_id WHERE a.owner_id <> p.owner_id)
+       + (SELECT COUNT(*) FROM assignment_classes ac JOIN assignments a ON a.id = ac.assignment_id
+          JOIN teaching_classes c ON c.id = ac.class_id WHERE a.owner_id <> c.owner_id)
+       + (SELECT COUNT(*) FROM submissions s JOIN assignments a ON a.id = s.assignment_id
+          JOIN teaching_classes c ON c.id = s.class_id JOIN students st ON st.id = s.student_id
+          WHERE a.owner_id <> c.owner_id OR a.owner_id <> st.owner_id) AS count`,
+  ).get().count;
+  report.checks.crossOwnerLinkErrors = crossOwnerLinkErrors;
+  if (crossOwnerLinkErrors) report.ok = false;
+  const schoolWorkflowErrors = database.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM submission_scores ss JOIN submissions s ON s.id = ss.submission_id
+          JOIN assignment_items ai ON ai.assignment_id = s.assignment_id AND ai.question_id = ss.question_id
+         WHERE ss.score < 0 OR ss.score > ai.max_score)
+       + (SELECT COUNT(*) FROM submissions s WHERE s.status = 'graded' AND (
+          s.total_score IS NULL OR ABS(s.total_score - COALESCE((SELECT SUM(ss.score) FROM submission_scores ss WHERE ss.submission_id = s.id), 0)) > 0.001))
+       + (SELECT COUNT(*) FROM (
+          SELECT ai.assignment_id FROM assignment_items ai JOIN assignments a ON a.id = ai.assignment_id
+          GROUP BY ai.assignment_id HAVING ABS(a.total_score - SUM(ai.max_score)) > 0.001)) AS count`,
+  ).get().count;
+  report.checks.schoolWorkflowErrors = schoolWorkflowErrors;
+  if (schoolWorkflowErrors) report.ok = false;
+  const removedSourceResidue = database.prepare(
+    `SELECT COUNT(*) AS count FROM documents d
+      WHERE d.source_removed_at IS NOT NULL AND (
+        d.original_key IS NOT NULL
+        OR EXISTS (SELECT 1 FROM pages p WHERE p.document_id = d.id)
+        OR EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id = d.id)
+        OR EXISTS (SELECT 1 FROM document_jobs j WHERE j.document_id = d.id)
+        OR EXISTS (SELECT 1 FROM question_assets qa JOIN questions q ON q.id = qa.question_id
+                    WHERE q.document_id = d.id AND qa.source_key IS NOT NULL)
+      )`,
+  ).get().count;
+  report.checks.removedSourceResidue = removedSourceResidue;
+  if (removedSourceResidue) report.ok = false;
   const jobStateErrors = database.prepare(
     `SELECT COUNT(*) AS count FROM documents d JOIN document_jobs j ON j.document_id = d.id
       WHERE (j.status = 'complete' AND d.status NOT IN ('reviewing', 'complete'))
@@ -105,7 +180,7 @@ try {
   const activePageIntegrityErrors = database.prepare(
     `SELECT COUNT(*) AS count FROM (
        SELECT d.id FROM documents d LEFT JOIN pages p ON p.document_id = d.id
-        WHERE d.status <> 'failed' GROUP BY d.id
+        WHERE d.status <> 'failed' AND d.source_removed_at IS NULL GROUP BY d.id
        HAVING COUNT(p.id) <> d.page_count OR (d.page_count > 0 AND (MIN(p.page_number) <> 1 OR MAX(p.page_number) <> d.page_count))
      )`,
   ).get().count;
@@ -117,6 +192,13 @@ try {
   ).get().count;
   report.checks.failedApprovedQuestions = failedApprovedQuestions;
   if (failedApprovedQuestions) report.ok = false;
+  const completeDocumentStateErrors = database.prepare(
+    `SELECT COUNT(*) AS count FROM documents d WHERE d.status = 'complete'
+      AND (NOT EXISTS (SELECT 1 FROM questions q WHERE q.document_id = d.id)
+        OR EXISTS (SELECT 1 FROM questions q WHERE q.document_id = d.id AND q.status <> 'approved'))`,
+  ).get().count;
+  report.checks.completeDocumentStateErrors = completeDocumentStateErrors;
+  if (completeDocumentStateErrors) report.ok = false;
   const incompleteFailedDocuments = database.prepare(
     `SELECT d.name, d.page_count AS declaredPages, COUNT(p.id) AS storedPages
        FROM documents d LEFT JOIN pages p ON p.document_id = d.id

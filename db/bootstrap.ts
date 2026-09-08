@@ -1,12 +1,16 @@
 import { getSqlite } from ".";
-import { installDatabaseInvariants, repairFailedDocumentApprovals } from "../lib/database-invariants";
+import {
+  installDatabaseInvariants,
+  repairApprovedQuestionReviewFlags,
+  repairFailedDocumentApprovals,
+} from "../lib/database-invariants";
 
 const schemaSql = `
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS documents (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', name TEXT NOT NULL,
   mime_type TEXT NOT NULL, original_key TEXT, status TEXT NOT NULL DEFAULT 'uploading', page_count INTEGER NOT NULL DEFAULT 0,
-  subject TEXT, grade TEXT, source_year INTEGER, source_exam_type TEXT, source_region TEXT, source_school TEXT,
+  subject TEXT, grade TEXT, source_year INTEGER, source_exam_type TEXT, source_region TEXT, source_textbook TEXT, source_school TEXT,
   checksum TEXT, error TEXT, source_removed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS documents_owner_created_idx ON documents(owner_id, created_at);
@@ -26,15 +30,41 @@ CREATE TABLE IF NOT EXISTS extraction_runs (
 );
 CREATE INDEX IF NOT EXISTS runs_document_idx ON extraction_runs(document_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_idx ON extraction_runs(idempotency_key);
+CREATE TABLE IF NOT EXISTS question_folders (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', parent_id TEXT REFERENCES question_folders(id) ON DELETE RESTRICT,
+  name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS question_folders_owner_parent_idx ON question_folders(owner_id, parent_id);
 CREATE TABLE IF NOT EXISTS questions (
   id TEXT PRIMARY KEY NOT NULL, document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   number TEXT NOT NULL, type TEXT NOT NULL, stem TEXT NOT NULL, options_json TEXT, answer TEXT NOT NULL DEFAULT '',
   analysis TEXT NOT NULL DEFAULT '', page_number INTEGER NOT NULL, bbox_json TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', needs_human_review INTEGER, confidence REAL NOT NULL DEFAULT 0, score INTEGER NOT NULL DEFAULT 0,
+  folder_id TEXT REFERENCES question_folders(id) ON DELETE SET NULL, parent_question_id TEXT, variation_kind TEXT,
+  variation_review_status TEXT, variation_review_json TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS questions_document_page_idx ON questions(document_id, page_number);
 CREATE INDEX IF NOT EXISTS questions_type_status_idx ON questions(type, status);
+CREATE TABLE IF NOT EXISTS variation_runs (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo',
+  source_question_id TEXT REFERENCES questions(id) ON DELETE SET NULL, source_snapshot_hash TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL, quality_mode TEXT NOT NULL DEFAULT 'reviewed', requested_count INTEGER NOT NULL,
+  difficulty TEXT NOT NULL, focus TEXT NOT NULL DEFAULT '', instructions TEXT NOT NULL DEFAULT '',
+  generator_profile_id TEXT, reviewer_profile_id TEXT, status TEXT NOT NULL DEFAULT 'generating', result_json TEXT, error TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS variation_runs_owner_idempotency_idx ON variation_runs(owner_id, idempotency_key);
+CREATE INDEX IF NOT EXISTS variation_runs_owner_created_idx ON variation_runs(owner_id, created_at);
+CREATE INDEX IF NOT EXISTS variation_runs_source_idx ON variation_runs(source_question_id, created_at);
+CREATE TABLE IF NOT EXISTS variation_candidates (
+  id TEXT PRIMARY KEY NOT NULL, run_id TEXT NOT NULL REFERENCES variation_runs(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL, content_json TEXT NOT NULL, review_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'awaiting_teacher', promoted_question_id TEXT REFERENCES questions(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS variation_candidates_run_ordinal_idx ON variation_candidates(run_id, ordinal);
+CREATE INDEX IF NOT EXISTS variation_candidates_run_status_idx ON variation_candidates(run_id, status);
 CREATE TABLE IF NOT EXISTS question_regions (
   id TEXT PRIMARY KEY NOT NULL, question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   page_id TEXT REFERENCES pages(id) ON DELETE SET NULL, page_number INTEGER NOT NULL,
@@ -63,6 +93,14 @@ CREATE TABLE IF NOT EXISTS question_tags (
   PRIMARY KEY(question_id, tag_id)
 );
 CREATE INDEX IF NOT EXISTS question_tags_tag_idx ON question_tags(tag_id);
+CREATE TABLE IF NOT EXISTS bank_imports (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', source_name TEXT NOT NULL,
+  package_id TEXT, question_count INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'processing',
+  error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bank_imports_owner_created_idx ON bank_imports(owner_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS bank_imports_active_package_idx ON bank_imports(owner_id, package_id)
+  WHERE status IN ('processing', 'complete');
 CREATE TABLE IF NOT EXISTS paper_folders (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', parent_id TEXT REFERENCES paper_folders(id) ON DELETE RESTRICT,
   name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -93,6 +131,64 @@ CREATE TABLE IF NOT EXISTS paper_items (
   position INTEGER NOT NULL, score INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(paper_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS paper_items_position_idx ON paper_items(paper_id, position);
+CREATE TABLE IF NOT EXISTS teaching_classes (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', name TEXT NOT NULL,
+  grade TEXT NOT NULL, subject TEXT NOT NULL DEFAULT '数学', school_year TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS teaching_classes_owner_year_name_idx ON teaching_classes(owner_id, school_year, name);
+CREATE INDEX IF NOT EXISTS teaching_classes_owner_archived_idx ON teaching_classes(owner_id, archived, updated_at);
+CREATE TABLE IF NOT EXISTS students (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', student_no TEXT NOT NULL,
+  name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS students_owner_number_idx ON students(owner_id, student_no);
+CREATE INDEX IF NOT EXISTS students_owner_name_idx ON students(owner_id, name);
+CREATE TABLE IF NOT EXISTS class_students (
+  class_id TEXT NOT NULL REFERENCES teaching_classes(id) ON DELETE CASCADE,
+  student_id TEXT NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
+  seat_number TEXT, joined_at TEXT NOT NULL, PRIMARY KEY(class_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS class_students_student_idx ON class_students(student_id, class_id);
+CREATE TABLE IF NOT EXISTS assignments (
+  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo',
+  paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE RESTRICT, title TEXT NOT NULL,
+  assignment_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', due_at TEXT,
+  total_score REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS assignments_code_idx ON assignments(assignment_code);
+CREATE INDEX IF NOT EXISTS assignments_owner_status_idx ON assignments(owner_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS assignments_paper_idx ON assignments(paper_id, created_at);
+CREATE TABLE IF NOT EXISTS assignment_classes (
+  assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+  class_id TEXT NOT NULL REFERENCES teaching_classes(id) ON DELETE RESTRICT,
+  PRIMARY KEY(assignment_id, class_id)
+);
+CREATE INDEX IF NOT EXISTS assignment_classes_class_idx ON assignment_classes(class_id, assignment_id);
+CREATE TABLE IF NOT EXISTS assignment_items (
+  assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+  question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+  position INTEGER NOT NULL, max_score REAL NOT NULL DEFAULT 0, snapshot_json TEXT NOT NULL,
+  PRIMARY KEY(assignment_id, question_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS assignment_items_position_idx ON assignment_items(assignment_id, position);
+CREATE TABLE IF NOT EXISTS submissions (
+  id TEXT PRIMARY KEY NOT NULL, assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+  class_id TEXT NOT NULL REFERENCES teaching_classes(id) ON DELETE RESTRICT,
+  student_id TEXT NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL DEFAULT 'assigned', total_score REAL, teacher_comment TEXT NOT NULL DEFAULT '',
+  submitted_at TEXT, graded_at TEXT, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS submissions_assignment_class_student_idx ON submissions(assignment_id, class_id, student_id);
+CREATE INDEX IF NOT EXISTS submissions_assignment_status_idx ON submissions(assignment_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS submissions_student_idx ON submissions(student_id, updated_at);
+CREATE TABLE IF NOT EXISTS submission_scores (
+  submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+  question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+  score REAL NOT NULL DEFAULT 0, comment TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL,
+  PRIMARY KEY(submission_id, question_id)
+);
+CREATE INDEX IF NOT EXISTS submission_scores_question_idx ON submission_scores(question_id, submission_id);
 CREATE TABLE IF NOT EXISTS model_profiles (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL DEFAULT 'local-demo', display_name TEXT NOT NULL,
   provider TEXT NOT NULL DEFAULT 'openai-compatible', base_url TEXT NOT NULL, model TEXT NOT NULL,
@@ -118,10 +214,11 @@ CREATE INDEX IF NOT EXISTS model_usage_owner_created_idx ON model_usage_events(o
 CREATE INDEX IF NOT EXISTS model_usage_profile_created_idx ON model_usage_events(model_profile_id, created_at);
 CREATE INDEX IF NOT EXISTS model_usage_document_idx ON model_usage_events(document_id);
 CREATE TABLE IF NOT EXISTS app_settings (
-  owner_id TEXT PRIMARY KEY NOT NULL, selected_model_profile_id TEXT,
+  owner_id TEXT PRIMARY KEY NOT NULL, teacher_mode TEXT NOT NULL DEFAULT 'personal', selected_model_profile_id TEXT,
   extraction_concurrency INTEGER NOT NULL DEFAULT 2, extraction_paused INTEGER NOT NULL DEFAULT 0,
   extraction_pause_reason TEXT, extraction_paused_at TEXT,
-  extraction_failure_streak INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
+  extraction_failure_streak INTEGER NOT NULL DEFAULT 0, preferred_region TEXT, preferred_textbook TEXT,
+  preferred_grades_json TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS document_jobs (
   document_id TEXT PRIMARY KEY NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -147,6 +244,7 @@ const upgrades: Record<string, Record<string, string>> = {
     source_year: "INTEGER",
     source_exam_type: "TEXT",
     source_region: "TEXT",
+    source_textbook: "TEXT",
     source_school: "TEXT",
     checksum: "TEXT",
     error: "TEXT",
@@ -169,6 +267,11 @@ const upgrades: Record<string, Record<string, string>> = {
     confidence: "REAL NOT NULL DEFAULT 0",
     needs_human_review: "INTEGER",
     score: "INTEGER NOT NULL DEFAULT 0",
+    folder_id: "TEXT REFERENCES question_folders(id) ON DELETE SET NULL",
+    parent_question_id: "TEXT",
+    variation_kind: "TEXT",
+    variation_review_status: "TEXT",
+    variation_review_json: "TEXT",
   },
   question_assets: {
     page_id: "TEXT",
@@ -196,11 +299,15 @@ const upgrades: Record<string, Record<string, string>> = {
     cost_cny: "REAL",
   },
   app_settings: {
+    teacher_mode: "TEXT NOT NULL DEFAULT 'personal'",
     extraction_concurrency: "INTEGER NOT NULL DEFAULT 2",
     extraction_paused: "INTEGER NOT NULL DEFAULT 0",
     extraction_pause_reason: "TEXT",
     extraction_paused_at: "TEXT",
     extraction_failure_streak: "INTEGER NOT NULL DEFAULT 0",
+    preferred_region: "TEXT",
+    preferred_textbook: "TEXT",
+    preferred_grades_json: "TEXT NOT NULL DEFAULT '[]'",
   },
   document_jobs: {
     question_total: "INTEGER",
@@ -242,8 +349,15 @@ function initialize() {
   sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_owner_idx ON document_jobs(owner_id, status)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS paper_folders_owner_parent_idx ON paper_folders(owner_id, parent_id)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS papers_owner_folder_idx ON papers(owner_id, folder_id, updated_at)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS question_folders_owner_parent_idx ON question_folders(owner_id, parent_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS questions_folder_idx ON questions(folder_id, updated_at)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS questions_parent_idx ON questions(parent_question_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS bank_imports_owner_created_idx ON bank_imports(owner_id, created_at)");
+  sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS bank_imports_active_package_idx ON bank_imports(owner_id, package_id)
+    WHERE status IN ('processing', 'complete')`);
   installDatabaseInvariants(sqlite);
   const migrationTime = new Date().toISOString();
+  repairApprovedQuestionReviewFlags(sqlite);
   sqlite.prepare(
     `INSERT INTO app_settings
        (owner_id, extraction_paused, extraction_pause_reason, extraction_paused_at, extraction_failure_streak, updated_at)

@@ -8,6 +8,8 @@ import { getTagCatalog } from "../../../../lib/tag-catalog";
 import type { BoundingBox, Question } from "../../../../lib/types";
 import { getDocumentIntegrity, integrityError, missingPositiveNumbers } from "../../../../lib/document-integrity";
 import { isValidQuestionNumber } from "../../../../lib/question-number-source";
+import { readJsonPayload } from "../../../../lib/request-payload";
+import { asQuestionPayload, validateQuestionPayload } from "../../../../lib/question-payload";
 
 export const runtime = "nodejs";
 
@@ -27,7 +29,11 @@ function safeBox(box: BoundingBox): BoundingBox {
 export async function PUT(request: Request, context: { params: Promise<{ questionId: string }> }) {
   await ensureDatabase();
   const { questionId } = await context.params;
-  const payload = await request.json() as Question;
+  const parsed = await readJsonPayload<Record<string, unknown>>(request);
+  if (!parsed.ok) return parsed.response;
+  const validationError = validateQuestionPayload(parsed.value);
+  if (validationError) return Response.json({ error: validationError }, { status: 400 });
+  const payload = asQuestionPayload(parsed.value);
   const ownerId = requestOwner(request);
   const sqlite = getSqlite();
   const ownedQuestion = sqlite.prepare(
@@ -143,7 +149,8 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
            page_number = ?, bbox_json = ?, status = ?, needs_human_review = ?, confidence = ?, score = ?, updated_at = ? WHERE id = ?`,
       ).run(
         payload.number, payload.type, payload.stem, JSON.stringify(payload.options ?? []), payload.answer,
-        payload.analysis, primaryRegion.page, JSON.stringify(primaryRegion.bbox), payload.status, payload.needsHumanReview === false ? 0 : 1,
+        payload.analysis, primaryRegion.page, JSON.stringify(primaryRegion.bbox), payload.status,
+        payload.status === "approved" || payload.needsHumanReview === false ? 0 : 1,
         Math.max(0, Math.min(1, Number(payload.confidence) || 0)), 0, timestamp, questionId,
       );
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
@@ -210,6 +217,7 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   return Response.json({
     question: {
       ...payload,
+      needsHumanReview: payload.status === "approved" ? false : payload.needsHumanReview,
       page: primaryRegion.page,
       bbox: primaryRegion.bbox,
       regions: preparedRegions.map((region) => ({ page: region.page, bbox: region.bbox })),

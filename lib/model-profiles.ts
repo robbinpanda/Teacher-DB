@@ -33,7 +33,7 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
     const setting = await db.query.appSettings.findFirst({ where: eq(appSettings.ownerId, ownerId) });
     profileId = setting?.selectedModelProfileId ?? undefined;
   }
-  if (!profileId) throw new Error("尚未配置或选择识题模型，请先到“模型设置”填写 API Key、API Base URL 和模型名称");
+  if (!profileId) throw new Error("尚未配置或选择识题模型，请先到“模型配置”填写 API Key、API Base URL 和模型名称");
   const profile = await db.query.modelProfiles.findFirst({
     where: and(
       eq(modelProfiles.id, profileId),

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { presetTags, stageFromGrade } from "../lib/education-taxonomy.ts";
+import { contextualPresetTags, presetTags, stageFromGrade, textbookEditions } from "../lib/education-taxonomy.ts";
 import { normalizePaperStyle, paperStyleToLatex, presetPaperTemplates, questionStemHasAnswerBlank, scoreForQuestion, sectionsFromTemplate } from "../lib/paper-templates.ts";
 
 const source = { documentId: "d", documentName: "卷", subject: "数学", grade: "九年级" };
@@ -19,6 +19,20 @@ test("数学标签随学段变化且来自有限目录", () => {
   assert.ok(high.includes("导数"));
   assert.equal(middle.includes("导数"), false);
   assert.equal(new Set(middle).size, middle.length);
+});
+
+test("地区与教材画像会扩充标签，但不破坏基础知识点目录", () => {
+  const tags = contextualPresetTags("数学", "middle", "上海", "沪教版");
+  assert.ok(tags.includes("二次函数"));
+  assert.ok(tags.includes("地区·上海"));
+  assert.ok(tags.includes("教材·沪教版"));
+  assert.equal(new Set(tags).size, tags.length);
+});
+
+test("教材版本按学段避免把高中人教 A/B 版用于义务教育", () => {
+  assert.ok(textbookEditions("数学", "high").includes("人教A版"));
+  assert.equal(textbookEditions("数学", "middle").includes("人教A版"), false);
+  assert.ok(textbookEditions("英语", "primary").includes("人教PEP版"));
 });
 
 test("中考模板按题型分板块并应用标准分值", () => {

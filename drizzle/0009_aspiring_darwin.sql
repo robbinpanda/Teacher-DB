@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `bank_imports_active_package_idx` ON `bank_imports` (`owner_id`,`package_id`) WHERE "bank_imports"."status" IN ('processing', 'complete');

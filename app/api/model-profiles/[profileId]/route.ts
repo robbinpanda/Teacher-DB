@@ -6,6 +6,7 @@ import { normalizeModelProtocol } from "../../../../lib/model-protocols";
 import { normalizeOptionalTokenPrice, repriceModelUsageHistory } from "../../../../lib/model-usage";
 import { encryptSecret, maskSecret } from "../../../../lib/secret-box";
 import { now, requestOwner } from "../../../../lib/server";
+import { readJsonPayload } from "../../../../lib/request-payload";
 
 type UpdatePayload = {
   displayName?: string;
@@ -45,9 +46,23 @@ export async function DELETE(request: Request, context: { params: Promise<{ prof
 
 export async function PUT(request: Request, context: { params: Promise<{ profileId: string }> }) {
   const ownerId = requestOwner(request);
-  await ensureOwnerModelSettings(ownerId);
   const { profileId } = await context.params;
-  const payload = await request.json() as UpdatePayload;
+  const parsed = await readJsonPayload<UpdatePayload>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
+  if ((payload.displayName !== undefined && typeof payload.displayName !== "string")
+    || (payload.provider !== undefined && typeof payload.provider !== "string")
+    || (payload.baseUrl !== undefined && typeof payload.baseUrl !== "string")
+    || (payload.model !== undefined && typeof payload.model !== "string")
+    || (payload.apiKey !== undefined && typeof payload.apiKey !== "string")
+    || (payload.timeoutMs !== undefined && (typeof payload.timeoutMs !== "number" || !Number.isFinite(payload.timeoutMs)))) {
+    return Response.json({ error: "模型配置字段格式无效" }, { status: 400 });
+  }
+  if ((payload.displayName?.length ?? 0) > 80 || (payload.model?.length ?? 0) > 200
+    || (payload.apiKey?.length ?? 0) > 16_384 || (payload.baseUrl?.length ?? 0) > 2_048) {
+    return Response.json({ error: "模型配置字段过长" }, { status: 400 });
+  }
+  await ensureOwnerModelSettings(ownerId);
   const db = getDb();
   const profile = await db.query.modelProfiles.findFirst({ where: and(eq(modelProfiles.id, profileId), eq(modelProfiles.ownerId, ownerId)) });
   if (!profile) return Response.json({ error: "模型配置不存在" }, { status: 404 });

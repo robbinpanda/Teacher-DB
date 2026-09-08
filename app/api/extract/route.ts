@@ -18,6 +18,7 @@ import { getTagCatalog } from "../../../lib/tag-catalog";
 import { callVisionModelStream, ModelCallError } from "../../../lib/vision-model";
 import { ExtractionStreamParser, type ExtractionStreamRecord } from "../../../lib/streaming-extraction";
 import type { Question } from "../../../lib/types";
+import { readJsonPayload } from "../../../lib/request-payload";
 
 export const runtime = "nodejs";
 
@@ -276,13 +277,24 @@ function persistWholeDocumentResult(input: {
 }
 
 export async function POST(request: Request) {
-  const payload = await request.json() as {
+  const parsed = await readJsonPayload<{
     documentId?: string;
     fileName?: string;
     profileId?: string;
     workerId?: string;
-  };
-  if (!payload.documentId) return Response.json({ error: "documentId 为必填项" }, { status: 400 });
+  }>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
+  if (typeof payload.documentId !== "string" || !payload.documentId.trim()
+    || (payload.fileName !== undefined && typeof payload.fileName !== "string")
+    || (payload.profileId !== undefined && typeof payload.profileId !== "string")
+    || (payload.workerId !== undefined && typeof payload.workerId !== "string")) {
+    return Response.json({ error: "识别请求字段格式无效" }, { status: 400 });
+  }
+  if (payload.documentId.length > 100 || (payload.fileName?.length ?? 0) > 180
+    || (payload.profileId?.length ?? 0) > 100 || (payload.workerId?.length ?? 0) > 100) {
+    return Response.json({ error: "识别请求字段过长" }, { status: 400 });
+  }
   const documentId = payload.documentId;
   await ensureDatabase();
   const ownerId = requestOwner(request);

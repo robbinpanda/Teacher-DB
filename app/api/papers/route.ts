@@ -1,23 +1,38 @@
 import { getSqlite, sqliteTransaction } from "../../../db";
 import { ensureDatabase } from "../../../db/bootstrap";
 import { now, requestOwner } from "../../../lib/server";
+import { readJsonPayload } from "../../../lib/request-payload";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   await ensureDatabase();
-  const payload = await request.json() as {
+  const parsed = await readJsonPayload<{
     id?: string;
     title?: string;
     subtitle?: string;
     questionIds?: string[];
     scores?: Record<string, number>;
     settings?: Record<string, unknown>;
-  };
+  }>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
+  if ((payload.id !== undefined && typeof payload.id !== "string")
+    || typeof payload.title !== "string"
+    || (payload.subtitle !== undefined && typeof payload.subtitle !== "string")
+    || !Array.isArray(payload.questionIds)
+    || payload.questionIds.some((value) => typeof value !== "string" || !value.trim() || value.length > 100)
+    || (payload.scores !== undefined && (!payload.scores || typeof payload.scores !== "object" || Array.isArray(payload.scores)))
+    || (payload.settings !== undefined && (!payload.settings || typeof payload.settings !== "object" || Array.isArray(payload.settings)))) {
+    return Response.json({ error: "试卷数据格式无效" }, { status: 400 });
+  }
   const id = payload.id?.trim() || crypto.randomUUID();
   const title = payload.title?.trim();
-  const questionIds = Array.from(new Set(payload.questionIds ?? [])).slice(0, 500);
+  const questionIds = Array.from(new Set(payload.questionIds.map((value) => value.trim()))).slice(0, 500);
   if (!title) return Response.json({ error: "试卷标题不能为空" }, { status: 400 });
+  if (title.length > 120 || (payload.subtitle?.length ?? 0) > 300 || id.length > 100) {
+    return Response.json({ error: "试卷标题、副标题或编号过长" }, { status: 400 });
+  }
   if (!questionIds.length) return Response.json({ error: "请先从题库选择题目" }, { status: 400 });
   const ownerId = requestOwner(request);
   const sqlite = getSqlite();

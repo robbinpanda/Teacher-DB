@@ -12,6 +12,7 @@ import type {
   ReviewDocument,
   ReviewPage,
   SourceDocument,
+  VariationReview,
 } from "./types";
 
 type QuestionRow = {
@@ -28,12 +29,19 @@ type QuestionRow = {
   status: string;
   needsHumanReview: number | null;
   confidence: number;
+  folderId: string | null;
+  parentQuestionId: string | null;
+  variationKind: string | null;
+  variationReviewStatus: string | null;
+  variationReviewJson: string | null;
   documentName: string;
+  mimeType: string;
   subject: string | null;
   grade: string | null;
   sourceYear: number | null;
   sourceExamType: string | null;
   sourceRegion: string | null;
+  sourceTextbook: string | null;
   sourceSchool: string | null;
   sourceRemovedAt: string | null;
 };
@@ -134,6 +142,10 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       regions: questionRegions,
       assets: questionAssets,
       tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
+      folderId: row.folderId,
+      parentQuestionId: row.parentQuestionId,
+      variationKind: row.variationKind,
+      variationReview: parseJson<VariationReview | null>(row.variationReviewJson, null),
       confidence: row.confidence,
       needsHumanReview: row.needsHumanReview !== 0,
       status: row.status === "approved"
@@ -149,8 +161,14 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
         year: row.sourceYear,
         examType: row.sourceExamType,
         region: row.sourceRegion,
+        textbook: row.sourceTextbook,
         school: row.sourceSchool,
         sourceRemoved: Boolean(row.sourceRemovedAt),
+        origin: row.mimeType === "application/x-jianti-import"
+          ? "imported"
+          : row.mimeType === "application/x-jianti-generated"
+            ? "generated"
+            : "original",
       },
     };
   });
@@ -160,9 +178,11 @@ const questionSelect = `
   SELECT q.id, q.document_id AS documentId, q.number, q.type, q.stem,
          q.options_json AS optionsJson, q.answer, q.analysis, q.page_number AS pageNumber,
          q.bbox_json AS bboxJson, q.status, q.needs_human_review AS needsHumanReview, q.confidence,
-         d.name AS documentName, d.subject, d.grade, d.source_year AS sourceYear,
+         q.folder_id AS folderId, q.parent_question_id AS parentQuestionId, q.variation_kind AS variationKind,
+         q.variation_review_status AS variationReviewStatus, q.variation_review_json AS variationReviewJson,
+         d.name AS documentName, d.mime_type AS mimeType, d.subject, d.grade, d.source_year AS sourceYear,
          d.source_exam_type AS sourceExamType, d.source_region AS sourceRegion,
-         d.source_school AS sourceSchool, d.source_removed_at AS sourceRemovedAt
+         d.source_textbook AS sourceTextbook, d.source_school AS sourceSchool, d.source_removed_at AS sourceRemovedAt
     FROM questions q JOIN documents d ON d.id = q.document_id`;
 
 export async function getReviewData(documentId: string, ownerId: string) {
@@ -170,7 +190,7 @@ export async function getReviewData(documentId: string, ownerId: string) {
   const sqlite = getSqlite();
   const documentRow = sqlite.prepare(
     `SELECT d.id, d.name, d.subject, d.grade, d.source_year AS year,
-            d.source_exam_type AS examType, d.source_region AS region, d.source_school AS school,
+            d.source_exam_type AS examType, d.source_region AS region, d.source_textbook AS textbook, d.source_school AS school,
             d.status, d.error, d.page_count AS pageCount,
             j.status AS jobStatus, j.next_attempt_at AS nextAttemptAt,
             j.question_total AS recognitionQuestionTotal,
@@ -266,6 +286,8 @@ export type QuestionSearchOptions = {
   examType?: string;
   region?: string;
   school?: string;
+  textbook?: string;
+  folderId?: string;
   page?: number;
   pageSize?: number;
 };
@@ -292,6 +314,9 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
   if (options.examType) { clauses.push("d.source_exam_type = ?"); params.push(options.examType); }
   if (options.region) { clauses.push("d.source_region = ?"); params.push(options.region); }
   if (options.school) { clauses.push("d.source_school = ?"); params.push(options.school); }
+  if (options.textbook) { clauses.push("d.source_textbook = ?"); params.push(options.textbook); }
+  if (options.folderId === "unfiled") clauses.push("q.folder_id IS NULL");
+  else if (options.folderId) { clauses.push("q.folder_id = ?"); params.push(options.folderId); }
   if (options.tag) {
     clauses.push("EXISTS (SELECT 1 FROM question_tags sqt JOIN tags st ON st.id = sqt.tag_id WHERE sqt.question_id = q.id AND st.name = ?)");
     params.push(options.tag);
@@ -304,9 +329,10 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
       OR d.name LIKE ? ESCAPE '\\' OR COALESCE(d.subject, '') LIKE ? ESCAPE '\\'
       OR COALESCE(d.grade, '') LIKE ? ESCAPE '\\' OR COALESCE(d.source_exam_type, '') LIKE ? ESCAPE '\\'
       OR COALESCE(d.source_region, '') LIKE ? ESCAPE '\\' OR COALESCE(d.source_school, '') LIKE ? ESCAPE '\\'
+      OR COALESCE(d.source_textbook, '') LIKE ? ESCAPE '\\'
       OR EXISTS (SELECT 1 FROM question_tags qqt JOIN tags tt ON tt.id = qqt.tag_id WHERE qqt.question_id = q.id AND tt.name LIKE ? ESCAPE '\\')
     )`);
-    params.push(...Array.from({ length: 10 }, () => pattern));
+    params.push(...Array.from({ length: 11 }, () => pattern));
   }
   const where = clauses.join(" AND ");
   const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize ?? 30)));
@@ -331,7 +357,7 @@ export async function getBankData(ownerId: string) {
   const stats = sqlite.prepare(
     `SELECT COUNT(q.id) AS total,
             COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approved,
-            COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM question_assets a WHERE a.question_id = q.id) THEN 1 ELSE 0 END), 0) AS withAssets,
+            COALESCE(SUM(CASE WHEN q.status = 'approved' AND EXISTS (SELECT 1 FROM question_assets a WHERE a.question_id = q.id) THEN 1 ELSE 0 END), 0) AS withAssets,
             (SELECT COUNT(*) FROM papers p WHERE p.owner_id = ?) AS papers
        FROM questions q JOIN documents d ON d.id = q.document_id WHERE d.owner_id = ?`,
   ).get(ownerId, ownerId) as { total: number; approved: number; withAssets: number; papers: number };
@@ -342,11 +368,51 @@ export async function getBankData(ownerId: string) {
   ).all(ownerId) as Array<{ name: string }>;
   const sources = sqlite.prepare(
     `SELECT DISTINCT d.id, d.name, d.source_year AS year, d.source_exam_type AS examType,
-            d.source_region AS region, d.source_school AS school
+            d.source_region AS region, d.source_textbook AS textbook, d.source_school AS school
        FROM documents d JOIN questions q ON q.document_id = d.id
       WHERE d.owner_id = ? AND q.status = 'approved' ORDER BY d.created_at DESC`,
-  ).all(ownerId) as Array<{ id: string; name: string; year: number | null; examType: string | null; region: string | null; school: string | null }>;
-  return { ...result, stats, tags: tags.map((tag) => tag.name), sources };
+  ).all(ownerId) as Array<{ id: string; name: string; year: number | null; examType: string | null; region: string | null; textbook: string | null; school: string | null }>;
+  const folders = sqlite.prepare(
+    `SELECT f.id, f.parent_id AS parentId, f.name, f.created_at AS createdAt, f.updated_at AS updatedAt,
+            COUNT(q.id) AS questionCount
+       FROM question_folders f
+       LEFT JOIN questions q ON q.folder_id = f.id
+       LEFT JOIN documents d ON d.id = q.document_id AND d.owner_id = f.owner_id
+      WHERE f.owner_id = ? GROUP BY f.id ORDER BY f.name COLLATE NOCASE`,
+  ).all(ownerId) as Array<{ id: string; parentId: string | null; name: string; questionCount: number; createdAt: string; updatedAt: string }>;
+  const facets = {
+    grades: sqlite.prepare(
+      `SELECT COALESCE(d.grade, '未设置年级') AS value, COUNT(q.id) AS count
+         FROM questions q JOIN documents d ON d.id = q.document_id
+        WHERE d.owner_id = ? AND q.status = 'approved' GROUP BY d.grade ORDER BY value`,
+    ).all(ownerId) as Array<{ value: string; count: number }>,
+    regions: sqlite.prepare(
+      `SELECT COALESCE(NULLIF(d.source_region, ''), '未设置地区') AS value, COUNT(q.id) AS count
+         FROM questions q JOIN documents d ON d.id = q.document_id
+        WHERE d.owner_id = ? AND q.status = 'approved' GROUP BY d.source_region ORDER BY count DESC, value LIMIT 40`,
+    ).all(ownerId) as Array<{ value: string; count: number }>,
+    textbooks: sqlite.prepare(
+      `SELECT COALESCE(NULLIF(d.source_textbook, ''), '未设置教材') AS value, COUNT(q.id) AS count
+         FROM questions q JOIN documents d ON d.id = q.document_id
+        WHERE d.owner_id = ? AND q.status = 'approved' GROUP BY d.source_textbook ORDER BY count DESC, value LIMIT 30`,
+    ).all(ownerId) as Array<{ value: string; count: number }>,
+  };
+  const profileRow = sqlite.prepare(
+    "SELECT preferred_region AS region, preferred_textbook AS textbook, preferred_grades_json AS gradesJson FROM app_settings WHERE owner_id = ?",
+  ).get(ownerId) as { region: string | null; textbook: string | null; gradesJson: string } | undefined;
+  return {
+    ...result,
+    stats,
+    tags: tags.map((tag) => tag.name),
+    sources,
+    folders,
+    facets,
+    profile: {
+      region: profileRow?.region ?? "全国",
+      textbook: profileRow?.textbook ?? "人教版",
+      grades: parseJson<string[]>(profileRow?.gradesJson ?? "[]", []),
+    },
+  };
 }
 
 export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {

@@ -109,3 +109,40 @@ test("批量删除在同一事务中移除试卷、题目和组卷引用", () =>
   assert.equal(sqlite.prepare("SELECT COUNT(*) FROM paper_items").pluck().get(), 0);
   sqlite.close();
 });
+
+test("只删除试卷来源时清除指向已删除页面的题图来源引用", () => {
+  const sqlite = new Database(":memory:");
+  sqlite.pragma("foreign_keys = ON");
+  sqlite.exec(`
+    CREATE TABLE documents (id TEXT PRIMARY KEY, owner_id TEXT, name TEXT, status TEXT, source_removed_at TEXT, original_key TEXT, updated_at TEXT);
+    CREATE TABLE pages (id TEXT PRIMARY KEY, document_id TEXT REFERENCES documents(id) ON DELETE CASCADE, storage_key TEXT);
+    CREATE TABLE questions (id TEXT PRIMARY KEY, document_id TEXT REFERENCES documents(id) ON DELETE CASCADE);
+    CREATE TABLE question_assets (id TEXT PRIMARY KEY, question_id TEXT REFERENCES questions(id) ON DELETE CASCADE, source_key TEXT, crop_key TEXT);
+    CREATE TABLE paper_items (question_id TEXT);
+    CREATE TABLE tags (id TEXT PRIMARY KEY);
+    CREATE TABLE question_tags (question_id TEXT, tag_id TEXT);
+    CREATE TABLE document_jobs (document_id TEXT);
+    CREATE TABLE extraction_runs (document_id TEXT);
+    INSERT INTO documents VALUES ('a', 'teacher', 'A', 'complete', NULL, 'a.pdf', 'before');
+    INSERT INTO pages VALUES ('pa', 'a', 'a-page.jpg');
+    INSERT INTO questions VALUES ('qa', 'a');
+    INSERT INTO question_assets VALUES ('asset-a', 'qa', 'a-page.jpg', 'a-crop.jpg');
+  `);
+  const outcome = sqlite.transaction(() => deleteDocuments(sqlite, {
+    ownerId: "teacher",
+    documentIds: ["a"],
+    mode: "source_only",
+    timestamp: "after",
+  }))();
+  assert.deepEqual(new Set(outcome.fileKeys), new Set(["a.pdf", "a-page.jpg"]));
+  assert.deepEqual(sqlite.prepare("SELECT source_key AS sourceKey, crop_key AS cropKey FROM question_assets").get(), {
+    sourceKey: null,
+    cropKey: "a-crop.jpg",
+  });
+  assert.equal(sqlite.prepare("SELECT COUNT(*) FROM pages").pluck().get(), 0);
+  assert.deepEqual(sqlite.prepare("SELECT original_key AS originalKey, source_removed_at AS removedAt FROM documents").get(), {
+    originalKey: null,
+    removedAt: "after",
+  });
+  sqlite.close();
+});

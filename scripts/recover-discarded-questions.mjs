@@ -6,7 +6,7 @@ const documentId = process.argv.slice(2).find((argument) => !argument.startsWith
 const apply = process.argv.includes("--apply");
 if (!documentId) throw new Error("Usage: node scripts/recover-discarded-questions.mjs <document-id> [--apply]");
 
-const databasePath = path.resolve(process.env.SHITI_DATA_DIR || path.join(process.cwd(), "data"), "teacher-question-bank.sqlite3");
+const databasePath = path.resolve(process.env.JIANTI_DATA_DIR || path.join(process.cwd(), "data"), "teacher-question-bank.sqlite3");
 const sqlite = new Database(databasePath, { readonly: !apply, fileMustExist: true });
 
 function safeBox(value) {

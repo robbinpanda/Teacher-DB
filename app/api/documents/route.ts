@@ -6,6 +6,7 @@ import { now, requestOwner } from "../../../lib/server";
 import { deleteFile, putFile } from "../../../lib/file-storage";
 import { getDocuments } from "../../../lib/question-repository";
 import { findReusableDocument } from "../../../lib/document-upload";
+import { readFormDataPayload } from "../../../lib/request-payload";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   await ensureDatabase();
-  const form = await request.formData();
+  const parsed = await readFormDataPayload(request);
+  if (!parsed.ok) return parsed.response;
+  const form = parsed.value;
   const file = form.get("file");
   if (!(file instanceof File)) return Response.json({ error: "缺少文件" }, { status: 400 });
   const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
@@ -58,6 +61,7 @@ export async function POST(request: Request) {
         sourceYear: Number(form.get("sourceYear")) || null,
         sourceExamType: String(form.get("sourceExamType") ?? "") || null,
         sourceRegion: String(form.get("sourceRegion") ?? "") || null,
+        sourceTextbook: String(form.get("sourceTextbook") ?? "") || null,
         sourceSchool: String(form.get("sourceSchool") ?? "") || null,
         updatedAt: createdAt,
       }).where(and(eq(documents.id, existing.id), eq(documents.ownerId, ownerId)));
@@ -73,8 +77,8 @@ export async function POST(request: Request) {
       transaction.prepare(
         `INSERT INTO documents
           (id, owner_id, name, mime_type, original_key, status, page_count, subject, grade,
-           source_year, source_exam_type, source_region, source_school, checksum, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           source_year, source_exam_type, source_region, source_textbook, source_school, checksum, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id, ownerId, file.name, file.type || "application/octet-stream", originalKey,
         pageCount > 0 ? "extracting" : "uploading", pageCount,
@@ -83,6 +87,7 @@ export async function POST(request: Request) {
         Number(form.get("sourceYear")) || null,
         String(form.get("sourceExamType") ?? "") || null,
         String(form.get("sourceRegion") ?? "") || null,
+        String(form.get("sourceTextbook") ?? "") || null,
         String(form.get("sourceSchool") ?? "") || null,
         checksum, createdAt, createdAt,
       );

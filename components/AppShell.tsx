@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BarChart3,
   BookOpen,
   Check,
   ChevronDown,
@@ -11,11 +12,14 @@ import {
   FilePlus2,
   FolderOpen,
   House,
+  ClipboardCheck,
   Settings2,
   Sparkles,
   SlidersHorizontal,
+  Users,
 } from "lucide-react";
 import { educationStages, subjects, type EducationStage } from "../lib/education-taxonomy";
+import type { TeacherMode } from "../lib/school-workflow";
 
 type EducationScopeValue = {
   subject: string;
@@ -35,16 +39,26 @@ export function useEducationScope() {
   return useContext(EducationScopeContext);
 }
 
+type TeacherModeValue = { mode: TeacherMode; setMode: (mode: TeacherMode) => Promise<void>; changing: boolean };
+const TeacherModeContext = createContext<TeacherModeValue>({ mode: "personal", setMode: async () => undefined, changing: false });
+export function useTeacherMode() { return useContext(TeacherModeContext); }
+
 const navigation = [
   { href: "/", label: "工作台", icon: House },
   { href: "/bank", label: "题库", icon: LibraryBig },
   { href: "/papers/new", label: "组卷", icon: FilePlus2 },
   { href: "/papers", label: "试卷库", icon: FolderOpen },
-  { href: "/settings/models", label: "模型设置", icon: SlidersHorizontal },
+  { href: "/classes", label: "班级学生", icon: Users, schoolOnly: true },
+  { href: "/assignments", label: "作业批改", icon: ClipboardCheck, schoolOnly: true },
+  { href: "/settings/models", label: "模型配置", icon: SlidersHorizontal },
+  { href: "/settings/usage", label: "模型用量", icon: BarChart3 },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, initialMode }: { children: React.ReactNode; initialMode: TeacherMode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [mode, setModeState] = useState<TeacherMode>(initialMode);
+  const [modeChanging, setModeChanging] = useState(false);
   const [subject, setSubject] = useState("数学");
   const [stage, setStage] = useState<EducationStage>("middle");
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -89,15 +103,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setStage: (value) => { setStage(value); window.localStorage.setItem("teacher-db-stage", value); },
   }), [stage, subject]);
 
-  if (/^\/papers\/[^/]+\/print$/.test(pathname)) return <>{children}</>;
+  const modeValue = useMemo<TeacherModeValue>(() => ({
+    mode,
+    changing: modeChanging,
+    setMode: async (nextMode) => {
+      if (nextMode === mode || modeChanging) return;
+      setModeChanging(true);
+      try {
+        const response = await fetch("/api/teacher-mode", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: nextMode }) });
+        if (!response.ok) throw new Error("切换失败");
+        setModeState(nextMode);
+        if (nextMode === "personal" && (pathname.startsWith("/classes") || pathname.startsWith("/assignments"))) router.push("/");
+        router.refresh();
+      } finally { setModeChanging(false); }
+    },
+  }), [mode, modeChanging, pathname, router]);
+
+  if (/^\/papers\/[^/]+\/print$/.test(pathname) || /^\/assignments\/[^/]+\/answer-sheet$/.test(pathname)) return <>{children}</>;
 
   return (
-    <EducationScopeContext.Provider value={scope}>
+    <TeacherModeContext.Provider value={modeValue}><EducationScopeContext.Provider value={scope}>
       <div className="app-frame">
         <aside className="sidebar">
           <Link href="/" className="brand">
             <span className="brand-mark"><BookOpen size={21} strokeWidth={2.2} /></span>
-            <span><strong>拾题</strong><small>教师智能工作台</small></span>
+            <span><strong>拣题</strong><small>教师智能工作台</small></span>
           </Link>
           <div ref={switcherRef} className={`education-switcher${scopeOpen ? " open" : ""}`} aria-label="教学范围">
             <button
@@ -153,9 +183,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </div>
+          <div className="teacher-mode-switch" role="group" aria-label="教师工作模式">
+            <button type="button" className={mode === "personal" ? "active" : ""} disabled={modeChanging} onClick={() => void modeValue.setMode("personal")}>个人教师</button>
+            <button type="button" className={mode === "school" ? "active" : ""} disabled={modeChanging} onClick={() => void modeValue.setMode("school")}>学校教师</button>
+          </div>
           <span className="nav-kicker">工作空间</span>
           <nav className="side-nav" aria-label="主导航">
-            {navigation.map(({ href, label, icon: Icon }) => {
+            {navigation.filter((item) => !item.schoolOnly || mode === "school").map(({ href, label, icon: Icon }) => {
               const active = href === "/"
                 ? pathname === "/" || pathname.startsWith("/review")
                 : href === "/papers/new"
@@ -168,11 +202,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
           <div className="sidebar-footnote">
             <span><Sparkles size={15} /></span>
-            <div><strong>从原卷到成卷</strong><small>识别、审核、入库、组卷，一处完成</small></div>
+            <div><strong>{mode === "school" ? "教学闭环" : "从原卷到成卷"}</strong><small>{mode === "school" ? "出题、布置、批改、分析、补练" : "识别、审核、入库、组卷，一处完成"}</small></div>
           </div>
         </aside>
         <main className="app-main">{children}</main>
       </div>
-    </EducationScopeContext.Provider>
+    </EducationScopeContext.Provider></TeacherModeContext.Provider>
   );
 }

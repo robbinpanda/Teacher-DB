@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const documents = sqliteTable("documents", {
@@ -13,6 +14,7 @@ export const documents = sqliteTable("documents", {
   sourceYear: integer("source_year"),
   sourceExamType: text("source_exam_type"),
   sourceRegion: text("source_region"),
+  sourceTextbook: text("source_textbook"),
   sourceSchool: text("source_school"),
   checksum: text("checksum"),
   error: text("error"),
@@ -63,6 +65,17 @@ export const extractionRuns = sqliteTable("extraction_runs", {
   uniqueIndex("runs_idempotency_idx").on(table.idempotencyKey),
 ]);
 
+export const questionFolders = sqliteTable("question_folders", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  parentId: text("parent_id"),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("question_folders_owner_parent_idx").on(table.ownerId, table.parentId),
+]);
+
 export const questions = sqliteTable("questions", {
   id: text("id").primaryKey(),
   documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
@@ -78,12 +91,59 @@ export const questions = sqliteTable("questions", {
   needsHumanReview: integer("needs_human_review", { mode: "boolean" }),
   confidence: real("confidence").notNull().default(0),
   score: integer("score").notNull().default(0),
+  folderId: text("folder_id").references(() => questionFolders.id, { onDelete: "set null" }),
+  parentQuestionId: text("parent_question_id"),
+  variationKind: text("variation_kind"),
+  variationReviewStatus: text("variation_review_status"),
+  variationReviewJson: text("variation_review_json"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [
   index("questions_document_page_idx").on(table.documentId, table.pageNumber),
   index("questions_type_status_idx").on(table.type, table.status),
+  index("questions_folder_idx").on(table.folderId, table.updatedAt),
+  index("questions_parent_idx").on(table.parentQuestionId),
   uniqueIndex("questions_document_number_idx").on(table.documentId, table.number),
+]);
+
+export const variationRuns = sqliteTable("variation_runs", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  sourceQuestionId: text("source_question_id").references(() => questions.id, { onDelete: "set null" }),
+  sourceSnapshotHash: text("source_snapshot_hash").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  qualityMode: text("quality_mode").notNull().default("reviewed"),
+  requestedCount: integer("requested_count").notNull(),
+  difficulty: text("difficulty").notNull(),
+  focus: text("focus").notNull().default(""),
+  instructions: text("instructions").notNull().default(""),
+  generatorProfileId: text("generator_profile_id"),
+  reviewerProfileId: text("reviewer_profile_id"),
+  status: text("status").notNull().default("generating"),
+  resultJson: text("result_json"),
+  error: text("error"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  completedAt: text("completed_at"),
+}, (table) => [
+  uniqueIndex("variation_runs_owner_idempotency_idx").on(table.ownerId, table.idempotencyKey),
+  index("variation_runs_owner_created_idx").on(table.ownerId, table.createdAt),
+  index("variation_runs_source_idx").on(table.sourceQuestionId, table.createdAt),
+]);
+
+export const variationCandidates = sqliteTable("variation_candidates", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull().references(() => variationRuns.id, { onDelete: "cascade" }),
+  ordinal: integer("ordinal").notNull(),
+  contentJson: text("content_json").notNull(),
+  reviewJson: text("review_json").notNull(),
+  status: text("status").notNull().default("awaiting_teacher"),
+  promotedQuestionId: text("promoted_question_id").references(() => questions.id, { onDelete: "set null" }),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("variation_candidates_run_ordinal_idx").on(table.runId, table.ordinal),
+  index("variation_candidates_run_status_idx").on(table.runId, table.status),
 ]);
 
 export const questionRegions = sqliteTable("question_regions", {
@@ -202,6 +262,107 @@ export const paperItems = sqliteTable("paper_items", {
   index("paper_items_position_idx").on(table.paperId, table.position),
 ]);
 
+export const teachingClasses = sqliteTable("teaching_classes", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  name: text("name").notNull(),
+  grade: text("grade").notNull(),
+  subject: text("subject").notNull().default("数学"),
+  schoolYear: text("school_year").notNull(),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("teaching_classes_owner_year_name_idx").on(table.ownerId, table.schoolYear, table.name),
+  index("teaching_classes_owner_archived_idx").on(table.ownerId, table.archived, table.updatedAt),
+]);
+
+export const students = sqliteTable("students", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  studentNo: text("student_no").notNull(),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("students_owner_number_idx").on(table.ownerId, table.studentNo),
+  index("students_owner_name_idx").on(table.ownerId, table.name),
+]);
+
+export const classStudents = sqliteTable("class_students", {
+  classId: text("class_id").notNull().references(() => teachingClasses.id, { onDelete: "cascade" }),
+  studentId: text("student_id").notNull().references(() => students.id, { onDelete: "restrict" }),
+  seatNumber: text("seat_number"),
+  joinedAt: text("joined_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.classId, table.studentId] }),
+  index("class_students_student_idx").on(table.studentId, table.classId),
+]);
+
+export const assignments = sqliteTable("assignments", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  paperId: text("paper_id").notNull().references(() => papers.id, { onDelete: "restrict" }),
+  title: text("title").notNull(),
+  assignmentCode: text("assignment_code").notNull(),
+  status: text("status").notNull().default("active"),
+  dueAt: text("due_at"),
+  totalScore: real("total_score").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("assignments_code_idx").on(table.assignmentCode),
+  index("assignments_owner_status_idx").on(table.ownerId, table.status, table.updatedAt),
+  index("assignments_paper_idx").on(table.paperId, table.createdAt),
+]);
+
+export const assignmentClasses = sqliteTable("assignment_classes", {
+  assignmentId: text("assignment_id").notNull().references(() => assignments.id, { onDelete: "cascade" }),
+  classId: text("class_id").notNull().references(() => teachingClasses.id, { onDelete: "restrict" }),
+}, (table) => [
+  primaryKey({ columns: [table.assignmentId, table.classId] }),
+  index("assignment_classes_class_idx").on(table.classId, table.assignmentId),
+]);
+
+export const assignmentItems = sqliteTable("assignment_items", {
+  assignmentId: text("assignment_id").notNull().references(() => assignments.id, { onDelete: "cascade" }),
+  questionId: text("question_id").notNull().references(() => questions.id, { onDelete: "restrict" }),
+  position: integer("position").notNull(),
+  maxScore: real("max_score").notNull().default(0),
+  snapshotJson: text("snapshot_json").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.assignmentId, table.questionId] }),
+  uniqueIndex("assignment_items_position_idx").on(table.assignmentId, table.position),
+]);
+
+export const submissions = sqliteTable("submissions", {
+  id: text("id").primaryKey(),
+  assignmentId: text("assignment_id").notNull().references(() => assignments.id, { onDelete: "cascade" }),
+  classId: text("class_id").notNull().references(() => teachingClasses.id, { onDelete: "restrict" }),
+  studentId: text("student_id").notNull().references(() => students.id, { onDelete: "restrict" }),
+  status: text("status").notNull().default("assigned"),
+  totalScore: real("total_score"),
+  teacherComment: text("teacher_comment").notNull().default(""),
+  submittedAt: text("submitted_at"),
+  gradedAt: text("graded_at"),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("submissions_assignment_class_student_idx").on(table.assignmentId, table.classId, table.studentId),
+  index("submissions_assignment_status_idx").on(table.assignmentId, table.status, table.updatedAt),
+  index("submissions_student_idx").on(table.studentId, table.updatedAt),
+]);
+
+export const submissionScores = sqliteTable("submission_scores", {
+  submissionId: text("submission_id").notNull().references(() => submissions.id, { onDelete: "cascade" }),
+  questionId: text("question_id").notNull().references(() => questions.id, { onDelete: "restrict" }),
+  score: real("score").notNull().default(0),
+  comment: text("comment").notNull().default(""),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.submissionId, table.questionId] }),
+  index("submission_scores_question_idx").on(table.questionId, table.submissionId),
+]);
+
 export const modelProfiles = sqliteTable("model_profiles", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull().default("local-demo"),
@@ -228,6 +389,23 @@ export const modelProfiles = sqliteTable("model_profiles", {
 }, (table) => [
   index("model_profiles_owner_idx").on(table.ownerId, table.enabled),
   uniqueIndex("model_profiles_owner_name_idx").on(table.ownerId, table.displayName),
+]);
+
+export const bankImports = sqliteTable("bank_imports", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().default("local-demo"),
+  sourceName: text("source_name").notNull(),
+  packageId: text("package_id"),
+  questionCount: integer("question_count").notNull().default(0),
+  status: text("status").notNull().default("processing"),
+  error: text("error"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("bank_imports_owner_created_idx").on(table.ownerId, table.createdAt),
+  uniqueIndex("bank_imports_active_package_idx")
+    .on(table.ownerId, table.packageId)
+    .where(sql`${table.status} IN ('processing', 'complete')`),
 ]);
 
 export const modelUsageEvents = sqliteTable("model_usage_events", {
@@ -258,12 +436,16 @@ export const modelUsageEvents = sqliteTable("model_usage_events", {
 
 export const appSettings = sqliteTable("app_settings", {
   ownerId: text("owner_id").primaryKey(),
+  teacherMode: text("teacher_mode").notNull().default("personal"),
   selectedModelProfileId: text("selected_model_profile_id"),
   extractionConcurrency: integer("extraction_concurrency").notNull().default(2),
   extractionPaused: integer("extraction_paused", { mode: "boolean" }).notNull().default(false),
   extractionPauseReason: text("extraction_pause_reason"),
   extractionPausedAt: text("extraction_paused_at"),
   extractionFailureStreak: integer("extraction_failure_streak").notNull().default(0),
+  preferredRegion: text("preferred_region"),
+  preferredTextbook: text("preferred_textbook"),
+  preferredGradesJson: text("preferred_grades_json").notNull().default("[]"),
   updatedAt: text("updated_at").notNull(),
 });
 

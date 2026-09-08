@@ -2,6 +2,7 @@ import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../lib/server";
 import { callVisionModel, ModelCallError } from "../../../../../lib/vision-model";
+import { readJsonPayload } from "../../../../../lib/request-payload";
 
 export const runtime = "nodejs";
 
@@ -17,10 +18,25 @@ export async function POST(request: Request, context: { params: Promise<{ docume
   await ensureDatabase();
   const { documentId } = await context.params;
   const ownerId = requestOwner(request);
-  const payload = await request.json() as { sourceName?: string; images?: Array<{ page: number; dataUrl: string }>; importId?: string; final?: boolean; profileId?: string };
-  const images = (payload.images ?? []).slice(0, 6);
-  if (!images.length || images.some((item) => !item.dataUrl.startsWith("data:image/") || item.dataUrl.length > 12 * 1024 * 1024)) {
+  const parsed = await readJsonPayload<{ sourceName?: string; images?: Array<{ page: number; dataUrl: string }>; importId?: string; final?: boolean; profileId?: string }>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
+  if (!Array.isArray(payload.images)
+    || (payload.sourceName !== undefined && typeof payload.sourceName !== "string")
+    || (payload.importId !== undefined && typeof payload.importId !== "string")
+    || (payload.final !== undefined && typeof payload.final !== "boolean")
+    || (payload.profileId !== undefined && typeof payload.profileId !== "string")) {
+    return Response.json({ error: "答案导入数据格式无效" }, { status: 400 });
+  }
+  const images = payload.images.slice(0, 6);
+  if (!images.length || images.some((item) => !item || typeof item !== "object"
+    || !Number.isInteger(item.page) || item.page < 1 || item.page > 10_000
+    || typeof item.dataUrl !== "string" || !/^data:image\/(?:png|jpeg|webp);base64,/i.test(item.dataUrl)
+    || item.dataUrl.length > 12 * 1024 * 1024)) {
     return Response.json({ error: "答案页为空、格式无效或单页超过 12 MB" }, { status: 400 });
+  }
+  if ((payload.sourceName?.length ?? 0) > 180 || (payload.importId?.length ?? 0) > 100 || (payload.profileId?.length ?? 0) > 100) {
+    return Response.json({ error: "答案导入字段过长" }, { status: 400 });
   }
   const sqlite = getSqlite();
   const document = sqlite.prepare("SELECT id FROM documents WHERE id = ? AND owner_id = ? AND source_removed_at IS NULL").get(documentId, ownerId);

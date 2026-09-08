@@ -9,6 +9,7 @@ import { stageFromGrade } from "../../../../../lib/education-taxonomy";
 import { getTagCatalog } from "../../../../../lib/tag-catalog";
 import { modelNeedsHumanReview } from "../../../../../lib/model-review";
 import { stripLeadingQuestionNumber } from "../../../../../lib/question-text.js";
+import { readJsonPayload } from "../../../../../lib/request-payload";
 
 export const runtime = "nodejs";
 
@@ -43,7 +44,9 @@ export async function POST(request: Request, context: { params: Promise<{ questi
   await ensureDatabase();
   const { questionId } = await context.params;
   const ownerId = requestOwner(request);
-  const payload = await request.json() as { regions?: RequestedRegion[]; profileId?: string };
+  const parsed = await readJsonPayload<{ regions?: RequestedRegion[]; profileId?: string }>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
   const sqlite = getSqlite();
   const question = sqlite.prepare(
     `SELECT q.document_id AS documentId, q.number, q.type, d.subject, d.grade, d.source_removed_at AS sourceRemovedAt

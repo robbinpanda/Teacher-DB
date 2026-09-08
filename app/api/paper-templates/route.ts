@@ -4,14 +4,24 @@ import { isEducationStage } from "../../../lib/education-taxonomy";
 import { getPaperTemplates } from "../../../lib/paper-template-repository";
 import { normalizePaperStyle, type PaperTemplateConfig } from "../../../lib/paper-templates";
 import { now, requestOwner } from "../../../lib/server";
+import { readJsonPayload } from "../../../lib/request-payload";
 
 export const runtime = "nodejs";
 
-function validConfig(config: PaperTemplateConfig | undefined) {
-  return !!config && Array.isArray(config.sections) && config.sections.length > 0 && config.sections.length <= 12
-    && config.sections.every((section) => section.title?.trim() && section.scoreDetail?.trim()
+function validConfig(config: unknown): config is PaperTemplateConfig {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+  const candidate = config as Partial<PaperTemplateConfig>;
+  return Array.isArray(candidate.sections) && candidate.sections.length > 0 && candidate.sections.length <= 12
+    && candidate.sections.every((section) => !!section && typeof section === "object"
+      && typeof section.id === "string" && section.id.trim().length > 0 && section.id.length <= 80
+      && typeof section.title === "string" && section.title.trim().length > 0 && section.title.length <= 120
+      && typeof section.scoreDetail === "string" && section.scoreDetail.trim().length > 0 && section.scoreDetail.length <= 500
       && Array.isArray(section.acceptedTypes) && section.acceptedTypes.length > 0
-      && Number.isFinite(section.defaultScore) && section.defaultScore >= 0);
+      && section.acceptedTypes.every((type) => ["single", "multiple", "fill", "answer"].includes(type))
+      && Number.isFinite(section.defaultScore) && section.defaultScore >= 0 && section.defaultScore <= 100
+      && (section.scoreSequence === undefined || (Array.isArray(section.scoreSequence)
+        && section.scoreSequence.length <= 200
+        && section.scoreSequence.every((score) => Number.isFinite(score) && score >= 0 && score <= 100))));
 }
 
 export async function GET(request: Request) {
@@ -22,10 +32,22 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const payload = await request.json() as { id?: string; name?: string; subject?: string; stage?: string; description?: string; config?: PaperTemplateConfig };
+  const parsed = await readJsonPayload<{ id?: string; name?: string; subject?: string; stage?: string; description?: string; config?: PaperTemplateConfig }>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
+  if ((payload.id !== undefined && typeof payload.id !== "string")
+    || typeof payload.name !== "string"
+    || (payload.subject !== undefined && typeof payload.subject !== "string")
+    || (payload.stage !== undefined && typeof payload.stage !== "string")
+    || (payload.description !== undefined && typeof payload.description !== "string")) {
+    return Response.json({ error: "模板字段格式无效" }, { status: 400 });
+  }
   const name = payload.name?.trim() || "";
   const subject = payload.subject?.trim() || "数学";
   if (!name || name.length > 60) return Response.json({ error: "模板名称需为 1-60 个字符" }, { status: 400 });
+  if (subject.length > 32 || (payload.description?.length ?? 0) > 500 || (payload.id?.length ?? 0) > 100) {
+    return Response.json({ error: "模板字段过长" }, { status: 400 });
+  }
   if (!isEducationStage(payload.stage) || !validConfig(payload.config)) return Response.json({ error: "模板内容不完整" }, { status: 400 });
   await ensureDatabase();
   const ownerId = requestOwner(request);

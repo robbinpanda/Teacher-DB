@@ -7,6 +7,7 @@ import { now, requestOwner } from "../../../lib/server";
 import { validateModelBaseUrl } from "../../../lib/model-profiles";
 import { normalizeModelProtocol } from "../../../lib/model-protocols";
 import { normalizeOptionalTokenPrice } from "../../../lib/model-usage";
+import { readJsonPayload } from "../../../lib/request-payload";
 
 function publicProfile<T extends { provider: string; apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
   const safe = { ...profile, provider: normalizeModelProtocol(profile.provider) };
@@ -32,19 +33,30 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const ownerId = requestOwner(request);
-  await ensureOwnerModelSettings(ownerId);
-  const payload = await request.json() as {
+  const parsed = await readJsonPayload<{
     displayName?: string; provider?: string; baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; select?: boolean;
     inputPricePerMillion?: number | string | null;
     outputPricePerMillion?: number | string | null;
     cachedInputPricePerMillion?: number | string | null;
     cachedOutputPricePerMillion?: number | string | null;
-  };
+  }>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
+  if (typeof payload.displayName !== "string" || typeof payload.baseUrl !== "string"
+    || typeof payload.model !== "string" || typeof payload.apiKey !== "string"
+    || (payload.provider !== undefined && typeof payload.provider !== "string")
+    || (payload.timeoutMs !== undefined && (typeof payload.timeoutMs !== "number" || !Number.isFinite(payload.timeoutMs)))
+    || (payload.select !== undefined && typeof payload.select !== "boolean")) {
+    return Response.json({ error: "模型配置字段格式无效" }, { status: 400 });
+  }
   const displayName = payload.displayName?.trim();
   const model = payload.model?.trim();
   const apiKey = payload.apiKey?.trim();
   if (!displayName || !model || !apiKey || !payload.baseUrl) {
     return Response.json({ error: "名称、API Base URL、模型名称和 API Key 均为必填项" }, { status: 400 });
+  }
+  if (displayName.length > 80 || model.length > 200 || apiKey.length > 16_384 || payload.baseUrl.length > 2_048) {
+    return Response.json({ error: "模型配置字段过长" }, { status: 400 });
   }
   let baseUrl: string;
   try { baseUrl = validateModelBaseUrl(payload.baseUrl); } catch (error) {
@@ -67,6 +79,7 @@ export async function POST(request: Request) {
     return Response.json({ error: error instanceof Error ? error.message : "价格格式无效" }, { status: 400 });
   }
   const encrypted = await encryptSecret(apiKey);
+  await ensureOwnerModelSettings(ownerId);
   const id = crypto.randomUUID();
   const timestamp = now();
   const timeoutMs = Math.max(15000, Math.min(300000, Number(payload.timeoutMs ?? 90000)));
@@ -101,9 +114,13 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const ownerId = requestOwner(request);
+  const parsed = await readJsonPayload<{ selectedProfileId?: string }>(request);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.value;
+  if (typeof payload.selectedProfileId !== "string" || !payload.selectedProfileId.trim() || payload.selectedProfileId.length > 100) {
+    return Response.json({ error: "缺少或无效的 selectedProfileId" }, { status: 400 });
+  }
   await ensureOwnerModelSettings(ownerId);
-  const payload = await request.json() as { selectedProfileId?: string };
-  if (!payload.selectedProfileId) return Response.json({ error: "缺少 selectedProfileId" }, { status: 400 });
   const selected = sqliteTransaction((transaction) => {
     const profile = transaction.prepare(
       "SELECT id FROM model_profiles WHERE id = ? AND owner_id = ? AND enabled = 1",

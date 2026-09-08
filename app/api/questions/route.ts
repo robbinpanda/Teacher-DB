@@ -22,7 +22,9 @@ export async function GET(request: Request) {
     year,
     examType: url.searchParams.get("examType") ?? undefined,
     region: url.searchParams.get("region") ?? undefined,
+    textbook: url.searchParams.get("textbook") ?? undefined,
     school: url.searchParams.get("school") ?? undefined,
+    folderId: url.searchParams.get("folderId") ?? undefined,
     page: Number(url.searchParams.get("page")) || 1,
     pageSize: Number(url.searchParams.get("pageSize")) || 30,
   });

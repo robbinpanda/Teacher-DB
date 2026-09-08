@@ -106,6 +106,10 @@ export function deleteDocuments(
   } else {
     sqlite.prepare(`DELETE FROM document_jobs WHERE document_id IN (${marks})`).run(...ids);
     sqlite.prepare(`DELETE FROM extraction_runs WHERE document_id IN (${marks})`).run(...ids);
+    sqlite.prepare(
+      `UPDATE question_assets SET source_key = NULL
+        WHERE question_id IN (SELECT id FROM questions WHERE document_id IN (${marks}))`,
+    ).run(...ids);
     sqlite.prepare(`DELETE FROM pages WHERE document_id IN (${marks})`).run(...ids);
     sqlite.prepare(
       `UPDATE documents SET original_key = NULL, source_removed_at = ?, updated_at = ?

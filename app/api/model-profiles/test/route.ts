@@ -4,6 +4,7 @@ import { modelProfiles } from "../../../../db/schema";
 import { ensureOwnerModelSettings } from "../../../../lib/model-profiles";
 import { now, requestOwner } from "../../../../lib/server";
 import { callVisionModel } from "../../../../lib/vision-model";
+import { readJsonPayload } from "../../../../lib/request-payload";
 import sharp from "sharp";
 
 export const runtime = "nodejs";
@@ -18,7 +19,9 @@ async function modelTestImage() {
 export async function POST(request: Request) {
   const ownerId = requestOwner(request);
   await ensureOwnerModelSettings(ownerId);
-  const payload = await request.json() as { profileId?: string };
+  const parsedPayload = await readJsonPayload<{ profileId?: string }>(request);
+  if (!parsedPayload.ok) return parsedPayload.response;
+  const payload = parsedPayload.value;
   if (!payload.profileId) return Response.json({ error: "缺少 profileId" }, { status: 400 });
   const db = getDb();
   const profile = await db.query.modelProfiles.findFirst({

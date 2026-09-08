@@ -12,6 +12,14 @@ export type QuestionRegion = {
 
 export type QuestionType = "single" | "multiple" | "fill" | "answer";
 
+export type VariationReview = {
+  mode: "rules" | "multi_agent";
+  status: "rules_passed" | "passed" | "revised";
+  score: number | null;
+  issues: string[];
+  reviewer: string | null;
+};
+
 export type QuestionAsset = {
   id: string;
   kind: "figure" | "table" | "graph";
@@ -39,6 +47,10 @@ export type Question = {
   regions: QuestionRegion[];
   assets: QuestionAsset[];
   tags: string[];
+  folderId?: string | null;
+  parentQuestionId?: string | null;
+  variationKind?: string | null;
+  variationReview?: VariationReview | null;
   confidence: number;
   needsHumanReview: boolean;
   status: "pending" | "approved" | "needs_attention";
@@ -79,9 +91,28 @@ export type QuestionSource = {
   year?: number | null;
   examType?: string | null;
   region?: string | null;
+  textbook?: string | null;
   school?: string | null;
   sourceRemoved?: boolean;
+  origin?: "original" | "imported" | "generated";
 };
+
+export type QuestionFolder = {
+  id: string;
+  parentId: string | null;
+  name: string;
+  questionCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TeacherProfile = {
+  region: string;
+  textbook: string;
+  grades: string[];
+};
+
+export type BankFacet = { value: string; count: number };
 
 export type QuestionWithSource = Question & {
   source: QuestionSource;
@@ -110,6 +141,7 @@ export type ReviewDocument = {
   year?: number | null;
   examType?: string | null;
   region?: string | null;
+  textbook?: string | null;
   school?: string | null;
   status: string;
   pageCount: number;

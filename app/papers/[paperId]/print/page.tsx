@@ -5,7 +5,7 @@ import { getPaperPrintData } from "../../../../lib/question-repository";
 import { normalizePaperSettings } from "../../../../lib/paper-templates";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "试卷 PDF · 拾题", robots: { index: false, follow: false } };
+export const metadata = { title: "试卷 PDF · 拣题", robots: { index: false, follow: false } };
 
 export default async function PaperPrintPage({
   params,

@@ -9,6 +9,29 @@ export type EducationStage = (typeof educationStages)[number]["value"];
 export const subjects = ["数学", "语文", "英语", "物理", "化学", "生物", "科学", "历史", "地理", "道德与法治"] as const;
 export type EducationSubject = (typeof subjects)[number];
 
+export const chinaRegions = [
+  "全国", "北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江",
+  "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南",
+  "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃",
+  "青海", "宁夏", "新疆", "香港", "澳门", "台湾",
+] as const;
+
+export type ChinaRegion = (typeof chinaRegions)[number];
+
+const commonTextbookEditions = ["人教版", "北师大版", "苏教版"];
+const textbookBySubject: Partial<Record<EducationSubject, string[]>> = {
+  数学: ["人教A版", "人教B版", "北师大版", "苏教版", "沪教版", "浙教版", "华师大版", "冀教版", "青岛版"],
+  语文: ["国家统编版", "人教版"],
+  英语: ["人教PEP版", "外研版", "译林版", "沪教牛津版", "冀教版", "北京版"],
+  物理: ["人教版", "沪科版", "苏科版", "教科版", "粤沪版"],
+  化学: ["人教版", "鲁教版", "沪教版"],
+  生物: ["人教版", "济南版", "苏教版", "北师大版"],
+  科学: ["教科版", "浙教版", "苏教版", "华师大版"],
+  历史: ["国家统编版", "人教版"],
+  地理: ["人教版", "湘教版", "中图版", "商务星球版"],
+  道德与法治: ["国家统编版", "人教版"],
+};
+
 export const gradesByStage: Record<EducationStage, string[]> = {
   primary: ["一年级", "二年级", "三年级", "四年级", "五年级", "六年级"],
   middle: ["七年级", "八年级", "九年级"],
@@ -65,6 +88,28 @@ export function presetTags(subject: string, stage: EducationStage) {
     ...commonBySubject[safeSubject],
     ...(stageSpecific[safeSubject]?.[stage] ?? []),
   ]));
+}
+
+export function textbookEditions(subject: string, stage: EducationStage = "middle") {
+  const safeSubject = subjects.includes(subject as EducationSubject) ? subject as EducationSubject : "数学";
+  const editions = textbookBySubject[safeSubject] ?? commonTextbookEditions;
+  const stageEditions = safeSubject === "数学" && stage !== "high"
+    ? ["人教版", ...editions.filter((edition) => !/^人教[AB]版$/.test(edition))]
+    : editions;
+  return Array.from(new Set([...stageEditions, "其他版本"]));
+}
+
+export function contextualPresetTags(subject: string, stage: EducationStage, region?: string | null, textbook?: string | null) {
+  return Array.from(new Set([
+    ...presetTags(subject, stage),
+    stage === "high" ? "课程标准·高中" : "课程标准·义务教育",
+    ...(region && region !== "全国" ? [`地区·${region}`] : []),
+    ...(textbook && textbook !== "其他版本" ? [`教材·${textbook}`] : []),
+  ]));
+}
+
+export function isChinaRegion(value: unknown): value is ChinaRegion {
+  return typeof value === "string" && (chinaRegions as readonly string[]).includes(value);
 }
 
 export function isEducationStage(value: unknown): value is EducationStage {

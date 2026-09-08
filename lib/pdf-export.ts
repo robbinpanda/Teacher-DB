@@ -7,7 +7,7 @@ import path from "node:path";
 import { dataDirectory } from "../db";
 
 declare global {
-  var __SHITI_ACTIVE_PDF_EXPORTS__: number | undefined;
+  var __JIANTI_ACTIVE_PDF_EXPORTS__: number | undefined;
 }
 
 export class PdfExportBusyError extends Error {}
@@ -67,9 +67,9 @@ async function readGeneratedPdf(outputPath: string, browserResult: { code: numbe
 }
 
 export async function renderUrlToPdf(url: string, timeoutMs = 60000) {
-  globalThis.__SHITI_ACTIVE_PDF_EXPORTS__ ??= 0;
-  if (globalThis.__SHITI_ACTIVE_PDF_EXPORTS__ >= 2) throw new PdfExportBusyError("PDF 生成任务较多，请稍后重试");
-  globalThis.__SHITI_ACTIVE_PDF_EXPORTS__ += 1;
+  globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ ??= 0;
+  if (globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ >= 2) throw new PdfExportBusyError("PDF 生成任务较多，请稍后重试");
+  globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ += 1;
   const exportId = crypto.randomUUID();
   const exportRoot = path.resolve(dataDirectory(), "tmp", `pdf-${exportId}`);
   const allowedRoot = path.resolve(dataDirectory(), "tmp");
@@ -102,6 +102,6 @@ export async function renderUrlToPdf(url: string, timeoutMs = 60000) {
       await rm(exportRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
   } finally {
-    globalThis.__SHITI_ACTIVE_PDF_EXPORTS__ = Math.max(0, (globalThis.__SHITI_ACTIVE_PDF_EXPORTS__ ?? 1) - 1);
+    globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ = Math.max(0, (globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ ?? 1) - 1);
   }
 }

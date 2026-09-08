@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity, BarChart3, ChevronLeft, ChevronRight, CircleDollarSign, Coins,
@@ -107,6 +108,10 @@ function numberText(value: number) {
   return new Intl.NumberFormat("zh-CN", { notation: value >= 100_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
 }
 
+function exactNumberText(value: number) {
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(value);
+}
+
 function moneyText(value: number | null, compact = false) {
   if (value === null) return "未配置价格";
   if (value === 0) return "¥0.00";
@@ -122,7 +127,7 @@ function cachedPriceText(value: number | null, fallback: "输入" | "输出") {
   return value === null ? `按${fallback}价` : priceText(value);
 }
 
-export function ModelSettings() {
+export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [month, setMonth] = useState(localMonth);
@@ -156,7 +161,8 @@ export function ModelSettings() {
   async function refresh(targetMonth = month) {
     setLoading(true);
     try {
-      await Promise.all([loadProfiles(), loadUsage(targetMonth)]);
+      if (view === "usage") await loadUsage(targetMonth);
+      else await loadProfiles();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "读取失败");
     } finally {
@@ -168,7 +174,7 @@ export function ModelSettings() {
     const timer = window.setTimeout(() => { void refresh(month); }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month]);
+  }, [month, view]);
 
   const visibleSummaries = useMemo(() => (
     (usage?.summaries ?? []).filter((item) => modelFilter === "all" || item.profileId === modelFilter)
@@ -267,17 +273,22 @@ export function ModelSettings() {
   }
 
   const editingProfile = editingId ? profiles.find((profile) => profile.id === editingId) ?? null : null;
+  const usageView = view === "usage";
 
   return (
     <div className="page-shell model-settings-page">
       <header className="page-header model-settings-header">
-        <div><span className="eyebrow"><Activity size={14} /> 模型与用量</span><h1>模型设置</h1><p>系统不提供预设模型。请自行配置 API Key、API Base URL 和模型名称；价格按每百万 Token 填写，全部选填。</p></div>
-        <button className="btn" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} size={15} /> 刷新数据</button>
+        <div><span className="eyebrow">{usageView ? <BarChart3 size={14} /> : <KeyRound size={14} />} {usageView ? "模型成本与调用" : "模型连接与安全"}</span><h1>{usageView ? "模型用量" : "模型配置"}</h1><p>{usageView ? "按月份和模型查看 Token、识别页数与估算费用，不与连接配置混在同一长页面。" : "添加、测试和维护识题模型；API Key 会加密保存，价格按每百万 Token 填写且全部选填。"}</p></div>
+        <div className="model-page-actions">
+          {!usageView && <button className="btn btn-primary" type="button" onClick={resetEditor}><Plus size={15} /> 添加模型</button>}
+          <Link className="btn" href={usageView ? "/settings/models" : "/settings/usage"}>{usageView ? <KeyRound size={15} /> : <BarChart3 size={15} />} {usageView ? "模型配置" : "查看用量"}</Link>
+          <button className="btn" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} size={15} /> {usageView ? "刷新用量" : "刷新配置"}</button>
+        </div>
       </header>
 
       {message && <div className="settings-message" role="status">{message}</div>}
 
-      <section className="card usage-panel" aria-labelledby="usage-heading">
+      {usageView ? <section className="card usage-panel" aria-labelledby="usage-heading">
         <div className="usage-panel-head">
           <div><span className="section-kicker"><BarChart3 size={14} /> Usage</span><h2 id="usage-heading">用量与成本</h2><p>费用按模型当前配置的价格估算；保存价格后，全部历史调用会立即重新计算。</p></div>
           <div className="usage-controls">
@@ -324,10 +335,9 @@ export function ModelSettings() {
           {!loading && visibleSummaries.length === 0 && <div className="usage-empty">尚无模型用量。启用本版本后，新的模型调用会从这里开始记录。</div>}
         </div>
         <p className="usage-footnote">Token 用量从本版本启用后开始记录，不会虚构补齐历史数据。模型未返回缓存输出量时按 0 记录。缓存输入、缓存输出价格留空时，分别按普通输入、普通输出价格估算。</p>
-      </section>
+      </section> : null}
 
-      <section className="model-manager" aria-labelledby="models-heading">
-        <div className="model-manager-heading"><div><span className="section-kicker"><KeyRound size={14} /> Configuration</span><h2 id="models-heading">模型配置</h2><p>添加、测试、编辑或删除识别模型；当前使用的模型请在工作台选择。</p></div><button className="btn btn-primary" type="button" onClick={resetEditor}><Plus size={15} /> 添加模型</button></div>
+      {!usageView ? <section className="model-manager model-manager-page" aria-label="模型配置列表和编辑器">
         <div className="model-manager-grid">
           <div className="profile-list model-profile-list">
             {!loading && profiles.length === 0 && <div className="usage-empty">尚未配置模型。请在右侧填写自己的 API 连接信息。</div>}
@@ -372,7 +382,7 @@ export function ModelSettings() {
             <button className="btn btn-primary model-save" disabled={Boolean(busy)} type="submit">{busy === (editingId ? `save:${editingId}` : "create") ? <LoaderCircle className="spin" size={15} /> : editingId ? <Save size={15} /> : <Plus size={15} />} {editingId ? "保存修改" : "保存模型"}</button>
           </form>
         </div>
-      </section>
+      </section> : null}
     </div>
   );
 }
@@ -387,6 +397,17 @@ function UsageChart({ month, summaries, daily, metric }: {
   daily: UsageResponse["daily"];
   metric: "tokens" | "cost";
 }) {
+  const [tooltip, setTooltip] = useState<{
+    key: string;
+    x: number;
+    y: number;
+    below: boolean;
+    date: string;
+    model: string;
+    color: string;
+    value: number;
+    total: number;
+  } | null>(null);
   const [year, monthNumber] = month.split("-").map(Number);
   const dayCount = new Date(year, monthNumber, 0).getDate();
   const dates = Array.from({ length: dayCount }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`);
@@ -411,6 +432,31 @@ function UsageChart({ month, summaries, daily, metric }: {
   const dayWidth = plotWidth / dayCount;
   const barWidth = Math.max(6, Math.min(18, dayWidth * 0.58));
   const tickValue = (ratio: number) => metric === "tokens" ? numberText(maximum * ratio) : moneyText(maximum * ratio, true);
+  const metricText = (value: number) => metric === "tokens" ? `${exactNumberText(value)} Token` : moneyText(value, true);
+  const showTooltip = (
+    target: SVGRectElement,
+    clientX: number,
+    clientY: number,
+    data: Omit<NonNullable<typeof tooltip>, "x" | "y" | "below">,
+  ) => {
+    const container = target.closest(".usage-chart-scroll");
+    if (!(container instanceof HTMLElement)) return;
+    const bounds = container.getBoundingClientRect();
+    const rawX = clientX - bounds.left;
+    const horizontalMargin = Math.min(118, bounds.width / 2);
+    const x = bounds.width > horizontalMargin * 2
+      ? Math.max(horizontalMargin, Math.min(bounds.width - horizontalMargin, rawX))
+      : bounds.width / 2;
+    const y = Math.max(8, Math.min(bounds.height - 8, clientY - bounds.top));
+    setTooltip({ ...data, x, y, below: y < 92 });
+  };
+  const showFocusedTooltip = (
+    target: SVGRectElement,
+    data: Omit<NonNullable<typeof tooltip>, "x" | "y" | "below">,
+  ) => {
+    const bounds = target.getBoundingClientRect();
+    showTooltip(target, bounds.left + bounds.width / 2, bounds.top, data);
+  };
 
   return (
     <div className="usage-chart-shell">
@@ -429,11 +475,44 @@ function UsageChart({ month, summaries, daily, metric }: {
             const y = top + plotHeight - (maximum > 0 ? segmentTop / maximum * plotHeight : 0);
             const x = left + dayIndex * dayWidth + (dayWidth - barWidth) / 2;
             accumulated = segmentTop;
-            return <rect key={`${date}:${summary.profileId}`} x={x} y={y} width={barWidth} height={barHeight} rx="2" fill={chartColors[modelIndex % chartColors.length]}><title>{`${date.slice(5)} · ${summary.displayName}: ${metric === "tokens" ? numberText(value) + " Token" : moneyText(value, true)}；当日合计 ${metric === "tokens" ? numberText(dailyTotals[dayIndex]) + " Token" : moneyText(dailyTotals[dayIndex], true)}`}</title></rect>;
+            const key = `${date}:${summary.profileId}`;
+            const color = chartColors[modelIndex % chartColors.length];
+            const tooltipData = { key, date, model: summary.displayName, color, value, total: dailyTotals[dayIndex] };
+            const label = `${date.slice(5)}，${summary.displayName}，${metricText(value)}，当日合计 ${metricText(dailyTotals[dayIndex])}`;
+            return <rect
+              key={key}
+              x={x}
+              y={y}
+              width={barWidth}
+              height={barHeight}
+              rx="2"
+              fill={color}
+              role="img"
+              aria-label={label}
+              aria-describedby={tooltip?.key === key ? "usage-chart-tooltip" : undefined}
+              tabIndex={barHeight > 0 ? 0 : -1}
+              pointerEvents={barHeight > 0 ? "auto" : "none"}
+              onMouseEnter={(event) => showTooltip(event.currentTarget, event.clientX, event.clientY, tooltipData)}
+              onMouseMove={(event) => showTooltip(event.currentTarget, event.clientX, event.clientY, tooltipData)}
+              onMouseLeave={() => setTooltip(null)}
+              onFocus={(event) => showFocusedTooltip(event.currentTarget, tooltipData)}
+              onBlur={() => setTooltip(null)}
+            ><title>{label}</title></rect>;
             });
           })}
           {dates.map((date, index) => ((index === 0 || index === dates.length - 1 || (index + 1) % 5 === 0) ? <text key={date} x={left + index * dayWidth + dayWidth / 2} y={height - 17} textAnchor="middle">{date.slice(8)}</text> : null))}
         </svg>
+        {tooltip && <div
+          id="usage-chart-tooltip"
+          className={`usage-chart-tooltip${tooltip.below ? " below" : ""}`}
+          role="tooltip"
+          style={{ left: tooltip.x, top: tooltip.y }}
+        >
+          <div className="usage-tooltip-head"><i style={{ background: tooltip.color }} /><span>{tooltip.date.slice(5).replace("-", " 月 ")} 日</span></div>
+          <strong>{tooltip.model}</strong>
+          <b>{metricText(tooltip.value)}</b>
+          <small>当日全部模型：{metricText(tooltip.total)}</small>
+        </div>}
         {maximum === 0 && <div className="chart-empty"><BarChart3 size={22} /><strong>这个月还没有用量</strong><span>新调用完成后，Token 会按模型出现在这里。</span></div>}
       </div>
       <div className="usage-legend">{summaries.map((summary, index) => <span key={summary.profileId}><i style={{ background: chartColors[index % chartColors.length] }} />{summary.displayName}</span>)}</div>

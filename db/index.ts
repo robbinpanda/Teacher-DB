@@ -9,18 +9,18 @@ import * as schema from "./schema";
 type AppDatabase = ReturnType<typeof createDrizzle>;
 
 declare global {
-  var __SHITI_SQLITE__: Database.Database | undefined;
-  var __SHITI_DRIZZLE__: AppDatabase | undefined;
+  var __JIANTI_SQLITE__: Database.Database | undefined;
+  var __JIANTI_DRIZZLE__: AppDatabase | undefined;
 }
 
 export function dataDirectory() {
-  const configured = process.env.SHITI_DATA_DIR;
+  const configured = process.env.JIANTI_DATA_DIR;
   if (configured) return path.normalize(configured);
   return path.join(/* turbopackIgnore: true */ process.cwd(), "data");
 }
 
 export function getSqlite() {
-  if (!globalThis.__SHITI_SQLITE__) {
+  if (!globalThis.__JIANTI_SQLITE__) {
     const directory = dataDirectory();
     mkdirSync(directory, { recursive: true });
     const databasePath = path.join(directory, "teacher-question-bank.sqlite3");
@@ -29,9 +29,9 @@ export function getSqlite() {
     sqlite.exec("PRAGMA foreign_keys = ON");
     sqlite.exec("PRAGMA busy_timeout = 5000");
     sqlite.exec("PRAGMA synchronous = NORMAL");
-    globalThis.__SHITI_SQLITE__ = sqlite;
+    globalThis.__JIANTI_SQLITE__ = sqlite;
   }
-  return globalThis.__SHITI_SQLITE__;
+  return globalThis.__JIANTI_SQLITE__;
 }
 
 function query(sql: string, params: unknown[], method: "run" | "all" | "values" | "get") {
@@ -72,8 +72,8 @@ function createDrizzle() {
 }
 
 export function getDb() {
-  globalThis.__SHITI_DRIZZLE__ ??= createDrizzle();
-  return globalThis.__SHITI_DRIZZLE__;
+  globalThis.__JIANTI_DRIZZLE__ ??= createDrizzle();
+  return globalThis.__JIANTI_DRIZZLE__;
 }
 
 export function sqliteTransaction<T>(action: (sqlite: Database.Database) => T) {

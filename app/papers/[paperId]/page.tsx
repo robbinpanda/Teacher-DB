@@ -5,7 +5,7 @@ import { getPaperTemplates } from "../../../lib/paper-template-repository";
 import { normalizePaperSettings } from "../../../lib/paper-templates";
 import { getApprovedQuestions, getPaperData } from "../../../lib/question-repository";
 
-export const metadata = { title: "编辑试卷 · 拾题" };
+export const metadata = { title: "编辑试卷 · 拣题" };
 
 export default async function EditPaperPage({ params }: { params: Promise<{ paperId: string }> }) {
   const { paperId } = await params;

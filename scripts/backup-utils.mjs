@@ -6,7 +6,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 
 export function appDataDirectory() {
-  return path.resolve(process.env.SHITI_DATA_DIR || path.join(process.cwd(), "data"));
+  return path.resolve(process.env.JIANTI_DATA_DIR || path.join(process.cwd(), "data"));
 }
 
 export async function sha256File(filename) {

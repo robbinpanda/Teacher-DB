@@ -3,7 +3,7 @@ import { getReviewData } from "../../../lib/question-repository";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
-export const metadata = { title: "人工审核 · 拾题" };
+export const metadata = { title: "人工审核 · 拣题" };
 
 export default async function ReviewPage({ params, searchParams }: { params: Promise<{ documentId: string }>; searchParams: Promise<{ question?: string }> }) {
   const { documentId } = await params;

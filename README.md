@@ -1,4 +1,4 @@
-# 拾题 · 教师题库助手
+# 拣题 · 教师题库助手
 
 面向教师的本地优先题库工具。批量上传 PDF 试卷后，浏览器把原卷渲染成高清页面，再调用多模态模型提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核、题库检索和组卷流程。为保证页面证据与原卷一致，当前产品范围只接收 PDF。
 
@@ -6,7 +6,7 @@
 
 - Next.js 16 + React 19 + TypeScript，运行于标准 Node.js 22
 - `better-sqlite3` 本地 SQLite，启用 WAL、外键、5 秒忙等待和原子事务
-- `data/files` 保存原卷、逐页图和后续裁剪图；`SHITI_DATA_DIR` 可修改数据根目录
+- `data/files` 保存原卷、逐页图和后续裁剪图；`JIANTI_DATA_DIR` 可修改数据根目录
 - Drizzle schema 和 SQL 迁移描述数据结构，运行时会幂等建表和升级
 - Chat Completions、OpenAI Responses、Anthropic Messages 三种多模态模型协议适配器
 - API Key 使用 AES-GCM 加密后存入 SQLite，接口只返回脱敏值
@@ -18,9 +18,14 @@
 - 批量导入 PDF 试卷，自动完成分页渲染、识题、跨页合并和可靠重试。
 - 在原卷旁审核题目、答案、解析、标签与题图范围，确认后进入可检索题库。
 - 从题库选题、智能补齐、套用模板并生成可打印或下载的 A4 试卷。
+- 像文件资源管理器一样用多层文件夹、年级、地区和教材版本浏览题库，并保存教师的教学画像。
+- 基于已复核原题生成 1–3 道可追溯的变式题；默认由命题 Agent 生成、规则校验、独立审校 Agent 求解修订，老师确认后才进入正式题库。
+- 通过带完整性校验的 `.jianti` 单文件共享包导入/导出题目、标签、目录和题图，不依赖网络传输服务。
 - 本地保存原卷、页面、题图、数据库与模型配置，并提供健康检查、备份和恢复工具。
 
 完整能力、可靠性机制和当前实现范围见 [功能实现清单](docs/features.md)。
+
+当前代码审查结果、已知问题与后续升级优先级见 [代码审查与升级方向（2026-09-08）](docs/code-review-2026-09-08.md)。
 
 ## 本地运行
 
@@ -51,7 +56,7 @@ Windows 生产模式也可使用：
 
 ## 模型配置
 
-进入“模型设置”：
+进入“模型配置”：
 
 - 应用不提供任何预设模型、API 地址或公共凭据。使用前必须自行填写 API Key、API Base URL 和模型名称。
 - 可添加任何支持图片输入的 Chat Completions、OpenAI Responses 或 Anthropic Messages 模型；Base URL 可以填写版本根路径或完整协议 endpoint。
@@ -62,7 +67,7 @@ Windows 生产模式也可使用：
 
 ## 数据与迁移
 
-数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_regions、question_assets、tags、tag_catalog、model_profiles、papers、paper_items、paper_templates 和 answer_imports。
+数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_folders、question_regions、question_assets、variation_runs、variation_candidates、tags、tag_catalog、bank_imports、model_profiles、papers、paper_items、paper_templates 和 answer_imports。
 
 ## 健康检查
 

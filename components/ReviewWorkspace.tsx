@@ -32,6 +32,7 @@ import { answerImagesFromFile } from "../lib/client-answer-images";
 import type { TagCatalogEntry } from "../lib/tag-catalog";
 import { missingPositiveNumbers } from "../lib/document-integrity";
 import { isValidQuestionNumber } from "../lib/question-number-source";
+import { persistDirtyQuestionDrafts } from "../lib/review-draft-persistence";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -122,13 +123,14 @@ export function ReviewWorkspace({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [documentMeta, setDocumentMeta] = useState({
     subject: sourceDocument.subject, grade: sourceDocument.grade, year: sourceDocument.year ? String(sourceDocument.year) : "",
-    examType: sourceDocument.examType ?? "", region: sourceDocument.region ?? "", school: sourceDocument.school ?? "",
+    examType: sourceDocument.examType ?? "", region: sourceDocument.region ?? "", textbook: sourceDocument.textbook ?? "", school: sourceDocument.school ?? "",
   });
   const [detailMessage, setDetailMessage] = useState("");
   const [answerImporting, setAnswerImporting] = useState(false);
   const [answerImportMessage, setAnswerImportMessage] = useState("");
   const answerInputRef = useRef<HTMLInputElement>(null);
   const [adjustedQuestionIds, setAdjustedQuestionIds] = useState<Set<string>>(() => new Set());
+  const [dirtyQuestionIds, setDirtyQuestionIds] = useState<Set<string>>(() => new Set());
   const [reextractingId, setReextractingId] = useState<string | null>(null);
   const sourceStageRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
@@ -233,6 +235,7 @@ export function ReviewWorkspace({
         const remaining = active.assets.filter((asset) => asset.id !== assetId);
         if (remaining.length) setActiveAssetId(remaining[0].id);
         else setBoxMode("region");
+        setDirtyQuestionIds((items) => items.has(active.id) ? items : new Set(items).add(active.id));
         setSaved(false);
         return;
       }
@@ -244,6 +247,7 @@ export function ReviewWorkspace({
           ? { ...item, regions, page: primary?.page ?? item.page, bbox: primary?.bbox ?? item.bbox }
           : item));
         setAdjustedQuestionIds((items) => new Set(items).add(active.id));
+        setDirtyQuestionIds((items) => items.has(active.id) ? items : new Set(items).add(active.id));
         setSaved(false);
       }
     }
@@ -352,7 +356,12 @@ export function ReviewWorkspace({
 
   function patchActive(patch: Partial<Question>) {
     setQuestions((items) => items.map((item) => item.id === active.id ? { ...item, ...patch } : item));
+    markQuestionDirty(active.id);
     setSaved(false);
+  }
+
+  function markQuestionDirty(questionId: string) {
+    setDirtyQuestionIds((items) => items.has(questionId) ? items : new Set(items).add(questionId));
   }
 
   function patchBox(box: BoundingBox) {
@@ -494,28 +503,41 @@ export function ReviewWorkspace({
     }
   }
 
+  async function persistQuestionDraft(question: QuestionWithSource, status: Question["status"] = question.status) {
+    const draft = {
+      ...question,
+      status,
+      needsHumanReview: status === "approved" ? false : question.needsHumanReview,
+    };
+    const response = await fetch("/api/questions/" + encodeURIComponent(question.id), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    const result = await response.json().catch(() => ({})) as { error?: string; question?: QuestionWithSource };
+    if (!response.ok) throw new Error(`第 ${question.number} 题保存失败：${result.error ?? "请稍后重试"}`);
+    return result.question ?? draft;
+  }
+
+  function clearPersistedDraftFlags(questionIds: string[]) {
+    const persisted = new Set(questionIds);
+    setDirtyQuestionIds((items) => new Set(Array.from(items).filter((id) => !persisted.has(id))));
+    setAdjustedQuestionIds((items) => new Set(Array.from(items).filter((id) => !persisted.has(id))));
+  }
+
   async function saveQuestion() {
     setSaved(false);
     setSaveError("");
     const nextStatus = documentReadyForReview ? "approved" : "needs_attention";
-    const response = await fetch("/api/questions/" + active.id, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...active, status: nextStatus }),
-    });
-    const result = await response.json().catch(() => ({})) as { error?: string };
-    if (!response.ok) {
-      setSaveError(result.error ?? "保存失败，请稍后重试");
-      return;
+    try {
+      const savedQuestion = await persistQuestionDraft(active, nextStatus);
+      setQuestions((items) => items.map((item) => item.id === active.id ? savedQuestion : item));
+      clearPersistedDraftFlags([active.id]);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2200);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "保存失败，请稍后重试");
     }
-    patchActive({ status: nextStatus });
-    setAdjustedQuestionIds((items) => {
-      const next = new Set(items);
-      next.delete(active.id);
-      return next;
-    });
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2200);
   }
 
   async function reextractQuestion() {
@@ -559,6 +581,11 @@ export function ReviewWorkspace({
         next.delete(target.id);
         return next;
       });
+      setDirtyQuestionIds((items) => {
+        const next = new Set(items);
+        next.delete(target.id);
+        return next;
+      });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "重新识别失败");
     } finally {
@@ -592,6 +619,15 @@ export function ReviewWorkspace({
     setSaveError("");
     setBulkNotice("");
     try {
+      if (dirtyQuestionIds.size) {
+        setBulkNotice(`正在先保存 ${dirtyQuestionIds.size} 道已修改题目的框选与内容…`);
+        const persistedIds = await persistDirtyQuestionDrafts({
+          questions,
+          dirtyQuestionIds,
+          persist: async (question) => { await persistQuestionDraft(question); },
+        });
+        clearPersistedDraftFlags(persistedIds);
+      }
       const response = await fetch(`/api/documents/${sourceDocument.id}/questions/bulk`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -695,7 +731,7 @@ export function ReviewWorkspace({
       </header>
 
       {(detailsOpen || answerImportMessage || bulkNotice) && <div className="review-notice-panel no-print">
-        {detailsOpen && <div className="document-detail-editor"><label>学科<input value={documentMeta.subject} onChange={(event) => setDocumentMeta({ ...documentMeta, subject: event.target.value })} /></label><label>年级<input value={documentMeta.grade} onChange={(event) => setDocumentMeta({ ...documentMeta, grade: event.target.value })} /></label><label>年份<input type="number" value={documentMeta.year} onChange={(event) => setDocumentMeta({ ...documentMeta, year: event.target.value })} /></label><label>考试类型<input placeholder="如：中考 / 二模" value={documentMeta.examType} onChange={(event) => setDocumentMeta({ ...documentMeta, examType: event.target.value })} /></label><label>地区<input value={documentMeta.region} onChange={(event) => setDocumentMeta({ ...documentMeta, region: event.target.value })} /></label><label>学校<input value={documentMeta.school} onChange={(event) => setDocumentMeta({ ...documentMeta, school: event.target.value })} /></label><button type="button" className="btn btn-primary btn-small" onClick={() => void saveDocumentDetails()}>保存详情</button>{detailMessage && <span>{detailMessage}</span>}</div>}
+        {detailsOpen && <div className="document-detail-editor"><label>学科<input value={documentMeta.subject} onChange={(event) => setDocumentMeta({ ...documentMeta, subject: event.target.value })} /></label><label>年级<input value={documentMeta.grade} onChange={(event) => setDocumentMeta({ ...documentMeta, grade: event.target.value })} /></label><label>年份<input type="number" value={documentMeta.year} onChange={(event) => setDocumentMeta({ ...documentMeta, year: event.target.value })} /></label><label>考试类型<input placeholder="如：中考 / 二模" value={documentMeta.examType} onChange={(event) => setDocumentMeta({ ...documentMeta, examType: event.target.value })} /></label><label>地区<input value={documentMeta.region} onChange={(event) => setDocumentMeta({ ...documentMeta, region: event.target.value })} /></label><label>教材版本<input placeholder="如：人教版 / 北师大版" value={documentMeta.textbook} onChange={(event) => setDocumentMeta({ ...documentMeta, textbook: event.target.value })} /></label><label>学校<input value={documentMeta.school} onChange={(event) => setDocumentMeta({ ...documentMeta, school: event.target.value })} /></label><button type="button" className="btn btn-primary btn-small" onClick={() => void saveDocumentDetails()}>保存详情</button>{detailMessage && <span>{detailMessage}</span>}</div>}
         {answerImportMessage && <p className={/失败|超过|无效/.test(answerImportMessage) ? "form-error" : "form-note"}>{answerImportMessage}</p>}
         {bulkNotice && <p className="form-note">{bulkNotice}</p>}
       </div>}

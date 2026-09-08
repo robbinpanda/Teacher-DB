@@ -155,7 +155,7 @@ export const defaultPaperStyle: PaperStyleConfig = {
   questionIndent: 6,
   optionColumns: 4,
   scoreStyle: "right",
-  footerText: "拾题 · 教师题库助手生成",
+  footerText: "拣题 · 教师题库助手生成",
   showPageNumber: true,
 };
 

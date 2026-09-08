@@ -57,6 +57,34 @@
       "when": 1786433520586,
       "tag": "0007_sudden_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788000068684,
+      "tag": "0008_clean_captain_flint",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788001069407,
+      "tag": "0009_aspiring_darwin",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788002547546,
+      "tag": "0010_stale_king_cobra",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788007886195,
+      "tag": "0011_concerned_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }
