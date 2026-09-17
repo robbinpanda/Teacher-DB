@@ -1,96 +1,245 @@
+<div align="center">
+
 # 拣题 · 教师题库助手
 
-面向教师的本地优先题库工具。批量上传 PDF 试卷后，浏览器把原卷渲染成高清页面，再调用多模态模型提取题干、LaTeX 公式、答案、题图坐标和标签，最后进入人工审核、题库检索和组卷流程。为保证页面证据与原卷一致，当前产品范围只接收 PDF。
+**把散落在 PDF 试卷里的题目，变成可检索、可复用、可组卷的个人题库。**
 
-## 技术架构
+本地优先 · AI 识题 · 人工复核 · 智能组卷 · 数据可控
 
-- Next.js 16 + React 19 + TypeScript，运行于标准 Node.js 22
-- `better-sqlite3` 本地 SQLite，启用 WAL、外键、5 秒忙等待和原子事务
-- `data/files` 保存原卷、逐页图和后续裁剪图；`JIANTI_DATA_DIR` 可修改数据根目录
-- Drizzle schema 和 SQL 迁移描述数据结构，运行时会幂等建表和升级
-- Chat Completions、OpenAI Responses、Anthropic Messages 三种多模态模型协议适配器
-- API Key 使用 AES-GCM 加密后存入 SQLite，接口只返回脱敏值
+![拣题：教师题库助手](public/og-cover.png)
 
-项目不依赖 Cloudflare Sites、D1、R2、Vinext 或 Miniflare，可在 Windows、Linux、macOS、NAS 或普通 VPS 上运行。
+[快速开始](#快速开始) · [真实使用场景](#真实使用场景) · [功能亮点](#功能亮点) · [数据与安全](#数据与安全) · [完整功能清单](docs/features.md)
 
-## 功能概览
+</div>
 
-- 批量导入 PDF 试卷，自动完成分页渲染、识题、跨页合并和可靠重试。
-- 在原卷旁审核题目、答案、解析、标签与题图范围，确认后进入可检索题库。
-- 从题库选题、智能补齐、套用模板并生成可打印或下载的 A4 试卷。
-- 像文件资源管理器一样用多层文件夹、年级、地区和教材版本浏览题库，并保存教师的教学画像。
-- 基于已复核原题生成 1–3 道可追溯的变式题；默认由命题 Agent 生成、规则校验、独立审校 Agent 求解修订，老师确认后才进入正式题库。
-- 通过带完整性校验的 `.jianti` 单文件共享包导入/导出题目、标签、目录和题图，不依赖网络传输服务。
-- 本地保存原卷、页面、题图、数据库与模型配置，并提供健康检查、备份和恢复工具。
+---
 
-完整能力、可靠性机制和当前实现范围见 [功能实现清单](docs/features.md)。
+## 为什么做「拣题」
 
-当前代码审查结果、已知问题与后续升级优先级见 [代码审查与升级方向（2026-09-08）](docs/code-review-2026-09-08.md)。
+老师手里通常有很多试卷，但“有资料”不等于“有题库”：题目散落在 PDF 中，搜索困难，重复使用时还要截图、抄题、重新排版。
 
-## 本地运行
+拣题把这条流程串成一个本地工作台：
 
-Windows 用户可以直接双击项目根目录中的 `启动题库.cmd`。脚本会在首次运行时自动安装依赖，并在服务就绪后打开浏览器。
+```text
+导入 PDF → AI 识别整卷 → 对照原卷审核 → 题目入库 → 检索/生成变式 → 组卷 → 导出 PDF
+```
 
-1. 安装并启动：
+原卷、页面图、题图、题库和模型配置都保存在本机。AI 负责减少机械劳动，最终入库仍由老师确认。
 
-       npm install
-       npm run dev
+## 功能亮点
 
-2. 打开 `http://localhost:3050`。
+| 能力 | 说明 |
+| --- | --- |
+| 📚 批量导入 | 一次导入多份 PDF，逐页高清渲染，支持暂停、恢复、并发处理和失败重试 |
+| ✨ 整卷识题 | 在全卷上下文中提取题干、LaTeX 公式、选项、答案、解析、标签与题图信息 |
+| ✅ 对照审核 | 在原卷旁修改题目内容、题型、分值和标签，手工框选跨页题目及题图范围 |
+| 🗂️ 题库管理 | 全文搜索、知识点/题型/来源筛选、多层文件夹、智能目录与批量移动 |
+| 🪄 变式生成 | 基于已复核原题生成可追溯候选题，经规则与独立审校后再由老师决定是否入库 |
+| 📝 智能组卷 | 从题库选题或补齐到目标分值，调整板块、顺序、分值和版式，实时预览 A4 试卷 |
+| 📦 分享迁移 | 用单个 `.jianti` 文件导入/导出题目、目录、标签、来源和题图 |
+| 📊 成本可见 | 按月份和模型统计 Token、处理页数与估算费用，模型价格变化后可重新计算 |
+| 🔒 本地优先 | SQLite 与文件资源均在本机；API Key 加密保存，接口不会回传明文 |
 
-生产构建：
+## 真实使用场景
 
-    npm run build
-    npm start
+以下均为项目真实运行界面。
 
-Windows 生产模式也可使用：
+### 1. 批量导入试卷，统一查看处理进度
 
-    scripts\run-web.cmd
-    scripts\stop-web.cmd
+工作台集中展示待处理、处理中和已入库试卷。选择学段、学科与识别模型后，可批量拖入 PDF，并按设备和模型限额调整并发数。
 
-`npm run dev` 和 `npm start` 固定使用 3050。项目不会占用 3000 或 8010。
+![工作台：批量导入试卷并查看识别与审核进度](docs/images/workspace.png)
 
-服务端 PDF 会自动寻找系统中的 Chrome、Edge 或 Chromium。自定义路径可设置 `CHROMIUM_EXECUTABLE_PATH`。
+### 2. 把审核后的题目沉淀为可检索题库
 
-首次访问数据接口时会创建 `data/teacher-question-bank.sqlite3`、`data/files` 和本机加密密钥。生产环境建议复制 `.env.example` 并设置固定的 `MODEL_KEY_ENCRYPTION_SECRET`。整个 `data` 目录都应纳入备份，但不能提交 Git。
+题目可按文件夹、年级、地区和教材版本浏览，也可按题干、答案、知识点、题型或来源搜索。支持列表/平铺视图、批量移动和共享包导入导出。
 
-## 模型配置
+![题库：按目录、题型、来源与知识点筛选题目](docs/images/question-bank.png)
 
-进入“模型配置”：
+### 3. 从题库选题并实时预览成卷效果
 
-- 应用不提供任何预设模型、API 地址或公共凭据。使用前必须自行填写 API Key、API Base URL 和模型名称。
-- 可添加任何支持图片输入的 Chat Completions、OpenAI Responses 或 Anthropic Messages 模型；Base URL 可以填写版本根路径或完整协议 endpoint。
-- Chat Completions 和 Responses 使用 Bearer Token；Anthropic Messages 使用 `x-api-key` 和 `anthropic-version: 2023-06-01`。
-- 自定义 Base URL 必须为 HTTPS；仅 `localhost`/`127.0.0.1`/`::1` 允许 HTTP。
-- 应用不会向浏览器回传 API Key 明文。
-- 未配置 Key 时仍会保存原卷和分页图，并明确停在“等待模型配置”；配置完成后可从审核页重试，不需要重新上传。
+组卷时可套用模板、调整标题与板块、拖拽题目顺序、修改分值，并在右侧实时查看 A4 排版。保存后可分别导出学生试卷和解析答案。
 
-## 数据与迁移
+![组卷：调整模板、题目顺序并实时预览 A4 试卷](docs/images/paper-builder.png)
 
-数据模型位于 `db/schema.ts`，运行时幂等初始化位于 `db/bootstrap.ts`，版本化迁移位于 `drizzle/`。核心实体包括 documents、pages、extraction_runs、questions、question_folders、question_regions、question_assets、variation_runs、variation_candidates、tags、tag_catalog、bank_imports、model_profiles、papers、paper_items、paper_templates 和 answer_imports。
+### 4. 追踪模型 Token 与估算成本
 
-## 健康检查
+模型用量页按月份和模型汇总输入、缓存输入、输出、处理页数及费用，方便评估不同模型的实际成本。
 
-    npm run doctor
+![模型用量：按月份和模型统计 Token 与估算费用](docs/images/model-usage.png)
 
-## 备份与恢复
+## 快速开始
 
-创建包含 SQLite 一致性快照、原卷、页面图、裁剪图和本机密钥的备份；命令会立即做 SHA-256 与 SQLite 完整性校验：
+### 环境要求
 
-    npm run backup
+- Node.js `22.13+`（项目要求 Node.js 22）
+- npm
+- Chrome、Edge 或 Chromium（用于服务端生成 PDF；常见安装位置会自动检测）
+- 一个支持图片输入的模型 API（可在启动后配置）
 
-也可以指定目录，并在以后单独复验：
+### Windows 一键启动
 
-    npm run backup -- D:\\teacher-db-backups\\backup-2026-08-03
-    npm run backup:verify -- D:\\teacher-db-backups\\backup-2026-08-03
+双击项目根目录的 `启动题库.cmd`。首次运行会自动安装依赖，服务就绪后会打开浏览器。
 
-恢复前必须停止应用。恢复会保留旧数据目录作为 `data.pre-restore-*` 安全副本：
+停止服务可双击 `关闭题库.cmd`。
 
-    npm run restore -- D:\\teacher-db-backups\\backup-2026-08-03 --confirm
+### 命令行启动
+
+```bash
+npm install
+npm run dev
+```
+
+打开 <http://localhost:3050>。
+
+生产模式：
+
+```bash
+npm run build
+npm start
+```
+
+> `npm run dev` 与 `npm start` 均固定使用 `3050` 端口。
+
+## 首次使用
+
+1. 打开左侧「模型配置」，新增识题模型。
+2. 填写协议、API Base URL、模型名称和 API Key，并执行连接测试。
+3. 回到「工作台」，选择学段、学科、模型和并发数。
+4. 上传 PDF；识别完成后进入审核页逐题确认。
+5. 完成审核，题目进入题库，即可检索、生成变式或用于组卷。
+
+未配置模型时也可以上传原卷并生成分页图，任务会停在“等待模型配置”；配置完成后可直接重试，不需要重新上传。
+
+### 支持的模型协议
+
+- OpenAI Chat Completions
+- OpenAI Responses
+- Anthropic Messages
+
+项目不内置模型、API 地址或公共凭据。可连接符合上述协议并支持图片输入的服务。自定义 Base URL 必须使用 HTTPS，仅 `localhost`、`127.0.0.1` 和 `::1` 允许 HTTP。
+
+## 核心工作流
+
+### 导入与识别
+
+- 仅接收 PDF，避免 DOC/DOCX 在不同排版引擎中出现公式、字体或浮动对象错位。
+- 浏览器使用 PDF.js 逐页高清渲染，原卷和页面图会立即保存。
+- 每份试卷在整卷上下文中识别，题目、答案和解析一次关联并以事务写入数据库。
+- 任务状态、重试次数和处理模型都会持久化，服务重启后可以续跑。
+
+### 审核与入库
+
+- 对照原卷修改题号、题型、题干、选项、答案、解析、分值和标签。
+- 对跨页题目切换来源页，并手工框选题目范围、题图或答案图。
+- 调整范围后生成真实 JPEG 裁剪图；答案图不会进入学生试卷。
+- 只有确认完成的题目才进入正式题库。
+
+### 检索、变式与共享
+
+- 支持题干、答案、标签和来源全文检索，以及题型、来源、知识点筛选。
+- 自定义多层文件夹，并按年级、地区、教材版本浏览智能目录。
+- 变式题先进入候选区，展示规则检查、审校分数与修订记录；老师采用后才正式入库。
+- 可导出 JSON、Markdown 或包含题图的 `.jianti` 单文件共享包。
+
+### 组卷与输出
+
+- 从题库选题，或在当前教学范围内智能补齐到目标分值。
+- 内置中考数学、高考数学、日常作业和课堂测试模板。
+- 可调整题目顺序、板块、分值、注意事项、考生信息栏和题图位置。
+- 保存后分别下载学生试卷与解析答案 PDF。
+
+## 数据与安全
+
+默认数据位于项目根目录的 `data/`：
+
+```text
+data/
+├── teacher-question-bank.sqlite3   # 题库与业务数据
+├── files/                          # 原卷、页面图与裁剪图
+└── .model-key-secret               # 本机生成的模型密钥加密材料
+```
+
+- SQLite 启用 WAL、外键、忙等待和原子事务。
+- API Key 使用 AES-GCM 加密后存入 SQLite，浏览器接口只返回脱敏值。
+- 可通过 `JIANTI_DATA_DIR` 把数据目录放到其他磁盘或 NAS。
+- 生产环境建议复制 `.env.example` 并设置固定的 `MODEL_KEY_ENCRYPTION_SECRET`。
+- 整个 `data/` 目录都应备份，但不要提交到 Git。
+
+本地模式默认是单教师 `local-demo` 空间。如部署成公网多用户服务，必须由可信反向代理提供用户身份，不能允许客户端自行伪造身份请求头。
+
+## 诊断、备份与恢复
+
+检查 Node.js、数据库、数据目录和浏览器环境：
+
+```bash
+npm run doctor
+```
+
+创建并立即校验备份：
+
+```bash
+npm run backup
+```
+
+指定备份目录或复验已有备份：
+
+```bash
+npm run backup -- D:\\teacher-db-backups\\backup-2026-08-03
+npm run backup:verify -- D:\\teacher-db-backups\\backup-2026-08-03
+```
+
+恢复前必须停止应用。恢复过程会把原数据目录保留为 `data.pre-restore-*` 安全副本：
+
+```bash
+npm run restore -- D:\\teacher-db-backups\\backup-2026-08-03 --confirm
+```
+
+## 常用命令
+
+| 命令 | 用途 |
+| --- | --- |
+| `npm run dev` | 启动开发服务器（端口 3050） |
+| `npm run build` | 创建生产构建 |
+| `npm start` | 启动生产服务器（端口 3050） |
+| `npm test` | 运行自动化测试 |
+| `npm run lint` | 运行 ESLint |
+| `npm run doctor` | 检查本地运行环境 |
+| `npm run backup` | 创建并校验数据备份 |
+| `npm run backup:verify` | 复验已有备份 |
+| `npm run restore` | 从备份恢复数据 |
+
+## 技术栈
+
+- Next.js 16、React 19、TypeScript 5
+- Tailwind CSS 4、KaTeX
+- SQLite、better-sqlite3、Drizzle ORM
+- PDF.js、Sharp、Chrome / Edge / Chromium
+- Node.js 22
+
+项目不依赖 Cloudflare Sites、D1、R2、Vinext 或 Miniflare，可运行于 Windows、Linux、macOS、NAS 或普通 VPS。
+
+## 项目结构
+
+```text
+app/          Next.js 页面与 API 路由
+components/   工作台、审核、题库、组卷等界面组件
+db/           Drizzle Schema 与数据库初始化
+drizzle/      版本化 SQL 迁移
+lib/          识别、队列、题库、组卷、备份等核心逻辑
+scripts/      诊断、备份、恢复与验证脚本
+tests/        Node.js 自动化测试
+docs/         功能清单、代码审查与 README 图片
+```
 
 ## 当前边界
 
-- 只接收 PDF。DOC、DOCX、ODT 和图片会明确拒绝；请先在原编辑器中导出 PDF，以避免公式、字体和浮动对象因不同排版引擎而错位。
-- 自动跨页合并只查看相邻的下一页；极少数连续跨越三页以上或题号模糊的内容会标记为低置信度，需在审核页人工修正。
-- 服务端 PDF 依赖本机 Chromium 系浏览器；极简服务器镜像需要额外安装 Chromium 或设置其可执行文件路径。
-- 本地模式是单教师 `local-demo` 空间。部署为多用户系统时，需要由可信反向代理提供 `oai-authenticated-user-id`，不能让公网客户端自行伪造该请求头。
+- 当前只接收 PDF；DOC、DOCX、ODT 和图片需先导出为 PDF。
+- 自动跨页合并只检查相邻下一页；极少数跨越三页以上或题号模糊的内容需要人工修正。
+- 服务端 PDF 依赖 Chromium 系浏览器；极简服务器镜像需额外安装并设置 `CHROMIUM_EXECUTABLE_PATH`。
+- AI 识别结果可能出错，正式使用前应在审核页核对题干、答案、解析、题图和分值。
+
+## 更多文档
+
+- [完整功能实现清单](docs/features.md)
+- [代码审查与升级方向（2026-09-08）](docs/code-review-2026-09-08.md)
