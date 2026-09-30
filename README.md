@@ -197,6 +197,20 @@ npm run restore -- D:\\teacher-db-backups\\backup-2026-08-03 --confirm
 
 ## 常用命令
 
+审核页的“AI 复核本题图片”会从原页像素生成候选框，再让当前所选模型判断题号归属和题图/答案图用途。模型不再估算裁剪坐标；结果先显示预览，应用到草稿并保存后才会写入题库。无法可靠定位的图片仍需手动补框。首次整卷识别不会自动调用这项复核。
+
+图片定位的批量实测与隔离工作流验证（会调用已配置的 DeepSeek API 并产生用量）：
+
+```bash
+# 需要本地保留测试样本对应的原卷；输出位于 tmp/asset-benchmark
+node --experimental-strip-types scripts/benchmark-asset-localization.mjs
+# 先构建，再在数据副本中重新识别崇明、黄浦两卷，逐题复核并验证保存与裁剪读取
+npm run build
+node scripts/verify-asset-review-workflow.mjs
+```
+
+测试数据库、原页、API 密钥和模型响应均保留在被 Git 忽略的本地目录，不随代码上传。
+
 | 命令 | 用途 |
 | --- | --- |
 | `npm run dev` | 启动开发服务器（端口 3050） |

@@ -1,0 +1,152 @@
+[
+  {
+    "name": "yang9",
+    "region": "杨浦",
+    "number": 9,
+    "page": 3,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      74,
+      1015,
+      400,
+      1130
+    ],
+    "split": "development"
+  },
+  {
+    "name": "yang10",
+    "region": "杨浦",
+    "number": 10,
+    "page": 4,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      86,
+      677,
+      218,
+      898
+    ],
+    "split": "development"
+  },
+  {
+    "name": "yang11",
+    "region": "杨浦",
+    "number": 11,
+    "page": 5,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      86,
+      470,
+      302,
+      643
+    ],
+    "split": "development"
+  },
+  {
+    "name": "yang12",
+    "region": "杨浦",
+    "number": 12,
+    "page": 6,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      88,
+      99,
+      389,
+      289
+    ],
+    "split": "development"
+  },
+  {
+    "name": "song8",
+    "region": "松江",
+    "number": 8,
+    "page": 4,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      85,
+      296,
+      290,
+      404
+    ],
+    "split": "development"
+  },
+  {
+    "name": "song9",
+    "region": "松江",
+    "number": 9,
+    "page": 5,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      85,
+      95,
+      292,
+      277
+    ],
+    "split": "development"
+  },
+  {
+    "name": "song10",
+    "region": "松江",
+    "number": 10,
+    "page": 5,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      86,
+      423,
+      283,
+      636
+    ],
+    "split": "development"
+  },
+  {
+    "name": "song15",
+    "region": "松江",
+    "number": 15,
+    "page": 9,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      86,
+      91,
+      277,
+      276
+    ],
+    "split": "development"
+  },
+  {
+    "name": "yang18",
+    "region": "杨浦",
+    "number": 18,
+    "page": 10,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      86,
+      677,
+      237,
+      896
+    ],
+    "split": "holdout"
+  },
+  {
+    "name": "song19",
+    "region": "松江",
+    "number": 19,
+    "page": 14,
+    "width": 982,
+    "height": 1389,
+    "gold": [
+      86,
+      701,
+      394,
+      950
+    ],
+    "split": "holdout"
+  }
+]

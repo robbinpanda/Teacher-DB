@@ -132,6 +132,8 @@ export function ReviewWorkspace({
   const [adjustedQuestionIds, setAdjustedQuestionIds] = useState<Set<string>>(() => new Set());
   const [dirtyQuestionIds, setDirtyQuestionIds] = useState<Set<string>>(() => new Set());
   const [reextractingId, setReextractingId] = useState<string | null>(null);
+  const [reviewingAssets, setReviewingAssets] = useState(false);
+  const [assetProposal, setAssetProposal] = useState<{ questionId: string; before: string; assets: Question["assets"]; notes: string; needsHumanReview: boolean } | null>(null);
   const sourceStageRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
   const scrollUnlockTimerRef = useRef<number | null>(null);
@@ -540,6 +542,38 @@ export function ReviewWorkspace({
     }
   }
 
+  async function reviewQuestionAssets() {
+    const target = active;
+    setReviewingAssets(true);
+    setSaveError("");
+    setAssetProposal(null);
+    try {
+      const response = await fetch(`/api/questions/${encodeURIComponent(target.id)}/review-assets`, { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(result.assets)) throw new Error(result.error ?? `图片复核失败（HTTP ${response.status}）`);
+      setAssetProposal({ questionId: target.id, before: JSON.stringify(target.assets), assets: result.assets,
+        notes: result.notes, needsHumanReview: result.needsHumanReview });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "图片复核失败");
+    } finally {
+      setReviewingAssets(false);
+    }
+  }
+
+  function applyAssetProposal() {
+    if (!assetProposal || assetProposal.questionId !== active.id) return;
+    if (JSON.stringify(active.assets) !== assetProposal.before) {
+      setSaveError("复核期间图片框已修改，请重新复核，避免覆盖手动调整");
+      return;
+    }
+    patchActive({ assets: assetProposal.assets, needsHumanReview: true, status: "needs_attention" });
+    const first = assetProposal.assets[0];
+    setActiveAssetId(first?.id ?? "");
+    if (first) { setBoxMode("asset"); showPage(first.page); }
+    setAssetProposal(null);
+    setBulkNotice("图片复核结果已应用到草稿，请检查裁剪预览后保存。");
+  }
+
   async function reextractQuestion() {
     const target = active;
     setReextractingId(target.id);
@@ -634,7 +668,9 @@ export function ReviewWorkspace({
         body: JSON.stringify({ action }),
       });
       const result = await response.json().catch(() => ({})) as { error?: string; changed?: number; reviewRequired?: number };
-      if (!response.ok) throw new Error(result.error ?? "批量操作失败");
+      if (!response.ok) throw new Error(result.error ?? (response.status === 404
+        ? "批量操作接口未找到（HTTP 404），请重启题库服务后重试"
+        : `批量操作失败（HTTP ${response.status}），请稍后重试或查看服务日志`));
       if (action === "approve_without_review") {
         setQuestions((items) => items.map((item) => !item.needsHumanReview && item.status === "pending" ? { ...item, status: "approved" } : item));
         setShowUnapprovedSummary(true);
@@ -819,7 +855,16 @@ export function ReviewWorkspace({
           </div>
 
           <section className="question-asset-gallery" aria-label="本题图片">
-            <div className="asset-gallery-title"><span><ImageIcon size={13} /> 本题图片</span><small>选择题目后自动显示</small></div>
+            <div className="asset-gallery-title"><span><ImageIcon size={13} /> 本题图片</span><button type="button" className="btn btn-small" disabled={reviewingAssets} onClick={() => void reviewQuestionAssets()}><Sparkles size={13} /> {reviewingAssets ? "正在复核图片…" : "AI 复核本题图片"}</button></div>
+            {assetProposal?.questionId === active.id && <div role="status">
+              <p>复核找到 {assetProposal.assets.length} 张图片。{assetProposal.notes}{assetProposal.needsHumanReview ? " 仍有不确定内容，请人工核对。" : ""}</p>
+              <div className="asset-gallery-grid">{assetProposal.assets.map((asset) => {
+                const page = pageStates.find((item) => item.pageNumber === asset.page);
+                return page ? <div key={asset.id}><CropPreview bbox={asset.bbox} imageUrl={page.imageUrl} /><span>第 {asset.page} 页 · {asset.role === "answer" ? "答案图" : "题图"}</span></div> : null;
+              })}</div>
+              <button type="button" className="btn btn-small" onClick={applyAssetProposal}>应用到草稿（替换本题图片）</button>
+              <button type="button" className="btn btn-small" onClick={() => setAssetProposal(null)}>保留原图</button>
+            </div>}
             {active.assets.length ? <div className="asset-gallery-grid">{active.assets.map((asset, index) => {
               const pageInfo = pageStates.find((page) => page.pageNumber === asset.page);
               if (!pageInfo) return null;

@@ -457,6 +457,7 @@ export async function POST(request: Request) {
         `文件：${payload.fileName ?? ownedDocument.name}。这是同一份试卷完整的 ${sourcePages.length} 页。只调用一次模型，但必须按 meta、逐题 question、done 的事件顺序流式返回。`,
         `页面尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
         "先通读全部页面，关联题目与答案解析，再复核题号从 1 连续到最后一题。不要返回题目整体 regions。所有表格和茎叶图一律作为 kind=table 的 assets 截图保存，禁止在 stem、options、answer、analysis 中用 LaTeX、Markdown 或纯文字重复转写表格；图标数据、坐标图等视觉布局也必须作为 assets 保存。再次强调：每个 asset 必须包含整数 page，bbox 必须是含 x、y、width、height 的 JSON 对象，绝不能输出数组 bbox。",
+        "逐题输出前必须检查下一页顶部、下一独立题号之前是否还有本题配图；即使上一页已出现‘故答案为’，也不能漏掉跨页答案图。按几何对象、图中文字和解析引用确认图片归属，答案解析配图用 role=answer。裁剪必须完整包含坐标轴箭头、点名和图例，留少量空白，不包含邻题文字。若无法确认是否漏图或边界是否完整，needsHumanReview 必须为 true。",
       ].join(" "),
       images: modelImages,
     }, {

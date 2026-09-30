@@ -211,6 +211,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
       text: input.text,
       images,
       stream: true,
+      maxOutputTokens: 32768,
     });
     let response = await fetch(request.endpoint, {
       method: "POST",
