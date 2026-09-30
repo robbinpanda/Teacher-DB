@@ -9,6 +9,7 @@ export function parseCandidateSelection(content: string, candidates: PageAssetCa
     || typeof value.unlocatedImages !== "boolean") throw new Error("图片复核结果格式无效，请重试");
   const seen = new Set<string>();
   const unmatched: MissingQuestionImage[] = [];
+  const answerCandidateIds: string[] = [];
   const assets: QuestionAsset[] = value.assets.flatMap((item: Record<string, unknown>) => {
     const candidate = item && candidates.find((c) => c.id === item.id);
     if (!item || !["figure", "table", "graph"].includes(String(item.kind))
@@ -19,6 +20,7 @@ export function parseCandidateSelection(content: string, candidates: PageAssetCa
     }
     if (seen.has(candidate.id)) throw new Error("图片复核选择了重复的候选框，请重试");
     seen.add(candidate.id);
+    if (item.role === "answer") answerCandidateIds.push(candidate.id);
     return [{ id: crypto.randomUUID(), page: candidate.page, kind: item.kind as QuestionAsset["kind"],
       role: item.role as QuestionAsset["role"], label: String(item.label ?? "复核图片").slice(0, 100),
       bbox: { x: candidate.x / candidate.pageWidth * 100, y: candidate.y / candidate.pageHeight * 100,
@@ -40,7 +42,7 @@ export function parseCandidateSelection(content: string, candidates: PageAssetCa
     missingImages.push({ page: null, role: "question", description: "模型发现图片未完整匹配", reason: "请对照原页检查漏图或不完整的裁剪框" });
   }
   if (value.expectedImageCount < assets.length) throw new Error("原页图片数量与匹配结果矛盾，请重试");
-  return { assets, missingImages, needsHumanReview: value.needsHumanReview || value.unlocatedImages || missingImages.length > 0,
+  return { assets, missingImages, answerCandidateIds, needsHumanReview: value.needsHumanReview || value.unlocatedImages || missingImages.length > 0,
     notes: `${String(value.notes ?? "").slice(0, 1500)}${value.unlocatedImages ? " 有图片未能可靠定位，请手动补框。" : ""}` };
 }
 

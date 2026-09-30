@@ -55,10 +55,16 @@ try {
   const before = db.prepare('SELECT COUNT(*) AS n FROM model_usage_events WHERE document_id=?').get(paper.id).n;
   await request(`/api/documents/${paper.id}/queue`, 'POST', { profileId: profile.id });
   await request('/api/extract', 'POST', { documentId: paper.id, profileId: profile.id });
-  const questions = db.prepare('SELECT number,status,needs_human_review,missing_images_json FROM questions WHERE document_id=? ORDER BY CAST(number AS INTEGER)').all(paper.id);
+  const questions = db.prepare('SELECT number,status,analysis,needs_human_review,missing_images_json FROM questions WHERE document_id=? ORDER BY CAST(number AS INTEGER)').all(paper.id);
   assert.equal(questions.length, 21);
-  const assets = db.prepare('SELECT q.number,a.role,a.bbox_json,a.crop_key,p.page_number FROM question_assets a JOIN questions q ON q.id=a.question_id JOIN pages p ON p.id=a.page_id WHERE q.document_id=?').all(paper.id);
+  const assets = db.prepare('SELECT q.number,a.role,a.bbox_json,a.crop_key,p.page_number FROM question_assets a JOIN questions q ON q.id=a.question_id JOIN pages p ON p.id=a.page_id WHERE q.document_id=? ORDER BY CAST(q.number AS INTEGER),a.position').all(paper.id);
   assert.ok(assets.length > 0);
+  for (const q of questions) {
+    const answers = assets.filter(a => a.number === q.number && a.role === 'answer');
+    for (const [index] of answers.entries()) assert.ok(q.analysis.includes(`[[image:${index + 1}]]`), `Q${q.number} image ${index + 1} has a position`);
+    assert.ok(!q.analysis.includes('[[image:p'), 'Candidate IDs must not persist as ordinals');
+  }
+  assert.ok(questions.some(q => /\[\[image:\d+\]\][\s\S]*\S/.test(q.analysis)), 'At least one image precedes subsequent analysis text');
   for (const asset of assets) {
     const metadata = await sharp(fs.readFileSync(path.join(directory, 'files', asset.crop_key))).metadata();
     assert.ok(metadata.width > 0 && metadata.height > 0);

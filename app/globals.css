@@ -1073,3 +1073,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .dashboard-library .document-delete,
   .dashboard-library .document-retry { width: 23px; height: 23px; }
 }
+
+.analysis-image-inserts { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.analysis-inline-image { margin: 12px 0; break-inside: avoid; }
+.analysis-inline-image figure { margin: 0; }
+.analysis-inline-image figcaption { color: #687970; font-size: 0.85em; margin-top: 4px; }
+.analysis-inline-image .crop-preview-canvas { max-height: none; width: auto; max-width: 100%; height: auto; }

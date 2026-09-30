@@ -2,6 +2,7 @@ import Image from "next/image";
 import type { CSSProperties } from "react";
 import type { QuestionWithSource } from "../lib/types";
 import { defaultAssetLayout, questionStemHasAnswerBlank, scoreForQuestion, type PaperSettings } from "../lib/paper-templates";
+import { AnalysisWithImages } from "./AnalysisWithImages";
 import { MathText } from "./MathText";
 
 const chineseDigits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
@@ -89,7 +90,6 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
               const questionNumber = ++globalIndex;
               const score = scoreForQuestion(section, sectionIndex);
               const questionAssets = question.assets.filter((asset) => asset.role === "question");
-              const answerAssets = question.assets.filter((asset) => asset.role === "answer");
               const beforeAssets = questionAssets.filter((asset) => (settings.assetLayouts[asset.id]?.placement ?? "after-stem") === "after-stem");
               const afterAssets = questionAssets.filter((asset) => settings.assetLayouts[asset.id]?.placement === "before-answer");
               const renderAsset = (asset: QuestionWithSource["assets"][number], answerAsset = false) => {
@@ -111,7 +111,7 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
                   {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}><b>{option.key}.</b> <MathText text={option.content} /></span>)}</div>}
                   {afterAssets.map((asset) => renderAsset(asset))}
                   {question.type === "answer" ? <div className="answer-space" style={{ height: settings.answerSpaces[question.id] ?? 180 }} /> : null}
-                  {includeAnswers && <div className="paper-answer printable-answer"><strong>答案：</strong><MathText text={question.answer || "未录入"} /><br /><strong>解析：</strong><MathText text={question.analysis || "未录入"} />{answerAssets.map((asset) => renderAsset(asset, true))}</div>}
+                  {includeAnswers && <div className="paper-answer printable-answer"><strong>答案：</strong><MathText text={question.answer || "未录入"} /><br /><strong>解析：</strong><AnalysisWithImages text={question.analysis || "未录入"} assets={question.assets} renderAsset={(asset) => renderAsset(asset, true)} /></div>}
                 </section>
               );
             })}

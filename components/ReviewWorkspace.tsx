@@ -24,6 +24,8 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { remapAnalysisImages } from "../lib/analysis-images";
+import { AnalysisWithImages } from "./AnalysisWithImages";
 import { MathText } from "./MathText";
 import type { BoundingBox, Question, QuestionType, QuestionWithSource, ReviewDocument, ReviewPage } from "../lib/types";
 import { typeLabels } from "../lib/question-labels";
@@ -129,6 +131,7 @@ export function ReviewWorkspace({
   const [answerImporting, setAnswerImporting] = useState(false);
   const [answerImportMessage, setAnswerImportMessage] = useState("");
   const answerInputRef = useRef<HTMLInputElement>(null);
+  const analysisInputRef = useRef<HTMLTextAreaElement>(null);
   const [adjustedQuestionIds, setAdjustedQuestionIds] = useState<Set<string>>(() => new Set());
   const [dirtyQuestionIds, setDirtyQuestionIds] = useState<Set<string>>(() => new Set());
   const [reextractingId, setReextractingId] = useState<string | null>(null);
@@ -232,7 +235,7 @@ export function ReviewWorkspace({
         event.preventDefault();
         const assetId = activeAsset.id;
         setQuestions((items) => items.map((item) => item.id === active.id
-          ? { ...item, assets: item.assets.filter((asset) => asset.id !== assetId) }
+          ? { ...item, assets: item.assets.filter((asset) => asset.id !== assetId), analysis: remapAnalysisImages(item.analysis, item.assets, item.assets.filter((asset) => asset.id !== assetId)) }
           : item));
         const remaining = active.assets.filter((asset) => asset.id !== assetId);
         if (remaining.length) setActiveAssetId(remaining[0].id);
@@ -357,7 +360,7 @@ export function ReviewWorkspace({
   }
 
   function patchActive(patch: Partial<Question>) {
-    setQuestions((items) => items.map((item) => item.id === active.id ? { ...item, ...patch } : item));
+    setQuestions((items) => items.map((item) => item.id === active.id ? { ...item, ...patch, analysis: patch.analysis ?? (patch.assets ? remapAnalysisImages(item.analysis, item.assets, patch.assets) : item.analysis) } : item));
     markQuestionDirty(active.id);
     setSaved(false);
   }
@@ -967,11 +970,17 @@ export function ReviewWorkspace({
           )}
 
           <label className="edit-field"><span>答案</span><input value={active.answer} onChange={(event) => patchActive({ answer: event.target.value })} /></label>
-          <label className="edit-field"><span>解析</span><textarea rows={3} value={active.analysis} onChange={(event) => patchActive({ analysis: event.target.value })} /></label>
+          <label className="edit-field"><span>解析</span><textarea ref={analysisInputRef} rows={3} value={active.analysis} onChange={(event) => patchActive({ analysis: event.target.value })} /></label>
+          <div className="analysis-image-inserts">{active.assets.filter(a => a.role === "answer").map((asset, index) => <button type="button" className="btn btn-small" key={asset.id} onClick={() => {
+            const input = analysisInputRef.current;
+            const start = input?.selectionStart ?? active.analysis.length;
+            const end = input?.selectionEnd ?? start;
+            patchActive({ analysis: active.analysis.slice(0, start) + `\n[[image:${index + 1}]]\n` + active.analysis.slice(end) });
+          }}>插入答案图 {index + 1}</button>)}</div>
           <div className="render-preview analysis-render-preview">
             <span className="render-preview-label">解析渲染预览</span>
             <div className="analysis-render-scroll" tabIndex={0}>
-              {active.analysis.trim() ? <MathText text={active.analysis} /> : <em>暂无解析内容</em>}
+              <AnalysisWithImages text={active.analysis || "暂无解析内容"} assets={active.assets} renderAsset={(asset) => { const page = pages.find(p => p.pageNumber === asset.page); return page ? <CropPreview bbox={asset.bbox} imageUrl={page.imageUrl} /> : null; }} />
             </div>
           </div>
 

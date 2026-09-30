@@ -1,4 +1,5 @@
 import "server-only";
+import { remapAnalysisImages } from "./analysis-images";
 
 import { gzipSync } from "node:zlib";
 import { getSqlite } from "../db";
@@ -83,7 +84,7 @@ export async function createQuestionPackage(ownerId: string, questions: Question
       stem: question.stem,
       options: question.options ?? [],
       answer: question.answer,
-      analysis: question.analysis,
+      analysis: remapAnalysisImages(question.analysis, question.assets, question.assets.filter(asset => asset.cropKey)),
       tags: question.tags,
       source: {
         documentKey: question.source.documentId,

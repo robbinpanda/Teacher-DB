@@ -13,6 +13,7 @@ import { stageFromGrade } from "../../../lib/education-taxonomy";
 import { deleteFile, getFile, putFile } from "../../../lib/file-storage";
 import { detectAssetCandidates, annotateAssetCandidates } from "../../../lib/asset-candidates";
 import { parseCandidateSelection, type PageAssetCandidate } from "../../../lib/asset-review";
+import { mapCandidateImageMarkers } from "../../../lib/analysis-images";
 import { assertDocumentLease, LostDocumentLeaseError } from "../../../lib/job-lease";
 import { resolveModelProfile } from "../../../lib/model-profiles";
 import { now, requestOwner } from "../../../lib/server";
@@ -423,7 +424,7 @@ export async function POST(request: Request) {
       if (receivedDone) throw new Error("模型在 done 事件后仍输出题目");
       if (questionTotal === null) throw new Error("模型必须先输出题目总数，再输出各题");
       const selection = parseCandidateSelection(JSON.stringify(record.question), candidates, sourcePages.map((page) => page.pageNumber));
-      const question = normalizeStreamedQuestion({ ...record.question, assets: selection.assets, needsHumanReview: selection.needsHumanReview }, {
+      const question = normalizeStreamedQuestion({ ...record.question, analysis: mapCandidateImageMarkers(String(record.question.analysis ?? ""), selection.answerCandidateIds), assets: selection.assets, needsHumanReview: selection.needsHumanReview }, {
         pageCount: sourcePages.length,
         allowedTags,
       });
