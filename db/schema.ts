@@ -89,6 +89,7 @@ export const questions = sqliteTable("questions", {
   bboxJson: text("bbox_json").notNull(),
   status: text("status").notNull().default("pending"),
   needsHumanReview: integer("needs_human_review", { mode: "boolean" }),
+  missingImagesJson: text("missing_images_json").notNull().default("[]"),
   confidence: real("confidence").notNull().default(0),
   score: integer("score").notNull().default(0),
   folderId: text("folder_id").references(() => questionFolders.id, { onDelete: "set null" }),

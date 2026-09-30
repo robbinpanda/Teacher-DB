@@ -34,7 +34,11 @@ export type QuestionAsset = {
   height?: number;
 };
 
+export type MissingQuestionImage = { page: number | null; role: "question" | "answer"; description: string; reason: string };
+
 export type Question = {
+  missingImages?: MissingQuestionImage[];
+  imageIssuesResolved?: boolean;
   id: string;
   number: string;
   type: QuestionType;

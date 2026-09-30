@@ -49,15 +49,13 @@ test("整卷提示要求记录首行页并逐字转录答案", () => {
   assert.match(wholeDocumentSystemPrompt, /不要输出题目整体范围/);
   assert.match(wholeDocumentSystemPrompt, /firstLinePage/);
   assert.match(wholeDocumentSystemPrompt, /不得概括/);
-  assert.match(wholeDocumentSystemPrompt, /role/);
+  assert.match(wholeDocumentSystemPrompt, /assets 只能包含 id、role、kind、label/);
+  assert.match(wholeDocumentSystemPrompt, /missingImages/);
+  assert.match(wholeDocumentSystemPrompt, /不得输出或估计坐标/);
   assert.match(wholeDocumentSystemPrompt, /questionCount/);
   assert.match(wholeDocumentSystemPrompt, /每完成一题就立刻输出/);
   assert.match(wholeDocumentSystemPrompt, /stem 必须从题号后的题干正文开始/);
   assert.match(wholeDocumentSystemPrompt, /题内的（1）（2）等小问编号必须完整保留/);
-  assert.match(wholeDocumentSystemPrompt, /每个 asset 必须且只能包含 role、kind、label、page、bbox/);
-  assert.match(wholeDocumentSystemPrompt, /即使 page 与 firstLinePage 相同/);
-  assert.match(wholeDocumentSystemPrompt, /严禁把 bbox 输出成数组/);
-  assert.match(wholeDocumentSystemPrompt, /\"page\":4,\"bbox\":\{\"x\":9,\"y\":39,\"width\":26,\"height\":16\}/);
   assert.match(wholeDocumentSystemPrompt, /频数\/频率分布表/);
   assert.match(wholeDocumentSystemPrompt, /茎叶图/);
   assert.match(wholeDocumentSystemPrompt, /任何依靠行列、单元格、表头、分隔线或空间位置表达含义的内容，都一律截图保存为 kind=table/);

@@ -10,7 +10,9 @@ import {
 } from "../../../lib/document-extraction";
 import { activateExtractionRun } from "../../../lib/extraction-run";
 import { stageFromGrade } from "../../../lib/education-taxonomy";
-import { contentTypeForKey, deleteFile, getFile, putFile } from "../../../lib/file-storage";
+import { deleteFile, getFile, putFile } from "../../../lib/file-storage";
+import { detectAssetCandidates, annotateAssetCandidates } from "../../../lib/asset-candidates";
+import { parseCandidateSelection, type PageAssetCandidate } from "../../../lib/asset-review";
 import { assertDocumentLease, LostDocumentLeaseError } from "../../../lib/job-lease";
 import { resolveModelProfile } from "../../../lib/model-profiles";
 import { now, requestOwner } from "../../../lib/server";
@@ -24,7 +26,7 @@ export const runtime = "nodejs";
 
 const MAX_PAGE_BYTES = 20 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 120 * 1024 * 1024;
-const PIPELINE_VERSION = "whole-document-stream-v2";
+const PIPELINE_VERSION = "whole-document-candidates-v3";
 
 type SourcePage = {
   id: string;
@@ -109,6 +111,8 @@ function persistStreamedQuestion(input: {
       );
     }
     if (existing?.status !== "approved") {
+      transaction.prepare("UPDATE questions SET missing_images_json=? WHERE id=?")
+        .run(JSON.stringify(question.missingImages ?? []), questionId);
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
       transaction.prepare("DELETE FROM question_assets WHERE question_id = ?").run(questionId);
       for (const [position, asset] of question.assets.entries()) {
@@ -220,6 +224,8 @@ function persistWholeDocumentResult(input: {
         );
       }
       if (existing?.status === "approved") continue;
+      transaction.prepare("UPDATE questions SET missing_images_json=? WHERE id=?")
+        .run(JSON.stringify(question.missingImages ?? []), questionId);
 
       // AI 不再写题目范围；question_regions 只保存教师手动框选结果。
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
@@ -365,6 +371,7 @@ export async function POST(request: Request) {
 
   try {
     const modelImages: Array<{ page: number; dataUrl: string }> = [];
+    const candidates: PageAssetCandidate[] = [];
     const pageBytes = new Map<number, Buffer>();
     let totalBytes = 0;
     for (const page of sourcePages) {
@@ -377,9 +384,13 @@ export async function POST(request: Request) {
         throw new ModelCallError("整份试卷图像总量超过 120 MB，请降低 PDF 清晰度后重新上传", "document_too_large", false, 413);
       }
       pageBytes.set(page.pageNumber, bytes);
+      const found = await detectAssetCandidates(bytes);
+      const boxes = found.candidates.map((box) => ({ ...box, id: `p${page.pageNumber}-${box.id}` }));
+      candidates.push(...boxes.map((box) => ({ ...box, page: page.pageNumber, pageWidth: found.width, pageHeight: found.height })));
+      const annotated = await annotateAssetCandidates(bytes, boxes);
       modelImages.push({
         page: page.pageNumber,
-        dataUrl: `data:${contentTypeForKey(page.storageKey)};base64,${bytes.toString("base64")}`,
+        dataUrl: `data:image/jpeg;base64,${annotated.toString("base64")}`,
       });
     }
     const tagCatalog = await getTagCatalog(ownerId, ownedDocument.subject || "数学", stageFromGrade(ownedDocument.grade));
@@ -411,10 +422,12 @@ export async function POST(request: Request) {
       }
       if (receivedDone) throw new Error("模型在 done 事件后仍输出题目");
       if (questionTotal === null) throw new Error("模型必须先输出题目总数，再输出各题");
-      const question = normalizeStreamedQuestion(record.question, {
+      const selection = parseCandidateSelection(JSON.stringify(record.question), candidates, sourcePages.map((page) => page.pageNumber));
+      const question = normalizeStreamedQuestion({ ...record.question, assets: selection.assets, needsHumanReview: selection.needsHumanReview }, {
         pageCount: sourcePages.length,
         allowedTags,
       });
+      question.missingImages = selection.missingImages;
       if (Number(question.number) > questionTotal) {
         throw new Error(`模型输出第 ${question.number} 题，超过已声明的 ${questionTotal} 题`);
       }
@@ -456,7 +469,7 @@ export async function POST(request: Request) {
       text: [
         `文件：${payload.fileName ?? ownedDocument.name}。这是同一份试卷完整的 ${sourcePages.length} 页。只调用一次模型，但必须按 meta、逐题 question、done 的事件顺序流式返回。`,
         `页面尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
-        "先通读全部页面，关联题目与答案解析，再复核题号从 1 连续到最后一题。不要返回题目整体 regions。所有表格和茎叶图一律作为 kind=table 的 assets 截图保存，禁止在 stem、options、answer、analysis 中用 LaTeX、Markdown 或纯文字重复转写表格；图标数据、坐标图等视觉布局也必须作为 assets 保存。再次强调：每个 asset 必须包含整数 page，bbox 必须是含 x、y、width、height 的 JSON 对象，绝不能输出数组 bbox。",
+        `候选清单：${JSON.stringify(candidates.map((c) => ({ id: c.id, page: c.page })))}` ,
         "逐题输出前必须检查下一页顶部、下一独立题号之前是否还有本题配图；即使上一页已出现‘故答案为’，也不能漏掉跨页答案图。按几何对象、图中文字和解析引用确认图片归属，答案解析配图用 role=answer。裁剪必须完整包含坐标轴箭头、点名和图例，留少量空白，不包含邻题文字。若无法确认是否漏图或边界是否完整，needsHumanReview 必须为 true。",
       ].join(" "),
       images: modelImages,

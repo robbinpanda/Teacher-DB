@@ -127,6 +127,13 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
       if (!currentDocument || currentDocument.sourceRemovedAt) {
         throw new QuestionIntegrityError("原试卷已删除或题目已不存在，不能保存本次修改");
       }
+      const issues = transaction.prepare("SELECT missing_images_json AS issues FROM questions WHERE id=?").get(questionId) as { issues: string };
+      if (issues.issues !== "[]" && payload.imageIssuesResolved !== true) {
+        if (payload.status === "approved") throw new QuestionIntegrityError("本题仍有缺图反馈，请补图或确认无需图片后标记已处理，再审核通过");
+        payload.needsHumanReview = true;
+        payload.status = "needs_attention";
+      }
+      if (payload.imageIssuesResolved === true) transaction.prepare("UPDATE questions SET missing_images_json='[]' WHERE id=?").run(questionId);
       if (payload.status === "approved") {
         const integrity = getDocumentIntegrity(transaction, ownedQuestion.documentId)!;
         const nextNumbers = (transaction.prepare(
@@ -217,6 +224,8 @@ export async function PUT(request: Request, context: { params: Promise<{ questio
   return Response.json({
     question: {
       ...payload,
+      imageIssuesResolved: false,
+      missingImages: JSON.parse((sqlite.prepare("SELECT missing_images_json AS issues FROM questions WHERE id=?").get(questionId) as { issues: string }).issues),
       needsHumanReview: payload.status === "approved" ? false : payload.needsHumanReview,
       page: primaryRegion.page,
       bbox: primaryRegion.bbox,

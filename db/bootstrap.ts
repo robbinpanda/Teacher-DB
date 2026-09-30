@@ -273,6 +273,7 @@ const upgrades: Record<string, Record<string, string>> = {
     variation_kind: "TEXT",
     variation_review_status: "TEXT",
     variation_review_json: "TEXT",
+    missing_images_json: "TEXT NOT NULL DEFAULT '[]'",
   },
   question_assets: {
     page_id: "TEXT",

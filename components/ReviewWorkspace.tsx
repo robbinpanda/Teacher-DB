@@ -402,8 +402,8 @@ export function ReviewWorkspace({
     setSaveError("");
   }
 
-  function addManualAsset(role: "question" | "answer" = "question") {
-    const regionBox = active.regions.find((region) => region.page === currentPage)?.bbox ?? active.bbox;
+  function addManualAsset(role: "question" | "answer" = "question", page = currentPage) {
+    const regionBox = active.regions.find((region) => region.page === page)?.bbox ?? active.bbox;
     const width = Math.max(3, regionBox.width * .5);
     const height = Math.max(3, regionBox.height * .5);
     const asset = {
@@ -411,7 +411,7 @@ export function ReviewWorkspace({
       kind: "figure" as const,
       role,
       label: `${role === "answer" ? "答案图" : "题图"} ${active.assets.length + 1}`,
-      page: currentPage,
+      page,
       bbox: {
         x: clamp(regionBox.x + (regionBox.width - width) / 2, 0, 100 - width),
         y: clamp(regionBox.y + (regionBox.height - height) / 2, 0, 100 - height),
@@ -422,6 +422,7 @@ export function ReviewWorkspace({
     patchActive({ assets: [...active.assets, asset] });
     setActiveAssetId(asset.id);
     setBoxMode("asset");
+    showPage(page);
   }
 
   function removeActiveAsset() {
@@ -551,6 +552,8 @@ export function ReviewWorkspace({
       const response = await fetch(`/api/questions/${encodeURIComponent(target.id)}/review-assets`, { method: "POST" });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !Array.isArray(result.assets)) throw new Error(result.error ?? `图片复核失败（HTTP ${response.status}）`);
+      setQuestions((items) => items.map((q) => q.id === target.id ? { ...q, missingImages: result.missingImages ?? [],
+        imageIssuesResolved: false, ...(result.missingImages?.length ? { status: "needs_attention" as const, needsHumanReview: true } : {}) } : q));
       setAssetProposal({ questionId: target.id, before: JSON.stringify(target.assets), assets: result.assets,
         notes: result.notes, needsHumanReview: result.needsHumanReview });
     } catch (error) {
@@ -799,7 +802,7 @@ export function ReviewWorkspace({
               <span className="question-number">{question.number}</span>
               <span><strong>{typeLabels[question.type]}</strong><small>{question.assets.length
                 ? `题图 ${question.assets.filter((asset) => asset.role === "question").length} · 答案图 ${question.assets.filter((asset) => asset.role === "answer").length}`
-                : "无图片"}</small></span>
+                : "无图片"}{question.missingImages?.length ? ` · 待补图 ${question.missingImages.length}` : ""}</small></span>
               {question.status === "approved" ? <Check size={14} className="status-ok" /> : question.status === "needs_attention" ? <AlertTriangle size={14} className="status-warn" /> : <i className="status-dot" />}
             </button>
           ))}
@@ -856,6 +859,14 @@ export function ReviewWorkspace({
 
           <section className="question-asset-gallery" aria-label="本题图片">
             <div className="asset-gallery-title"><span><ImageIcon size={13} /> 本题图片</span><button type="button" className="btn btn-small" disabled={reviewingAssets} onClick={() => void reviewQuestionAssets()}><Sparkles size={13} /> {reviewingAssets ? "正在复核图片…" : "AI 复核本题图片"}</button></div>
+            {!!active.missingImages?.length && <div role="alert">
+              <p><strong>第 {active.number} 题仍有 {active.missingImages.length} 处图片需要人工补充或修正</strong></p>
+              {active.missingImages.map((issue, index) => <div key={index}>
+                <p>{issue.page ? `第 ${issue.page} 页` : "页码待确认"} · {issue.role === "answer" ? "答案图" : "题图"}：{issue.description}。{issue.reason}</p>
+                {issue.page && <button type="button" className="btn btn-small" onClick={() => { setAssetProposal(null); addManualAsset(issue.role, issue.page!); }}>到第 {issue.page} 页补框</button>}
+              </div>)}
+              <button type="button" className="btn btn-small" onClick={() => patchActive({ missingImages: [], imageIssuesResolved: true })}>已补齐或确认无需图片（保存后生效）</button>
+            </div>}
             {assetProposal?.questionId === active.id && <div role="status">
               <p>复核找到 {assetProposal.assets.length} 张图片。{assetProposal.notes}{assetProposal.needsHumanReview ? " 仍有不确定内容，请人工核对。" : ""}</p>
               <div className="asset-gallery-grid">{assetProposal.assets.map((asset) => {
@@ -869,7 +880,7 @@ export function ReviewWorkspace({
               const pageInfo = pageStates.find((page) => page.pageNumber === asset.page);
               if (!pageInfo) return null;
               return <button type="button" key={asset.id} className={activeAsset?.id === asset.id ? "active" : ""} onClick={() => { setActiveAssetId(asset.id); setBoxMode("asset"); showPage(asset.page); }}><CropPreview bbox={asset.bbox} imageUrl={pageInfo.imageUrl} /><span><b>{asset.role === "answer" ? "答案图" : "题图"} {index + 1}</b><small>第 {asset.page} 页 · 点击定位裁剪框</small></span></button>;
-            })}</div> : <p className="asset-gallery-empty">本题没有需要保留为图片的题图或答案图。</p>}
+            })}</div> : <p className="asset-gallery-empty">{active.missingImages?.length ? "已有缺图反馈，请对照原页补充图片。" : "本题没有需要保留为图片的题图或答案图。"}</p>}
           </section>
 
           <div className="cross-page-regions">

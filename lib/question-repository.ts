@@ -28,6 +28,7 @@ type QuestionRow = {
   bboxJson: string;
   status: string;
   needsHumanReview: number | null;
+  missingImagesJson: string;
   confidence: number;
   folderId: string | null;
   parentQuestionId: string | null;
@@ -150,6 +151,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       variationReview: parseJson<VariationReview | null>(row.variationReviewJson, null),
       confidence: row.confidence,
       needsHumanReview: row.needsHumanReview !== 0,
+      missingImages: parseJson(row.missingImagesJson, []),
       status: row.status === "approved"
         ? "approved"
         : row.needsHumanReview !== 0
@@ -180,6 +182,7 @@ const questionSelect = `
   SELECT q.id, q.document_id AS documentId, q.number, q.type, q.stem,
          q.options_json AS optionsJson, q.answer, q.analysis, q.page_number AS pageNumber,
          q.bbox_json AS bboxJson, q.status, q.needs_human_review AS needsHumanReview, q.confidence,
+         q.missing_images_json AS missingImagesJson,
          q.folder_id AS folderId, q.parent_question_id AS parentQuestionId, q.parent_external_id AS parentExternalId, q.variation_kind AS variationKind,
          q.variation_review_status AS variationReviewStatus, q.variation_review_json AS variationReviewJson,
          d.name AS documentName, d.mime_type AS mimeType, d.subject, d.grade, d.source_year AS sourceYear,
