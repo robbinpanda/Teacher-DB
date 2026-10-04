@@ -4,6 +4,7 @@ import { getSqlite, sqliteTransaction } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
 import { calculateAssignmentAnalytics } from "./assignment-analytics";
 import { AssignmentClosedError, normalizeAssignmentScores } from "./assignment-scores";
+import { applyClassRoster } from "./class-roster";
 import type { RosterRow } from "./roster-csv";
 import { now } from "./server";
 
@@ -86,7 +87,7 @@ export async function getTeachingClass(ownerId: string, classId: string) {
   const students = sqlite.prepare(
     `SELECT s.id, s.student_no AS studentNo, s.name, cs.seat_number AS seatNumber, cs.joined_at AS joinedAt
      FROM class_students cs JOIN students s ON s.id = cs.student_id
-     WHERE cs.class_id = ? ORDER BY CASE WHEN cs.seat_number IS NULL THEN 1 ELSE 0 END, cs.seat_number, s.student_no`,
+     WHERE cs.class_id = ? ORDER BY CASE WHEN cs.seat_number IS NULL THEN 1 ELSE 0 END, CAST(cs.seat_number AS INTEGER), cs.seat_number, s.student_no`,
   ).all(classId) as Array<{ id: string; studentNo: string; name: string; seatNumber: string | null; joinedAt: string }>;
   return { ...teachingClass, studentCount: students.length, students };
 }
@@ -96,22 +97,7 @@ export async function importClassRoster(ownerId: string, classId: string, rows: 
   if (!rows.length) throw new Error("名单中没有学生");
   const timestamp = now();
   sqliteTransaction((transaction) => {
-    if (!transaction.prepare("SELECT 1 FROM teaching_classes WHERE id = ? AND owner_id = ?").get(classId, ownerId)) throw new Error("班级不存在");
-    const findStudent = transaction.prepare("SELECT id FROM students WHERE owner_id = ? AND student_no = ?");
-    const insertStudent = transaction.prepare("INSERT INTO students (id, owner_id, student_no, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
-    const updateStudent = transaction.prepare("UPDATE students SET name = ?, updated_at = ? WHERE id = ? AND owner_id = ?");
-    const linkStudent = transaction.prepare(
-      `INSERT INTO class_students (class_id, student_id, seat_number, joined_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(class_id, student_id) DO UPDATE SET seat_number = excluded.seat_number`,
-    );
-    rows.forEach((row) => {
-      const existing = findStudent.get(ownerId, row.studentNo) as { id: string } | undefined;
-      const studentId = existing?.id ?? crypto.randomUUID();
-      if (existing) updateStudent.run(row.name, timestamp, studentId, ownerId);
-      else insertStudent.run(studentId, ownerId, row.studentNo, row.name, timestamp, timestamp);
-      linkStudent.run(classId, studentId, row.seatNumber, timestamp);
-    });
-    transaction.prepare("UPDATE teaching_classes SET updated_at = ? WHERE id = ?").run(timestamp, classId);
+    applyClassRoster(transaction, ownerId, classId, rows, timestamp);
   });
   const studentCount = (getSqlite().prepare("SELECT COUNT(*) AS count FROM class_students WHERE class_id = ?").get(classId) as { count: number }).count;
   return { imported: rows.length, studentCount };
@@ -121,7 +107,7 @@ export async function removeStudentFromClass(ownerId: string, classId: string, s
   await ensureDatabase();
   const result = getSqlite().prepare(
     `DELETE FROM class_students WHERE class_id = ? AND student_id = ?
-       AND EXISTS (SELECT 1 FROM teaching_classes WHERE id = ? AND owner_id = ?)`,
+       AND EXISTS (SELECT 1 FROM teaching_classes WHERE id = ? AND owner_id = ? AND archived = 0)`,
   ).run(classId, studentId, classId, ownerId);
   if (!result.changes) throw new Error("学生或班级不存在");
   return { removed: true };
@@ -279,4 +265,25 @@ export async function setAssignmentStatus(ownerId: string, assignmentId: string,
   const result = getSqlite().prepare("UPDATE assignments SET status = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(status, now(), assignmentId, ownerId);
   if (!result.changes) throw new Error("作业不存在");
   return { status };
+}
+
+export async function updateTeachingClass(ownerId: string, classId: string, input: { name?: unknown; grade?: unknown; subject?: unknown; schoolYear?: unknown; archived?: unknown }) {
+  await ensureDatabase();
+  return sqliteTransaction((sqlite) => {
+    const current = sqlite.prepare("SELECT name, grade, subject, school_year AS schoolYear, archived FROM teaching_classes WHERE id = ? AND owner_id = ?").get(classId, ownerId) as TeachingClassRecord | undefined;
+    if (!current) throw new Error("班级不存在");
+    if (input.archived !== undefined && typeof input.archived !== "boolean") throw new Error("归档状态无效");
+    const name = cleanText(input.name ?? current.name, "班级名称", 60);
+    const grade = cleanText(input.grade ?? current.grade, "年级", 30);
+    const subject = cleanText(input.subject ?? current.subject, "学科", 30);
+    const schoolYear = cleanText(input.schoolYear ?? current.schoolYear, "学年", 20);
+    try {
+      sqlite.prepare("UPDATE teaching_classes SET name = ?, grade = ?, subject = ?, school_year = ?, archived = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
+        .run(name, grade, subject, schoolYear, input.archived === undefined ? current.archived : Number(input.archived), now(), classId, ownerId);
+    } catch (error) {
+      if (String(error).includes("UNIQUE")) throw new Error("同一学年已有同名班级");
+      throw error;
+    }
+    return { updated: true };
+  });
 }
