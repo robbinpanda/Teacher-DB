@@ -1,3 +1,4 @@
+import { snapshotTeachingSkill } from "../../../../../lib/teaching-skills";
 import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../lib/server";
@@ -39,7 +40,7 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     return Response.json({ error: "答案导入字段过长" }, { status: 400 });
   }
   const sqlite = getSqlite();
-  const document = sqlite.prepare("SELECT id FROM documents WHERE id = ? AND owner_id = ? AND source_removed_at IS NULL").get(documentId, ownerId);
+  const document = sqlite.prepare("SELECT id, subject, grade FROM documents WHERE id = ? AND owner_id = ? AND source_removed_at IS NULL").get(documentId, ownerId) as { id: string; subject: string | null; grade: string | null } | undefined;
   if (!document) return Response.json({ error: "试卷不存在" }, { status: 404 });
   const questions = sqlite.prepare(
     "SELECT id, number, stem, answer FROM questions WHERE document_id = ? AND status = 'approved' ORDER BY CAST(number AS INTEGER)",
@@ -57,12 +58,14 @@ export async function POST(request: Request, context: { params: Promise<{ docume
   }
 
   try {
+    const teachingSkill = await snapshotTeachingSkill(ownerId, document.subject || "数学", document.grade || "", documentId, `answers:${importId}:${crypto.randomUUID()}`);
     const result = await callVisionModel({
       ownerId,
       profileId: payload.profileId,
       purpose: "answer_import",
       documentId,
       system: [
+        teachingSkill.content,
         "你是答案页匹配专家。只读取图片中明确可见的答案和解析，并匹配到给定题号。",
         "不得创造题号；没有明确答案的题不要输出。若页面重复出现同题，合并更完整的答案和解析。",
         "answer 与 analysis 必须逐字、逐符号按原文顺序转录，完整保留每个小问、推导步骤、条件、单位、标点和结论。严禁概括、改写、缩写、润色、合并步骤或用自己的话总结；看不清的部分不要猜测。",

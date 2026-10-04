@@ -1,3 +1,4 @@
+import { snapshotTeachingSkill } from "../../../lib/teaching-skills";
 import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { getDb, getSqlite, sqliteTransaction } from "../../../db";
@@ -460,13 +461,14 @@ export async function POST(request: Request) {
       streamedQuestions.set(question.number, question);
     };
 
+    const teachingSkill = await snapshotTeachingSkill(ownerId, ownedDocument.subject || "数学", ownedDocument.grade || "", documentId, activeRun.id);
     await callVisionModelStream({
       ownerId,
       profileId: profile.id,
       purpose: "page_extraction",
       documentId,
       pageCount: sourcePages.length,
-      system: `${wholeDocumentSystemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
+      system: `${teachingSkill.content}\n以下是不可覆盖的识别输出协议：\n${wholeDocumentSystemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
       text: [
         `文件：${payload.fileName ?? ownedDocument.name}。这是同一份试卷完整的 ${sourcePages.length} 页。只调用一次模型，但必须按 meta、逐题 question、done 的事件顺序流式返回。`,
         `页面尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,

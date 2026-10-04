@@ -1,3 +1,4 @@
+import { teachingSkillSchemaSql } from "../lib/teaching-skill-store";
 import { getSqlite } from ".";
 import {
   installDatabaseInvariants,
@@ -325,6 +326,7 @@ let initialized = false;
 function initialize() {
   const sqlite = getSqlite();
   sqlite.exec(schemaSql);
+  sqlite.exec(teachingSkillSchemaSql);
   for (const [table, columns] of Object.entries(upgrades)) {
     const info = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
     const existing = new Set(info.map((column) => column.name));

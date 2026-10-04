@@ -105,10 +105,12 @@ export function UploadWorkbench() {
   const [modelFeedback, setModelFeedback] = useState("");
   const [modelError, setModelError] = useState(false);
   const [teachingProfile, setTeachingProfile] = useState({ region: "全国", textbook: "", grades: [] as string[] });
+  const [uploadGrade, setUploadGrade] = useState("");
   const profileGrade = teachingProfile.grades.find((grade) => gradesByStage[stage].includes(grade));
+  const effectiveGrade = gradesByStage[stage].includes(uploadGrade) ? uploadGrade : profileGrade ?? educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级";
   const sourceMeta = {
     subject,
-    grade: profileGrade ?? educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级",
+    grade: effectiveGrade,
     sourceYear: "",
     sourceExamType: "",
     sourceRegion: teachingProfile.region === "全国" ? "" : teachingProfile.region,
@@ -381,7 +383,8 @@ export function UploadWorkbench() {
   return (
     <div className="upload-card card">
       <div className="section-title upload-title"><div><span className="section-kicker">第一步 · 导入</span><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
-      <div className="upload-scope-note"><b>{profileGrade ?? educationStages.find((item) => item.value === stage)?.label} · {subject}{teachingProfile.textbook ? ` · ${teachingProfile.textbook}` : ""}</b><span>使用题库中的教学画像作为默认年级、地区和教材；卷面信息识别后仍可在试卷详情中修改。</span></div>
+      <div className="upload-scope-note"><b>{effectiveGrade} · {subject}{teachingProfile.textbook ? ` · ${teachingProfile.textbook}` : ""}</b><span>使用所选年级、学科已启用的个人 Skill；没有个人版本时使用默认规则。卷面信息仍可在试卷详情中修改。</span></div>
+      <div className="skill-scope"><label>本批试卷年级<select value={effectiveGrade} onChange={event => setUploadGrade(event.target.value)}>{gradesByStage[stage].map(grade => <option key={grade}>{grade}</option>)}</select></label><Link href="/settings/skills">查看或定制教学 Skill</Link></div>
       <div className="upload-control-grid">
         <section className="upload-model-setting" aria-label="识别模型选择">
           <div className="upload-model-copy"><span><Sparkles size={16} /></span><div><strong>整卷识别模型</strong><small>一份试卷的全部页面只调用一次模型</small></div></div>

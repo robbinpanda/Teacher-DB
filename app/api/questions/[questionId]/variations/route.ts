@@ -162,6 +162,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     }
     const completedAt = now();
     const summary = {
+      skillSnapshot: outcome.skillSnapshot,
       plan: outcome.plan,
       verification: outcome.verification,
       generator: outcome.generator,

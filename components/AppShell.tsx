@@ -50,6 +50,7 @@ const navigation = [
   { href: "/papers", label: "试卷库", icon: FolderOpen },
   { href: "/classes", label: "班级学生", icon: Users, schoolOnly: true },
   { href: "/assignments", label: "作业批改", icon: ClipboardCheck, schoolOnly: true },
+  { href: "/settings/skills", label: "教学 Skills", icon: BookOpen },
   { href: "/settings/models", label: "模型配置", icon: SlidersHorizontal },
   { href: "/settings/usage", label: "模型用量", icon: BarChart3 },
 ];

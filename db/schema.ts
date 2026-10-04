@@ -475,3 +475,20 @@ export const documentJobs = sqliteTable("document_jobs", {
   index("document_jobs_queue_idx").on(table.status, table.nextAttemptAt, table.queuedAt),
   index("document_jobs_owner_idx").on(table.ownerId, table.status),
 ]);
+
+export const teachingSkills = sqliteTable("teaching_skills", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), subject: text("subject").notNull(), grade: text("grade").notNull(),
+  name: text("name").notNull(), content: text("content").notNull(), revision: integer("revision").notNull().default(1),
+  active: integer("active").notNull().default(0), sampleKey: text("sample_key"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, table => [index("teaching_skills_owner_scope_idx").on(table.ownerId, table.subject, table.grade), uniqueIndex("teaching_skills_active_idx").on(table.ownerId, table.subject, table.grade).where(sql`${table.active} = 1`)]);
+
+export const teachingSkillTrials = sqliteTable("teaching_skill_trials", {
+  id: text("id").primaryKey(), skillId: text("skill_id").notNull().references(() => teachingSkills.id, { onDelete: "cascade" }),
+  revision: integer("revision").notNull(), contentSnapshot: text("content_snapshot").notNull(), recognitionJson: text("recognition_json").notNull(), reviewJson: text("review_json").notNull(),
+  humanVerdict: text("human_verdict").notNull().default("pending"), humanNotes: text("human_notes").notNull().default(""), modelName: text("model_name").notNull(), reviewerName: text("reviewer_name").notNull(), createdAt: text("created_at").notNull(),
+}, table => [index("teaching_skill_trials_skill_idx").on(table.skillId, table.createdAt)]);
+
+export const teachingSkillUsages = sqliteTable("teaching_skill_usages", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  runId: text("run_id").notNull(), skillId: text("skill_id"), revision: integer("revision"), contentSnapshot: text("content_snapshot").notNull(), createdAt: text("created_at").notNull(),
+});

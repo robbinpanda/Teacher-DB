@@ -1,3 +1,4 @@
+import { snapshotTeachingSkill } from "../../../../../lib/teaching-skills";
 import sharp from "sharp";
 import { getSqlite } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
@@ -90,6 +91,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
       images.push({ page: region.page, dataUrl: `data:image/jpeg;base64,${crop.toString("base64")}` });
     }
 
+    const teachingSkill = await snapshotTeachingSkill(ownerId, question.subject || "数学", question.grade || "", question.documentId, `reextract:${questionId}:${crypto.randomUUID()}`);
     const result = await callVisionModel({
       ownerId,
       profileId: payload.profileId,
@@ -97,7 +99,8 @@ export async function POST(request: Request, context: { params: Promise<{ questi
       documentId: question.documentId,
       pageNumber: Math.min(...uniqueRegions.map((region) => region.page)),
       system: [
-        "你是中文中学试题转录专家。用户已人工校正题目框，所有图片按页码顺序组成同一道题。",
+        teachingSkill.content,
+        "你是中文中小学试题转录专家。用户已人工校正题目框，所有图片按页码顺序组成同一道题。",
         "只转录框内确实可见的内容，并把跨页内容按阅读顺序合并。禁止补写框外或不可见文字。",
         "一道大题包含（1）（2）或【小问1详解】【小问2详解】时，必须读取并合并所有小问；【小问1详解】绝不代表整道大题结束，必须继续检查后续图片，直到下一独立顶层题号之前。",
         "题号已单独保存为 " + question.number + "，stem 必须从题号后的正文开始，不得在开头重复输出“" + question.number + ".”、“" + question.number + "、”等顶层题号；但必须保留题内（1）（2）等小问编号。",

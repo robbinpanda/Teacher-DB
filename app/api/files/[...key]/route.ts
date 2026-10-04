@@ -27,6 +27,9 @@ export async function GET(request: Request, context: { params: Promise<{ key: st
        WHERE qa.crop_key = ? AND d.owner_id = ? LIMIT 1`,
     ).get(storageKey, ownerId));
   }
+  if (key[0] === "teaching-skills") {
+    authorized = Boolean(getSqlite().prepare("SELECT 1 FROM teaching_skills WHERE sample_key = ? AND owner_id = ?").get(storageKey, ownerId));
+  }
   if (!authorized) return new Response("Not found", { status: 404 });
   try {
     const bytes = await getFile(storageKey);

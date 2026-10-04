@@ -1,3 +1,4 @@
+import { snapshotTeachingSkill } from "../../../../../lib/teaching-skills";
 import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { getFile } from "../../../../../lib/file-storage";
@@ -14,9 +15,9 @@ export async function POST(request: Request, context: { params: Promise<{ questi
   const ownerId = requestOwner(request);
   const sqlite = getSqlite();
   const question = sqlite.prepare(`SELECT q.document_id AS documentId, q.number, q.stem, q.answer, q.analysis,
-    d.source_removed_at AS removed FROM questions q JOIN documents d ON d.id=q.document_id
+    d.subject, d.grade, d.source_removed_at AS removed FROM questions q JOIN documents d ON d.id=q.document_id
     WHERE q.id=? AND d.owner_id=?`).get(questionId, ownerId) as {
-      documentId: string; number: string; stem: string; answer: string; analysis: string; removed: string | null;
+      subject: string | null; grade: string | null; documentId: string; number: string; stem: string; answer: string; analysis: string; removed: string | null;
     } | undefined;
   if (!question) return Response.json({ error: "题目不存在" }, { status: 404 });
   if (question.removed) return Response.json({ error: "原试卷已删除，无法复核图片" }, { status: 409 });
@@ -37,9 +38,10 @@ export async function POST(request: Request, context: { params: Promise<{ questi
       const annotated = await annotateAssetCandidates(bytes, pageCandidates);
       images.push({ page: page.page, dataUrl: `data:image/jpeg;base64,${annotated.toString("base64")}` });
     }
+    const teachingSkill = await snapshotTeachingSkill(ownerId, question.subject || "数学", question.grade || "", question.documentId, `assets:${questionId}:${crypto.randomUUID()}`);
     const result = await callVisionModelStream({
       ownerId, documentId: question.documentId, purpose: "question_reextract", pageCount: images.length, images,
-      system: ASSET_REVIEW_SYSTEM_PROMPT,
+      system: `${teachingSkill.content}\n${ASSET_REVIEW_SYSTEM_PROMPT}`,
       text: JSON.stringify({ questionNumber: question.number, stem: question.stem, answer: question.answer, analysis: question.analysis,
         candidates: candidates.map((c) => ({ id: c.id, page: c.page })) }),
     }, { onTextDelta: () => {} });
