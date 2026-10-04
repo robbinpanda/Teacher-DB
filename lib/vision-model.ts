@@ -1,3 +1,4 @@
+import { compatibilityBody } from "./model-compatibility";
 import { resolveModelProfile } from "./model-profiles";
 import {
   buildVisionHttpRequest,
@@ -56,13 +57,6 @@ function isRetryableProviderError(status: number, detail: string) {
   return /upstream request failed|provider returned error|overload|over capacity|busy|congest|rate.?limit|network|temporar|try again|timeout/i.test(detail);
 }
 
-function compatibilityBody(body: Record<string, unknown>) {
-  const fallback = structuredClone(body);
-  delete fallback.temperature;
-  delete fallback.response_format;
-  delete fallback.text;
-  return fallback;
-}
 
 export async function callVisionModel(input: VisionCall) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);

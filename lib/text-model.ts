@@ -1,4 +1,5 @@
 import "server-only";
+import { compatibilityBody } from "./model-compatibility";
 
 import { getSqlite } from "../db";
 import { resolveModelProfile } from "./model-profiles";
@@ -40,12 +41,8 @@ export async function callTextModel(input: {
       signal: controller.signal,
     });
     if (response.status === 400 && input.jsonMode) {
-      const fallback = structuredClone(request.body);
-      delete fallback.response_format;
-      delete fallback.text;
-      delete fallback.temperature;
-      delete fallback.max_output_tokens;
-      if (request.protocol !== "anthropic-messages") delete fallback.max_tokens;
+      await response.body?.cancel();
+      const fallback = compatibilityBody(request.body);
       response = await fetch(request.endpoint, {
         method: "POST",
         headers: request.headers,
