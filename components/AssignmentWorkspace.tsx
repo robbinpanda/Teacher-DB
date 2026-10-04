@@ -42,13 +42,19 @@ export function AssignmentWorkspace({ initialDetail }: { initialDetail: Assignme
   }
 
   async function toggleStatus() {
-    setStatusBusy(true);
+    if (statusBusy) return;
+    setStatusBusy(true); setError("");
     const next = detail.assignment.status === "active" ? "closed" : "active";
-    const response = await fetch(`/api/assignments/${detail.assignment.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: next }) });
-    const result = await response.json().catch(() => ({})) as { error?: string };
-    setStatusBusy(false);
-    if (!response.ok) { setError(result.error ?? "更新状态失败"); return; }
-    setDetail((current) => ({ ...current, assignment: { ...current.assignment, status: next } }));
+    try {
+      const response = await fetch(`/api/assignments/${detail.assignment.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: next }) });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) { setError(result.error ?? "更新状态失败"); return; }
+      setDetail((current) => ({ ...current, assignment: { ...current.assignment, status: next } }));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "更新状态失败，请检查网络后重试");
+    } finally {
+      setStatusBusy(false);
+    }
   }
 
   return <div className="school-page assignment-workspace-page">

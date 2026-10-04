@@ -3,20 +3,10 @@ import "server-only";
 import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { dataDirectory } from "../db";
-
-function storageRoot() {
-  return path.join(dataDirectory(), "files");
-}
+import { resolveFileStorageKey } from "./storage-path";
 
 export function resolveStorageKey(key: string) {
-  const normalized = key.replace(/\\/g, "/").replace(/^\/+/, "");
-  if (!normalized || normalized.split("/").some((part) => part === ".." || part === ".")) {
-    throw new Error("非法文件存储路径");
-  }
-  const root = storageRoot();
-  const resolved = path.resolve(root, normalized);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) throw new Error("文件路径越界");
-  return resolved;
+  return resolveFileStorageKey(dataDirectory(), key);
 }
 
 export async function putFile(key: string, bytes: ArrayBuffer | Uint8Array) {

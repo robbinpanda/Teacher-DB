@@ -22,7 +22,7 @@ INSERT INTO questions (id,document_id,number,type,stem,page_number,bbox_json,cre
 oldDb.close();
 const base = 'http://127.0.0.1:3182';
 const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-H', '127.0.0.1', '-p', '3182'], {
-  env: { ...process.env, JIANTI_DATA_DIR: dataDir }, stdio: 'ignore', windowsHide: true,
+  env: { ...process.env, JIANTI_DATA_DIR: path.relative(process.cwd(), dataDir) }, stdio: 'ignore', windowsHide: true,
 });
 async function call(url, method = 'GET', body, headers = {}) {
   const response = await fetch(base + url, { method, headers: { 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -43,6 +43,28 @@ try {
   db.prepare(`INSERT INTO documents (id,owner_id,name,mime_type,status,page_count,created_at,updated_at) VALUES ('review-doc','local-demo','Review fixture','application/pdf','complete',0,?,?)`).run(timestamp,timestamp);
   db.prepare(`INSERT INTO questions (id,document_id,number,type,stem,answer,analysis,page_number,bbox_json,status,needs_human_review,confidence,score,created_at,updated_at) VALUES ('review-q','review-doc','1','fill','1+1=?','2','1+1=2',1,'{}','approved',0,1,0,?,?)`).run(timestamp,timestamp);
   db.close();
+  // Relative data directories must support both original files and page images.
+  const pdfBytes = Buffer.from('%PDF-1.4\n% storage round-trip fixture\n%%EOF');
+  const uploadForm = new FormData();
+  uploadForm.set('file', new File([pdfBytes], 'storage.pdf', { type: 'application/pdf' }));
+  uploadForm.set('pageCount', '1');
+  const upload = await fetch(base + '/api/documents', { method: 'POST', body: uploadForm });
+  assert.equal(upload.status, 201);
+  const uploaded = await upload.json();
+  const original = await fetch(base + '/api/files/' + uploaded.originalKey);
+  assert.equal(original.status, 200);
+  assert.deepEqual(Buffer.from(await original.arrayBuffer()), pdfBytes);
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  const pageForm = new FormData();
+  pageForm.set('page', new File([pixel], 'page.png', { type: 'image/png' }));
+  for (const key of ['pageNumber', 'width', 'height']) pageForm.set(key, '1');
+  const pageUpload = await fetch(`${base}/api/documents/${uploaded.id}/pages`, { method: 'POST', body: pageForm });
+  assert.equal(pageUpload.status, 201);
+  const pageRecord = await pageUpload.json();
+  const pageDownload = await fetch(base + '/api/files/' + pageRecord.storageKey);
+  assert.equal(pageDownload.status, 200);
+  assert.deepEqual(Buffer.from(await pageDownload.arrayBuffer()), pixel);
+  assert.equal((await fetch(base + '/api/files/' + pageRecord.storageKey, { headers: { 'oai-authenticated-user-id': 'other-teacher' } })).status, 404);
   const teachingClass = await call('/api/classes', 'POST', { name: 'Review class', grade: '高一', subject: '数学', schoolYear: '2026' });
   assert.equal(teachingClass.status,201);
   const classId = teachingClass.body.teachingClass.id;
@@ -118,7 +140,7 @@ try {
   assert.equal((await generate(variant.id)).status,409);
   assert.equal(checkDb.prepare('SELECT COUNT(*) AS count FROM variation_runs').get().count,0,'rejections must happen before model work');
   checkDb.close();
-  console.log('review fixes e2e: ok (schema upgrade, closed assignments, strict scores, provenance round trip, legacy variations)');
+  console.log('review fixes e2e: ok (relative storage upload/read, schema upgrade, closed assignments, strict scores, provenance round trip, legacy variations)');
 } finally {
   const exited=child.exitCode===null ? new Promise(resolve=>child.once('exit',resolve)) : Promise.resolve();
   child.kill();
