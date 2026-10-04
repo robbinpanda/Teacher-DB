@@ -83,6 +83,8 @@ type VariationResult = {
   workflow: {
     generator?: string;
     reviewer?: string | null;
+    plan?: { objective: string; prerequisites: string; difficultyRationale: string; misconception: string; changes: string[] };
+    verification?: Array<{ index: number; explanation: string }>;
     rejectedCandidateCount?: number;
     passed?: number;
     revised?: number;
@@ -664,7 +666,7 @@ export function QuestionBank({
           {!variationResult && !variationLoading && <div className="variation-form">
             <fieldset className="variation-quality wide">
               <legend>质量模式</legend>
-              <button type="button" className={variationQualityMode === "reviewed" ? "active" : ""} onClick={() => setVariationQualityMode("reviewed")}><span><b>独立审校</b><em>推荐</em></span><small>生成 Agent 命题，另一个审校 Agent 独立求解并修订</small></button>
+              <button type="button" className={variationQualityMode === "reviewed" ? "active" : ""} onClick={() => setVariationQualityMode("reviewed")}><span><b>独立审校</b><em>推荐</em></span><small>生成 Agent 命题，另一个审校修订后再次复核最终版本</small></button>
               <button type="button" className={variationQualityMode === "quick" ? "active" : ""} onClick={() => setVariationQualityMode("quick")}><span><b>快速生成</b></span><small>生成后只做结构、重复与格式规则校验</small></button>
             </fieldset>
             <label><span>难度</span><select value={variationDifficulty} onChange={(event) => setVariationDifficulty(event.target.value)}><option value="easier">更简单</option><option value="similar">难度相近</option><option value="harder">更有挑战</option><option value="mixed">由易到难</option></select></label>
@@ -678,13 +680,13 @@ export function QuestionBank({
           {variationLoading && <div className="variation-workflow-loading" aria-live="polite">
             <LoaderCircle size={28} className="spin" />
             <strong>{variationQualityMode === "reviewed" ? "正在生成并独立审校…" : "正在生成并校验…"}</strong>
-            <ol><li className="active"><span>1</span>命题 Agent 生成冗余候选</li><li className="active"><span>2</span>规则检查结构、重复与格式</li><li className={variationQualityMode === "reviewed" ? "active" : "skipped"}><span>3</span>{variationQualityMode === "reviewed" ? "审校 Agent 独立求解并修订" : "已选择快速模式"}</li></ol>
+            <ol><li className="active"><span>1</span>制定教学目标与候选计划</li><li className="active"><span>2</span>生成候选并检查结构与选项</li><li className={variationQualityMode === "reviewed" ? "active" : "skipped"}><span>3</span>{variationQualityMode === "reviewed" ? "审校修订后再次复核最终版本" : "已选择快速模式"}</li></ol>
             <p>页面会保留本次请求标识；即使网络短暂中断，重试也不会重复生成。</p>
           </div>}
 
           {variationResult && <div className="variation-candidate-area">
             <div className="variation-workflow-summary"><span><Check size={13} /> {variationResult.qualityMode === "reviewed" ? "独立审校完成" : "规则校验完成"}</span><small>{variationResult.workflow.generator && `命题：${variationResult.workflow.generator}`}{variationResult.workflow.reviewer && ` · 审校：${variationResult.workflow.reviewer}`}{variationResult.workflow.revised ? ` · 修订 ${variationResult.workflow.revised} 道` : ""}</small></div>
-            <div className="variation-candidate-list">{variationResult.candidates.map((candidate) => {
+            {variationResult.workflow.plan && <details open><summary>命题计划与难度依据</summary><p>目标：{variationResult.workflow.plan.objective}</p><p>先修知识：{variationResult.workflow.plan.prerequisites}</p><p>难度预测：{variationResult.workflow.plan.difficultyRationale}</p><p>常见误区：{variationResult.workflow.plan.misconception}</p><small>难度与误区为模型预测，需结合真实作答验证。</small></details>}<div className="variation-candidate-list">{variationResult.candidates.map((candidate) => {
               const checked = selectedVariationIds.includes(candidate.id);
               return <article key={candidate.id} className={`variation-candidate${checked ? " selected" : ""}`}>
                 <button type="button" className="variation-candidate-check" onClick={() => toggleVariationCandidate(candidate.id)} aria-label={`${checked ? "取消采用" : "采用"}候选 ${candidate.ordinal}`}>{checked && <Check size={12} />}</button>
@@ -694,7 +696,7 @@ export function QuestionBank({
                   {candidate.diagramPreviewUrl && <figure className="candidate-diagram"><Image src={candidate.diagramPreviewUrl} width={720} height={480} alt={candidate.question.diagram?.altText || `候选 ${candidate.ordinal} 题图`} unoptimized /><figcaption>{candidate.question.diagram?.altText}</figcaption></figure>}
                   {candidate.question.options.length > 0 && <div className="candidate-options">{candidate.question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div>}
                   <details><summary>查看答案与解析</summary><div><b>答案</b><MathText text={candidate.question.answer} /></div><div><b>解析</b><MathText text={candidate.question.analysis} /></div></details>
-                  <p className="candidate-change">变化：{candidate.question.changeNote}</p>
+                  {variationResult.workflow.verification?.find(check => check.index === candidate.ordinal) && <p>最终复核：{variationResult.workflow.verification.find(check => check.index === candidate.ordinal)?.explanation}</p>}<p className="candidate-change">变化：{candidate.question.changeNote}</p>
                   {candidate.review.issues.length > 0 && <p className="candidate-issues">审校发现并处理：{candidate.review.issues.join("；")}</p>}
                 </div>
               </article>;
@@ -703,7 +705,7 @@ export function QuestionBank({
 
           {variationError && <p className="form-error">{variationError}</p>}
           <footer>
-            <p>{variationResult ? `已选 ${selectedVariationIds.length} / ${variationResult.candidates.length} 道；只有点击“采用已选”后才会进入正式题库。` : variationQualityMode === "reviewed" ? "默认采用固定双 Agent 流程，避免自由对话带来的成本与不确定性。" : "快速模式成本更低，建议老师更仔细核对答案。"}</p>
+            <p>{variationResult ? `已选 ${selectedVariationIds.length} / ${variationResult.candidates.length} 道；只有点击“采用已选”后才会进入正式题库。` : variationQualityMode === "reviewed" ? "先规划，再生成、审校与最终复核；任一质量门槛失败即停止，仍需教师确认。" : "快速模式成本更低，建议老师更仔细核对答案。"}</p>
             <div>{variationResult ? <>
               <button type="button" className="btn" disabled={variationAccepting || variationDiscarding} onClick={() => void discardVariations()}>{variationDiscarding ? "放弃中…" : "放弃本批"}</button>
               <button type="button" className="btn btn-primary" disabled={!selectedVariationIds.length || variationAccepting || variationDiscarding} onClick={() => void acceptVariations()}>{variationAccepting ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />} {variationAccepting ? "正在入库…" : `采用已选 (${selectedVariationIds.length})`}</button>

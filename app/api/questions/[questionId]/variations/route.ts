@@ -117,7 +117,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     const count = Number(payload.count);
     if (!Number.isInteger(count) || count < 1 || count > 3) throw new Error("单次只能生成 1–3 道变式题");
     const difficulty = String(payload.difficulty ?? "similar") as VariationDifficulty;
-    if (!(difficulty in variationDifficultyLabels)) throw new Error("难度选项无效");
+    if (!Object.hasOwn(variationDifficultyLabels, difficulty)) throw new Error("难度选项无效");
     const qualityMode = String(payload.qualityMode ?? "reviewed") as VariationQualityMode;
     if (qualityMode !== "quick" && qualityMode !== "reviewed") throw new Error("质量模式无效");
     const diagramMode = String(payload.diagramMode ?? "auto") as VariationDiagramMode;
@@ -162,6 +162,8 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     }
     const completedAt = now();
     const summary = {
+      plan: outcome.plan,
+      verification: outcome.verification,
       generator: outcome.generator,
       reviewer: outcome.reviewer,
       rejectedCandidateCount: outcome.rejectedCandidates.length,

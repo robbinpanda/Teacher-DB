@@ -70,6 +70,11 @@ export function parseVariationModelContent(input: {
     if (new Set(options.map((option) => comparableStem(option.content))).size !== options.length) {
       throw new Error(`第 ${index + 1} 道变式题包含重复选项内容`);
     }
+    if (options.some((option, index) => option.key !== String.fromCharCode(65 + index))) throw new Error(`第 ${index + 1} 道题选项须从 A 连续编号`);
+    if (type === "single" || type === "multiple") {
+      const keys = boundedText(value.answer, 6000, true).replace(/[\s,，、;；]/g, "");
+      if (!/^[A-H]+$/.test(keys) || new Set(keys).size !== keys.length || [...keys].some(key => !options.some(option => option.key === key)) || (type === "single" && keys.length !== 1) || (type === "multiple" && keys.length < 2)) throw new Error(`第 ${index + 1} 道选择题答案必须为实际选项键，且符合单选/多选题型`);
+    }
     const stem = boundedText(value.stem, 12000, true);
     const stemKey = comparableStem(stem);
     if (!stemKey || seenStems.has(stemKey)) throw new Error(`第 ${index + 1} 道变式题与原题或其他变式重复`);
@@ -174,8 +179,8 @@ export function parseVariationReviewContent(input: {
     }
     const verdict = String(item.verdict);
     if (verdict !== "pass" && verdict !== "revise") throw new Error(`第 ${index} 道题的审校结论无效`);
-    const score = Number(item.score);
-    if (!Number.isInteger(score) || score < 0 || score > 100) throw new Error(`第 ${index} 道题的审校分数无效`);
+    const score = item.score;
+    if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) throw new Error(`第 ${index} 道题的审校分数无效`);
     if (score < 75) throw new Error(`第 ${index} 道题审校后仅 ${score} 分，未达到 75 分入库线`);
     if (!Array.isArray(item.issues) || item.issues.length > 5) throw new Error(`第 ${index} 道题的审校问题列表无效`);
     const issues = item.issues.map((issue) => boundedText(issue, 160, true));

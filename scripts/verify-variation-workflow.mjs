@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -27,7 +27,11 @@ const modelServer = createServer((request, response) => {
     modelCalls += 1;
     const payload = JSON.parse(body);
     const userText = JSON.stringify(payload.messages ?? payload.input ?? "");
-    const content = userText.includes("独立审校与修订 Agent")
+    const content = userText.includes('逐题核查可解性')
+      ? JSON.stringify({ checks: [1, 2].map(index => ({ index, solvable: true, answerCorrect: true, objectiveAligned: true, difficultyAligned: true, explanation: "代入验证正确" })) })
+      : userText.includes('规划 3 道变式')
+      ? JSON.stringify({ objective: "代入求值", prerequisites: "整数运算", difficultyRationale: "一步代入", misconception: "运算次序", changes: ["改变数值", "改变运算", "逆向"] })
+      : userText.includes("独立审校与修订 Agent")
       ? JSON.stringify({ reviews: generatorVariations.slice(0, 2).map((variation, index) => ({ index: index + 1, verdict: index === 1 ? "revise" : "pass", score: 92 - index, issues: index === 1 ? ["已复算答案并规范解析"] : [], finalVariation: variation })) })
       : JSON.stringify({ variations: generatorVariations });
     response.writeHead(200, { "content-type": "application/json" });
@@ -103,7 +107,7 @@ try {
   });
   assert.equal(generated.status, "awaiting_teacher");
   assert.equal(generated.candidates.length, 2);
-  assert.equal(modelCalls, 2);
+  assert.equal(modelCalls, 4);
 
   const beforeAcceptance = await jsonRequest("/api/questions?pageSize=20");
   assert.equal(beforeAcceptance.pagination.total, 1, "候选题不得提前进入正式题库");
@@ -113,7 +117,7 @@ try {
     body: JSON.stringify({ count: 2, difficulty: "similar", qualityMode: "reviewed", idempotencyKey }),
   });
   assert.equal(replay.cached, true);
-  assert.equal(modelCalls, 2, "幂等重放不得再次调用模型");
+  assert.equal(modelCalls, 4, "幂等重放不得再次调用模型");
 
   const accepted = await jsonRequest(`/api/variation-runs/${generated.runId}/accept`, {
     method: "POST",
@@ -135,11 +139,5 @@ try {
   nextProcess.kill();
   await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 3000))]);
   await new Promise((resolve) => modelServer.close(resolve));
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try { rmSync(dataDir, { recursive: true, force: true }); break; }
-    catch (error) {
-      if (attempt === 4 || error?.code !== "EBUSY") throw error;
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  }
+  console.log(`Isolated test data: ${dataDir}`);
 }
