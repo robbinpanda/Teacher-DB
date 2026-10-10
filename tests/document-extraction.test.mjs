@@ -53,6 +53,9 @@ test("整卷提示要求记录首行页并逐字转录答案", () => {
   assert.match(wholeDocumentSystemPrompt, /missingImages/);
   assert.match(wholeDocumentSystemPrompt, /不得输出或估计坐标/);
   assert.match(wholeDocumentSystemPrompt, /questionCount/);
+  assert.doesNotMatch(wholeDocumentSystemPrompt, /"questionCount"\s*:\s*\d+/);
+  assert.match(wholeDocumentSystemPrompt, /章节标题可能印错，必须以正文中实际可见的顶层题号为准/);
+  assert.match(wholeDocumentSystemPrompt, /答案页重复出现的题号和小问不增加题数/);
   assert.match(wholeDocumentSystemPrompt, /每完成一题就立刻输出/);
   assert.match(wholeDocumentSystemPrompt, /stem 必须从题号后的题干正文开始/);
   assert.match(wholeDocumentSystemPrompt, /题内的（1）（2）等小问编号必须完整保留/);

@@ -25,6 +25,7 @@ import { callVisionModelStream, ModelCallError } from "../../lib/vision-model";
 import { ExtractionStreamParser, type ExtractionStreamRecord } from "../../lib/streaming-extraction";
 import type { Question } from "../../lib/types";
 import type { ModelCallTrace } from "../../lib/model-call-trace";
+import { readSourceQuestionInventory, validateExtractionQuestionNumbers } from "../../lib/source-question-inventory";
 
 
 const MAX_PAGE_BYTES = 20 * 1024 * 1024;
@@ -152,6 +153,7 @@ function updateStreamMeta(input: {
   documentId: string;
   workerId?: string;
   questionTotal: number;
+  modelDeclaredTotal?: number;
   documentMeta: Record<string, unknown>;
   timestamp: string;
 }) {
@@ -174,7 +176,9 @@ function updateStreamMeta(input: {
       `UPDATE document_jobs SET question_total = ?, stream_phase = 'receiving',
          stream_message = ?, last_stream_event_at = ?, updated_at = ? WHERE document_id = ?`,
     ).run(
-      input.questionTotal, `模型声明共 ${input.questionTotal} 题，正在逐题处理`,
+      input.questionTotal, input.modelDeclaredTotal !== undefined && input.modelDeclaredTotal !== input.questionTotal
+        ? `原卷题号核对共 ${input.questionTotal} 题（模型声明 ${input.modelDeclaredTotal} 题），正在逐题处理`
+        : `模型声明共 ${input.questionTotal} 题，正在逐题处理`,
       input.timestamp, input.timestamp, input.documentId,
     );
   });
@@ -368,6 +372,12 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
   let modelTrace: ModelCallTrace | undefined;
 
   try {
+    let sourceInventory = null;
+    let inventoryError: string | undefined;
+    if (ownedDocument.mimeType === "application/pdf" && ownedDocument.originalKey) {
+      try { sourceInventory = await readSourceQuestionInventory(await getFile(ownedDocument.originalKey), sourcePages.length); }
+      catch (error) { inventoryError = error instanceof Error ? error.message : String(error); }
+    }
     const modelImages: Array<{ page: number; dataUrl: string }> = [];
     const candidates: PageAssetCandidate[] = [];
     const pageBytes = new Map<number, Buffer>();
@@ -401,6 +411,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     const rawQuestions = new Map<string, Record<string, unknown>>();
     const streamedQuestions = new Map<string, Question>();
     let questionTotal: number | null = null;
+    let modelDeclaredTotal: number | undefined;
     let documentMeta: Record<string, unknown> = {};
     let receivedDone = false;
     let lastActivityWrite = 0;
@@ -409,9 +420,10 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       modelTrace?.event("extraction-event", record);
       if (record.event === "meta") {
         if (questionTotal !== null) throw new Error("模型重复输出 meta 事件");
-        questionTotal = record.questionCount;
+        modelDeclaredTotal = record.questionCount;
+        questionTotal = sourceInventory?.questionCount ?? record.questionCount;
         documentMeta = record.documentMeta ?? {};
-        updateStreamMeta({ documentId, workerId: payload.workerId, questionTotal, documentMeta, timestamp: now() });
+        updateStreamMeta({ documentId, workerId: payload.workerId, questionTotal, modelDeclaredTotal, documentMeta, timestamp: now() });
         return;
       }
       if (record.event === "done") {
@@ -469,7 +481,8 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       pageCount: sourcePages.length,
       system: `${teachingSkill.content}\n以下是不可覆盖的识别输出协议：\n${wholeDocumentSystemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
       text: [
-        `文件：${payload.fileName ?? ownedDocument.name}。这是同一份试卷完整的 ${sourcePages.length} 页。只调用一次模型，但必须按 meta、逐题 question、done 的事件顺序流式返回。`,
+        `文件：${payload.fileName ?? ownedDocument.name}。这是同一份试卷完整的 ${sourcePages.length} 页；这是 PDF 页数，不是题目总数。题数只能按题目正文实际可见的不同顶层题号核对，不能由页数或章节标题推算。只调用一次模型，但必须按 meta、逐题 question、done 的事件顺序流式返回。`,
+        sourceInventory ? `本卷原始 PDF 文本已独立核对：题目正文和参考答案中均出现连续的 1～${sourceInventory.questionCount} 题，共 ${sourceInventory.questionCount} 题。这是本卷实际核验结果，不是示例；questionCount 应与本卷可见题号一致。正文题号及首次出现页码：${JSON.stringify(sourceInventory.questions.map(({ number, firstLinePage }) => ({ number, firstLinePage })))}。章节标题宣称的题数若与正文冲突，以正文为准。` : "",
         `页面尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
         `候选清单：${JSON.stringify(candidates.map((c) => ({ id: c.id, page: c.page })))}` ,
         "逐题输出前必须检查下一页顶部、下一独立题号之前是否还有本题配图；即使上一页已出现‘故答案为’，也不能漏掉跨页答案图。按几何对象、图中文字和解析引用确认图片归属，答案解析配图用 role=answer。裁剪必须完整包含坐标轴箭头、点名和图例，留少量空白，不包含邻题文字。若无法确认是否漏图或边界是否完整，needsHumanReview 必须为 true。",
@@ -478,6 +491,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     }, {
       onTrace: (trace) => {
         modelTrace = trace;
+        trace.event("source-question-inventory", { inventory: sourceInventory, error: inventoryError });
       },
       onTextDelta: async (delta) => {
         for (const record of parser.push(delta)) await handleRecord(record);
@@ -504,11 +518,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     if (questionTotal === null) throw new Error("模型流结束时仍未输出题目总数");
     if (!receivedDone) throw new Error("模型流未输出 done 事件");
     const orderedNumbers = Array.from(completedNumbers).sort((left, right) => Number(left) - Number(right));
-    const expectedNumbers = Array.from({ length: questionTotal }, (_, index) => String(index + 1));
-    const missingNumbers = expectedNumbers.filter((number) => !completedNumbers.has(number));
-    if (missingNumbers.length || orderedNumbers.length !== questionTotal) {
-      throw new Error(`模型流题目不完整，缺少第 ${missingNumbers.join("、") || "未知"} 题`);
-    }
+    validateExtractionQuestionNumbers(questionTotal, orderedNumbers);
     const normalized: WholeDocumentExtraction = {
       questions: orderedNumbers.map((number) => streamedQuestions.get(number)!),
       documentMeta,
@@ -539,7 +549,8 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       profile,
       finishedAt,
     });
-    modelTrace?.validation("complete", { questionTotal, questionNumbers: orderedNumbers });
+    modelTrace?.validation("complete", { questionTotal, modelDeclaredTotal,
+      countSource: sourceInventory?.source ?? "model-meta", questionNumbers: orderedNumbers });
     return result({
       runId: activeRun.id,
       provider: profile.provider,
