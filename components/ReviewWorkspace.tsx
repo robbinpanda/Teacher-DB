@@ -104,7 +104,7 @@ export function ReviewWorkspace({
   const [dirtyQuestionIds, setDirtyQuestionIds] = useState<Set<string>>(() => new Set());
   const [reextractingId, setReextractingId] = useState<string | null>(null);
   const [reviewingAssets, setReviewingAssets] = useState(false);
-  const [assetProposal, setAssetProposal] = useState<{ questionId: string; before: string; assets: Question["assets"]; notes: string; needsHumanReview: boolean } | null>(null);
+  const [assetProposal, setAssetProposal] = useState<{ questionId: string; before: string; assets: Question["assets"]; notes: string; needsHumanReview: boolean; confidence: number; removedAssets: Array<{ id: string; label: string; page: number; reason: string }> } | null>(null);
   const sourceStageRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
   const scrollUnlockTimerRef = useRef<number | null>(null);
@@ -461,9 +461,10 @@ export function ReviewWorkspace({
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !Array.isArray(result.assets)) throw new Error(result.error ?? `图片复核失败（HTTP ${response.status}）`);
       setQuestions((items) => items.map((q) => q.id === target.id ? { ...q, missingImages: result.missingImages ?? [],
-        imageIssuesResolved: false, ...(result.missingImages?.length ? { status: "needs_attention" as const, needsHumanReview: true } : {}) } : q));
+        confidence: Math.min(q.confidence, result.confidence),
+        imageIssuesResolved: false, ...(result.needsHumanReview ? { status: "needs_attention" as const, needsHumanReview: true } : {}) } : q));
       setAssetProposal({ questionId: target.id, before: JSON.stringify(target.assets), assets: result.assets,
-        notes: result.notes, needsHumanReview: result.needsHumanReview });
+        notes: result.notes, needsHumanReview: result.needsHumanReview, confidence: result.confidence, removedAssets: result.removedAssets ?? [] });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "图片复核失败");
     } finally {
@@ -477,7 +478,7 @@ export function ReviewWorkspace({
       setSaveError("复核期间图片框已修改，请重新复核，避免覆盖手动调整");
       return;
     }
-    patchActive({ assets: assetProposal.assets, needsHumanReview: true, status: "needs_attention" });
+    patchActive({ assets: assetProposal.assets, confidence: Math.min(active.confidence, assetProposal.confidence), needsHumanReview: true, status: "needs_attention" });
     const first = assetProposal.assets[0];
     setActiveAssetId(first?.id ?? "");
     if (first) { setBoxMode("asset"); showPage(first.page); }
@@ -762,7 +763,7 @@ export function ReviewWorkspace({
             <div className="editor-title"><span className="eyebrow"><Sparkles size={12} /> AI 提取结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
             <div className="model-assessment" title={`模型标记：${active.needsHumanReview ? "需要人工核查" : "无需人工核查"}；置信度仅供参考`}>
               <span className={active.needsHumanReview ? "needs-review" : "clear"}>{active.needsHumanReview ? <AlertTriangle size={12} /> : <Check size={12} />}{active.needsHumanReview ? "需人工核查" : "无需人工核查"}</span>
-              <span className="confidence-score"><b>{Math.round(active.confidence * 100)}%</b><small>置信度</small></span>
+              <span className="confidence-score" title="模型自评，非正确率；发现问题后会降低评分"><b>{Math.round(active.confidence * 100)}%</b><small>AI 置信度</small></span>
             </div>
           </div>
 
@@ -777,7 +778,8 @@ export function ReviewWorkspace({
               <button type="button" className="btn btn-small" onClick={() => patchActive({ missingImages: [], imageIssuesResolved: true })}>已补齐或确认无需图片（保存后生效）</button>
             </div>}
             {assetProposal?.questionId === active.id && <div role="status">
-              <p>复核找到 {assetProposal.assets.length} 张图片。{assetProposal.notes}{assetProposal.needsHumanReview ? " 仍有不确定内容，请人工核对。" : ""}</p>
+              <p>复核建议保留 {assetProposal.assets.length} 张图片，删除 {assetProposal.removedAssets.length} 张。{assetProposal.notes}{assetProposal.needsHumanReview ? ` 发现问题或仍需核对，AI 置信度 ${Math.round(assetProposal.confidence * 100)}%。` : ""}</p>
+              {assetProposal.removedAssets.length > 0 && <ul>{assetProposal.removedAssets.map((asset) => <li key={asset.id}>删除第 {asset.page} 页「{asset.label}」：{asset.reason}</li>)}</ul>}
               <div className="asset-gallery-grid">{assetProposal.assets.map((asset) => {
                 const page = pageStates.find((item) => item.pageNumber === asset.page);
                 return page ? <div key={asset.id}><CropPreview bbox={asset.bbox} imageUrl={page.imageUrl} /><span>第 {asset.page} 页 · {asset.role === "answer" ? "答案图" : "题图"}</span></div> : null;

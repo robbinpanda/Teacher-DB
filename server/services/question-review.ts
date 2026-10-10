@@ -10,6 +10,7 @@ import type { BoundingBox, Question } from "../../lib/types";
 import { getDocumentIntegrity, integrityError, missingPositiveNumbers } from "../../lib/document-integrity";
 import { isValidQuestionNumber } from "../../lib/question-number-source";
 import { asQuestionPayload, validateQuestionPayload } from "../../lib/question-payload";
+import { extractionConfidence } from "../../lib/extraction-confidence";
 
 
 class QuestionIntegrityError extends Error {}
@@ -122,7 +123,14 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
       if (!currentDocument || currentDocument.sourceRemovedAt) {
         throw new QuestionIntegrityError("原试卷已删除或题目已不存在，不能保存本次修改");
       }
-      const issues = transaction.prepare("SELECT missing_images_json AS issues FROM questions WHERE id=?").get(questionId) as { issues: string };
+      const issues = transaction.prepare("SELECT missing_images_json AS issues, confidence, needs_human_review AS needsHumanReview FROM questions WHERE id=?").get(questionId) as { issues: string; confidence: number; needsHumanReview: number };
+      if (issues.needsHumanReview && payload.status !== "approved") {
+        payload.needsHumanReview = true;
+        payload.status = "needs_attention";
+      }
+      // A stale open editor must not restore a score already lowered by an AI defect report.
+      payload.confidence = extractionConfidence(issues.needsHumanReview ? Math.min(payload.confidence, issues.confidence) : payload.confidence,
+        { needsHumanReview: payload.needsHumanReview, missingImages: issues.issues !== "[]" && payload.imageIssuesResolved !== true });
       if (issues.issues !== "[]" && payload.imageIssuesResolved !== true) {
         if (payload.status === "approved") throw new QuestionIntegrityError("本题仍有缺图反馈，请补图或确认无需图片后标记已处理，再审核通过");
         payload.needsHumanReview = true;
@@ -153,7 +161,7 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
         payload.number, payload.type, payload.stem, JSON.stringify(payload.options ?? []), payload.answer,
         payload.analysis, primaryRegion.page, JSON.stringify(primaryRegion.bbox), payload.status,
         payload.status === "approved" || payload.needsHumanReview === false ? 0 : 1,
-        Math.max(0, Math.min(1, Number(payload.confidence) || 0)), 0, timestamp, questionId,
+        payload.confidence, 0, timestamp, questionId,
       );
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
       for (const region of preparedRegions) {

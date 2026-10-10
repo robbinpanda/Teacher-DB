@@ -434,7 +434,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       if (receivedDone) throw new Error("模型在 done 事件后仍输出题目");
       if (questionTotal === null) throw new Error("模型必须先输出题目总数，再输出各题");
       const selection = parseCandidateSelection(JSON.stringify(record.question), candidates, sourcePages.map((page) => page.pageNumber));
-      const question = normalizeStreamedQuestion({ ...record.question, analysis: mapCandidateImageMarkers(String(record.question.analysis ?? ""), selection.answerCandidateIds), assets: selection.assets, needsHumanReview: selection.needsHumanReview }, {
+      const question = normalizeStreamedQuestion({ ...record.question, analysis: mapCandidateImageMarkers(String(record.question.analysis ?? ""), selection.answerCandidateIds), assets: selection.assets, missingImages: selection.missingImages, confidence: selection.confidence, needsHumanReview: selection.needsHumanReview }, {
         pageCount: sourcePages.length,
         allowedTags,
       });

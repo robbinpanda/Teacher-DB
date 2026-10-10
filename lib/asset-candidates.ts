@@ -64,9 +64,9 @@ export async function detectAssetCandidates(bytes: Buffer): Promise<{ width: num
   return { width, height, candidates };
 }
 
-export async function annotateAssetCandidates(bytes: Buffer, candidates: AssetCandidate[]) {
+export async function annotateAssetCandidates(bytes: Buffer, candidates: Array<AssetCandidate & { displayLabel?: string }>) {
   const { width, height } = await sharp(bytes).metadata();
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${candidates.map((c) =>
-    `<rect x="${c.x}" y="${c.y}" width="${c.width}" height="${c.height}" fill="none" stroke="#d000a0" stroke-width="2"/><rect x="${c.x + c.width + 2}" y="${c.y}" width="48" height="24" fill="white"/><text x="${c.x + c.width + 4}" y="${c.y + 18}" font-size="18" fill="#d000a0">${c.id}</text>`).join("")}</svg>`;
+    `<rect x="${c.x}" y="${c.y}" width="${c.width}" height="${c.height}" fill="none" stroke="${c.displayLabel ? '#007c69' : '#d000a0'}" stroke-width="2"/><rect x="${c.x + c.width + 2}" y="${c.y}" width="48" height="24" fill="white"/><text x="${c.x + c.width + 4}" y="${c.y + 18}" font-size="18" fill="${c.displayLabel ? '#007c69' : '#d000a0'}">${c.displayLabel ?? c.id}</text>`).join("")}</svg>`;
   return sharp(bytes).composite([{ input: Buffer.from(svg) }]).jpeg({ quality: 92 }).toBuffer();
 }
