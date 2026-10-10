@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import "./review/review-workspace.css";
+import { ReviewContentField } from "./review/ReviewContentField";
+import { ReviewEditorSection } from "./review/ReviewEditorSection";
 import NextImage from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -80,7 +83,11 @@ export function ReviewWorkspace({
   const [activeId, setActiveId] = useState(initialActive?.id ?? "");
   const [currentPage, setCurrentPage] = useState(initialActive?.page ?? pages[0]?.pageNumber ?? 1);
   const [zoom, setZoom] = useState(82);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<false | "draft" | "approved">(false);
+  const [saving, setSaving] = useState(false);
+  const [editingContent, setEditingContent] = useState<"stem" | "options" | "answer" | "analysis" | null>(null);
+  const [correctionsOpen, setCorrectionsOpen] = useState(false);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
   const [saveError, setSaveError] = useState("");
   const [bulkAction, setBulkAction] = useState<"approve" | "remove" | null>(null);
   const [bulkNotice, setBulkNotice] = useState("");
@@ -100,18 +107,14 @@ export function ReviewWorkspace({
   const [answerImportMessage, setAnswerImportMessage] = useState("");
   const answerInputRef = useRef<HTMLInputElement>(null);
   const analysisInputRef = useRef<HTMLTextAreaElement>(null);
-  const [adjustedQuestionIds, setAdjustedQuestionIds] = useState<Set<string>>(() => new Set());
   const [dirtyQuestionIds, setDirtyQuestionIds] = useState<Set<string>>(() => new Set());
-  const [reextractingId, setReextractingId] = useState<string | null>(null);
-  const [reviewingAssets, setReviewingAssets] = useState(false);
-  const [assetProposal, setAssetProposal] = useState<{ questionId: string; before: string; assets: Question["assets"]; notes: string; needsHumanReview: boolean; confidence: number; removedAssets: Array<{ id: string; label: string; page: number; reason: string }> } | null>(null);
   const sourceStageRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
   const scrollUnlockTimerRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef(false);
   const dragRef = useRef<null | { mode: "move" | "resize"; page: number; x: number; y: number; box: BoundingBox }>(null);
+  const reviewBusy = saving || Boolean(bulkAction);
   const active = questions.find((question) => question.id === activeId) ?? questions[0];
-  const regionAdjusted = active ? adjustedQuestionIds.has(active.id) : false;
   const activeAsset = boxMode === "asset"
     ? active?.assets.find((asset) => asset.id === activeAssetId)
     : undefined;
@@ -145,6 +148,15 @@ export function ReviewWorkspace({
         : "";
 
   useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const page = pageRefs.current.get(initialActive?.page ?? 1);
+      const wrapper = page?.closest<HTMLElement>(".exam-page-wrap");
+      if (wrapper) sourceStageRef.current?.scrollTo({ top: Math.max(0, wrapper.offsetTop - 8), behavior: "instant" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialActive?.page]);
+
+  useEffect(() => {
     const params = new URLSearchParams({ subject: documentMeta.subject || "数学", stage: stageFromGrade(documentMeta.grade) });
     fetch(`/api/tag-catalog?${params}`, { cache: "no-store" }).then(async (response) => {
       const result = await response.json() as { tags?: TagCatalogEntry[] };
@@ -158,7 +170,7 @@ export function ReviewWorkspace({
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
-      if (!active) return;
+      if (!active || reviewBusy || !correctionsOpen) return;
       if (activeAsset) {
         event.preventDefault();
         const assetId = activeAsset.id;
@@ -179,16 +191,16 @@ export function ReviewWorkspace({
         setQuestions((items) => items.map((item) => item.id === active.id
           ? { ...item, regions, page: primary?.page ?? item.page, bbox: primary?.bbox ?? item.bbox }
           : item));
-        setAdjustedQuestionIds((items) => new Set(items).add(active.id));
         setDirtyQuestionIds((items) => items.has(active.id) ? items : new Set(items).add(active.id));
         setSaved(false);
       }
     }
     window.addEventListener("keydown", deleteSelectedBox);
     return () => window.removeEventListener("keydown", deleteSelectedBox);
-  }, [active, activeAsset, activeRegion, currentPage]);
+  }, [active, activeAsset, activeRegion, currentPage, reviewBusy, correctionsOpen]);
 
   async function addManualQuestion(pageNumber = currentPage) {
+    if (reviewBusy) return;
     setSaveError("");
     const response = await fetch(`/api/documents/${sourceDocument.id}/questions`, {
       method: "POST",
@@ -203,6 +215,11 @@ export function ReviewWorkspace({
     setQuestions((items) => [...items, result.question!]);
     setActiveId(result.question.id);
     setCurrentPage(result.question.page);
+    setActiveAssetId("");
+    setBoxMode("region");
+    setSaved(false);
+    setCorrectionsOpen(false);
+    setEditingContent(null);
   }
 
   async function preparePages() {
@@ -265,6 +282,7 @@ export function ReviewWorkspace({
   }
 
   function patchActive(patch: Partial<Question>) {
+    if (reviewBusy) return;
     setQuestions((items) => items.map((item) => item.id === active.id ? { ...item, ...patch, analysis: patch.analysis ?? (patch.assets ? remapAnalysisImages(item.analysis, item.assets, patch.assets) : item.analysis) } : item));
     markQuestionDirty(active.id);
     setSaved(false);
@@ -281,11 +299,11 @@ export function ReviewWorkspace({
       const regions = active.regions.map((region) => region.page === currentPage ? { ...region, bbox: box } : region);
       const primary = regions[0];
       if (primary) patchActive({ regions, page: primary.page, bbox: primary.bbox });
-      setAdjustedQuestionIds((items) => new Set(items).add(active.id));
     }
   }
 
   function addQuestionRegion(pageNumber: number) {
+    setCorrectionsOpen(true);
     const targetPage = pageStates.find((page) => page.pageNumber === pageNumber);
     if (!targetPage) return;
     const existing = active.regions.find((region) => region.page === pageNumber);
@@ -304,13 +322,13 @@ export function ReviewWorkspace({
     const regions = [...active.regions, { page: pageNumber, bbox }].sort((left, right) => left.page - right.page);
     const primary = regions[0];
     patchActive({ regions, page: primary.page, bbox: primary.bbox });
-    setAdjustedQuestionIds((items) => new Set(items).add(active.id));
     setCurrentPage(pageNumber);
     setBoxMode("region");
     setSaveError("");
   }
 
   function addManualAsset(role: "question" | "answer" = "question", page = currentPage) {
+    setCorrectionsOpen(true);
     const regionBox = active.regions.find((region) => region.page === page)?.bbox ?? active.bbox;
     const width = Math.max(3, regionBox.width * .5);
     const height = Math.max(3, regionBox.height * .5);
@@ -349,7 +367,6 @@ export function ReviewWorkspace({
     const regions = active.regions.filter((region) => region.page !== currentPage);
     const primary = regions[0];
     patchActive({ regions, page: primary?.page ?? active.page, bbox: primary?.bbox ?? active.bbox });
-    setAdjustedQuestionIds((items) => new Set(items).add(active.id));
   }
 
   function showPage(pageNumber: number, behavior: ScrollBehavior = "smooth") {
@@ -386,7 +403,7 @@ export function ReviewWorkspace({
   }
 
   function beginDrag(event: React.PointerEvent, mode: "move" | "resize") {
-    if (!editableBox) return;
+    if (!editableBox || reviewBusy || !correctionsOpen) return;
     event.preventDefault();
     event.stopPropagation();
     dragRef.current = { mode, page: currentPage, x: event.clientX, y: event.clientY, box: { ...editableBox } };
@@ -433,113 +450,34 @@ export function ReviewWorkspace({
   function clearPersistedDraftFlags(questionIds: string[]) {
     const persisted = new Set(questionIds);
     setDirtyQuestionIds((items) => new Set(Array.from(items).filter((id) => !persisted.has(id))));
-    setAdjustedQuestionIds((items) => new Set(Array.from(items).filter((id) => !persisted.has(id))));
   }
 
-  async function saveQuestion() {
+  async function saveQuestion(approve = false) {
+    if (saving || bulkAction) return;
+    if (approve && !documentReadyForReview) { setSaveError(integrityMessage); return; }
+    setSaving(true);
     setSaved(false);
     setSaveError("");
-    const nextStatus = documentReadyForReview ? "approved" : "needs_attention";
+    const nextStatus = approve ? "approved" : !documentReadyForReview && active.status === "approved" ? "needs_attention" : active.status;
     try {
       const savedQuestion = await persistQuestionDraft(active, nextStatus);
       setQuestions((items) => items.map((item) => item.id === active.id ? savedQuestion : item));
       clearPersistedDraftFlags([active.id]);
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 2200);
+      setSaved(approve ? "approved" : "draft");
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "保存失败，请稍后重试");
-    }
-  }
-
-  async function reviewQuestionAssets() {
-    const target = active;
-    setReviewingAssets(true);
-    setSaveError("");
-    setAssetProposal(null);
-    try {
-      const response = await fetch(`/api/questions/${encodeURIComponent(target.id)}/review-assets`, { method: "POST" });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !Array.isArray(result.assets)) throw new Error(result.error ?? `图片复核失败（HTTP ${response.status}）`);
-      setQuestions((items) => items.map((q) => q.id === target.id ? { ...q, missingImages: result.missingImages ?? [],
-        confidence: Math.min(q.confidence, result.confidence),
-        imageIssuesResolved: false, ...(result.needsHumanReview ? { status: "needs_attention" as const, needsHumanReview: true } : {}) } : q));
-      setAssetProposal({ questionId: target.id, before: JSON.stringify(target.assets), assets: result.assets,
-        notes: result.notes, needsHumanReview: result.needsHumanReview, confidence: result.confidence, removedAssets: result.removedAssets ?? [] });
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "图片复核失败");
     } finally {
-      setReviewingAssets(false);
-    }
-  }
-
-  function applyAssetProposal() {
-    if (!assetProposal || assetProposal.questionId !== active.id) return;
-    if (JSON.stringify(active.assets) !== assetProposal.before) {
-      setSaveError("复核期间图片框已修改，请重新复核，避免覆盖手动调整");
-      return;
-    }
-    patchActive({ assets: assetProposal.assets, confidence: Math.min(active.confidence, assetProposal.confidence), needsHumanReview: true, status: "needs_attention" });
-    const first = assetProposal.assets[0];
-    setActiveAssetId(first?.id ?? "");
-    if (first) { setBoxMode("asset"); showPage(first.page); }
-    setAssetProposal(null);
-    setBulkNotice("图片复核结果已应用到草稿，请检查裁剪预览后保存。");
-  }
-
-  async function reextractQuestion() {
-    const target = active;
-    setReextractingId(target.id);
-    setSaveError("");
-    setSaved(false);
-    try {
-      const response = await fetch(`/api/questions/${encodeURIComponent(target.id)}/reextract`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ regions: target.regions }),
-      });
-      const result = await response.json().catch(() => ({})) as {
-        error?: string;
-        recognition?: Pick<Question, "type" | "stem" | "options" | "answer" | "analysis" | "tags" | "confidence" | "needsHumanReview">;
-      };
-      if (!response.ok || !result.recognition) throw new Error(result.error ?? "重新识别失败");
-      const recognition = result.recognition;
-      const refreshed: QuestionWithSource = {
-        ...target,
-        ...recognition,
-        answer: recognition.answer || target.answer,
-        analysis: recognition.analysis || target.analysis,
-        tags: Array.from(new Set([...target.tags, ...recognition.tags])),
-        regions: target.regions,
-        page: target.regions[0]?.page ?? target.page,
-        bbox: target.regions[0]?.bbox ?? target.bbox,
-        status: recognition.needsHumanReview ? "needs_attention" : "pending",
-      };
-      const saveResponse = await fetch(`/api/questions/${encodeURIComponent(target.id)}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(refreshed),
-      });
-      const saveResult = await saveResponse.json().catch(() => ({})) as { error?: string; question?: QuestionWithSource };
-      if (!saveResponse.ok) throw new Error(saveResult.error ?? "识别成功，但保存新题框失败");
-      setQuestions((items) => items.map((item) => item.id === target.id ? (saveResult.question ?? refreshed) : item));
-      setAdjustedQuestionIds((items) => {
-        const next = new Set(items);
-        next.delete(target.id);
-        return next;
-      });
-      setDirtyQuestionIds((items) => {
-        const next = new Set(items);
-        next.delete(target.id);
-        return next;
-      });
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "重新识别失败");
-    } finally {
-      setReextractingId(null);
+      setSaving(false);
     }
   }
 
   function selectQuestion(question: QuestionWithSource, targetPage = question.page) {
+    if (saving || bulkAction) return;
+    setSaved(false);
+    setCorrectionsOpen(false);
+    setEditingContent(null);
+    setNewTag("");
+    editorScrollRef.current?.scrollTo({ top: 0 });
     setActiveId(question.id);
     setActiveAssetId("");
     setBoxMode("region");
@@ -548,6 +486,7 @@ export function ReviewWorkspace({
   }
 
   function switchPage(direction: -1 | 1) {
+    if (reviewBusy) return;
     const index = pageStates.findIndex((page) => page.pageNumber === currentPage);
     const next = pageStates[clamp(index + direction, 0, pageStates.length - 1)];
     if (!next) return;
@@ -555,10 +494,11 @@ export function ReviewWorkspace({
     setActiveAssetId("");
     setBoxMode("region");
     const firstQuestion = questions.find((question) => question.regions.some((region) => region.page === next.pageNumber));
-    if (firstQuestion) setActiveId(firstQuestion.id);
+    if (firstQuestion && firstQuestion.id !== active.id) selectQuestion(firstQuestion, next.pageNumber);
   }
 
   async function runBulkAction(action: "approve_without_review" | "remove_all_from_bank") {
+    if (reviewBusy) return;
     if (action === "approve_without_review" && !documentReadyForReview) { setSaveError(integrityMessage); return; }
     if (action === "remove_all_from_bank" && !window.confirm("将本试卷所有已入库题目移出题库？题目内容、页面框选和审核记录都会保留，可以之后重新入库。")) return;
     setBulkAction(action === "approve_without_review" ? "approve" : "remove");
@@ -655,11 +595,11 @@ export function ReviewWorkspace({
   }
 
   return (
-    <div className="review-layout">
+    <div className="review-layout review-workspace">
       <header className="review-topbar no-print">
         <div className="review-title">
           <Link href="/" className="icon-btn" aria-label="返回"><ArrowLeft size={18} /></Link>
-          <div><strong>{sourceDocument.name}</strong><span>第 {currentPage} / {sourceDocument.pageCount} 页　·　整卷提取 {questions.length} 道题　·　模型 {sourceDocument.modelDisplayName ?? sourceDocument.modelName ?? "记录缺失"}</span></div>
+          <div><strong title={sourceDocument.name}>{sourceDocument.name}</strong><span>已提取 {questions.length} 题 · 当前 {questions.findIndex(q => q.id === active.id) + 1} / {questions.length} · 已审核 {approvedCount} 题</span></div>
         </div>
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
@@ -667,13 +607,13 @@ export function ReviewWorkspace({
           <input ref={answerInputRef} hidden type="file" multiple accept="application/pdf,image/*" onChange={(event) => void importAnswers(event.target.files)} />
           {newResultsAvailable && <button className="btn btn-small" type="button" title="加载刚完成的识别结果" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "识别中…" : failedPages.length ? "重试整卷" : "继续整卷识别"}</button>}
-          <button className="btn btn-primary btn-small" type="button" title={documentReadyForReview ? "仅入库模型明确判定无需人工核查的题目" : integrityMessage} disabled={Boolean(bulkAction) || !documentReadyForReview} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "入库中…" : "自动入库"}</button>
+          <button className="btn btn-small" type="button" title={documentReadyForReview ? "仅入库模型明确判定无需人工核查的题目" : integrityMessage} disabled={saving || Boolean(bulkAction) || !documentReadyForReview} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "入库中…" : "自动入库"}</button>
           <details className="review-more-menu">
             <summary className="btn btn-small"><MoreHorizontal size={15} /> 更多</summary>
             <div>
               <button type="button" disabled={answerImporting || approvedCount === 0} title={approvedCount === 0 ? "请先审核入库题目" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); answerInputRef.current?.click(); }}><FileUp size={14} /><span><strong>{answerImporting ? "答案匹配中…" : "导入答案"}</strong><small>从答案 PDF 或图片匹配已入库题目</small></span></button>
               <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setDetailsOpen((value) => !value); }}><Info size={14} /><span><strong>试卷详情</strong><small>修改学科、年级、年份和来源信息</small></span></button>
-              <button className="danger" type="button" disabled={Boolean(bulkAction)} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void runBulkAction("remove_all_from_bank"); }}><Trash2 size={14} /><span><strong>{bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</strong><small>保留识别内容，可稍后重新入库</small></span></button>
+              <button className="danger" type="button" disabled={reviewBusy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void runBulkAction("remove_all_from_bank"); }}><Trash2 size={14} /><span><strong>{bulkAction === "remove" ? "正在移出…" : "全部移出题库"}</strong><small>保留识别内容，可稍后重新入库</small></span></button>
             </div>
           </details>
         </div>
@@ -708,11 +648,9 @@ export function ReviewWorkspace({
             </div>
           )}
           {questions.map((question) => (
-            <button type="button" key={question.id} onClick={() => selectQuestion(question)} className={question.id === active.id ? "active" : ""}>
+            <button type="button" key={question.id} aria-current={question.id === active.id ? "true" : undefined} aria-label={`第 ${question.number} 题 · ${typeLabels[question.type]} · ${question.status === "approved" ? "已入库" : question.needsHumanReview ? "待核查" : "待审核"}`} onClick={() => selectQuestion(question)} className={question.id === active.id ? "active" : ""}>
               <span className="question-number">{question.number}</span>
-              <span><strong>{typeLabels[question.type]}</strong><small>{question.assets.length
-                ? `题图 ${question.assets.filter((asset) => asset.role === "question").length} · 答案图 ${question.assets.filter((asset) => asset.role === "answer").length}`
-                : "无图片"}{question.missingImages?.length ? ` · 待补图 ${question.missingImages.length}` : ""}</small></span>
+              <span><strong>{typeLabels[question.type]}</strong></span>
               {question.status === "approved" ? <Check size={14} className="status-ok" /> : question.status === "needs_attention" ? <AlertTriangle size={14} className="status-warn" /> : <i className="status-dot" />}
             </button>
           ))}
@@ -722,8 +660,8 @@ export function ReviewWorkspace({
 
         <section className="source-panel">
           <div className="source-toolbar no-print">
-            <div><span className="pill gray">原始页 {String(currentPage).padStart(2, "0")}</span><span className="pill green">整卷识别完成</span><span className="pill source-model-pill" title={currentPageInfo.modelName && currentPageInfo.modelName !== currentModelLabel ? `${currentModelLabel}（${currentPageInfo.modelName}）` : currentModelLabel}><Sparkles size={11} />{currentModelLabel}</span><span className="hint"><Crop size={13} /> 上下滚动查看整卷；Delete 删除当前框</span></div>
-            <div className="source-actions">{!activeRegion && <button type="button" className="add-current-region" onClick={() => addQuestionRegion(currentPage)}><Plus size={13} /> 将本页加入第 {active.number} 题</button>}<div className="zoom-control" aria-label="原卷缩放"><button type="button" aria-label="缩小原卷" title="缩小原卷" disabled={zoom <= 55} onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span aria-live="polite">{zoom}%</span><button type="button" aria-label="放大原卷" title="放大原卷" disabled={zoom >= 120} onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div></div>
+            <div className="source-location"><span>原卷 · {currentPage} / {pageStates.length} 页</span><button type="button" className="source-locate" onClick={() => showPage(active.page)}>定位本题</button></div>
+            <div className="source-actions"><span className="source-model" title={`识别模型：${currentModelLabel}`}>{currentModelLabel}</span><div className="zoom-control" aria-label="原卷缩放"><button type="button" aria-label="缩小原卷" disabled={zoom <= 55} onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span aria-live="polite">{zoom}%</span><button type="button" aria-label="放大原卷" disabled={zoom >= 120} onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div></div>
           </div>
           <div ref={sourceStageRef} className="page-stage page-stage-continuous" style={{ display: "block" }} onScroll={syncCurrentPageFromScroll}>
             {pageStates.map((pageInfo, pageIndex) => {
@@ -731,7 +669,7 @@ export function ReviewWorkspace({
               const assetsForPage = active.assets.filter((asset) => asset.page === pageInfo.pageNumber);
               const isCurrentPage = pageInfo.pageNumber === currentPage;
               return (
-                <div className="exam-page-wrap" key={pageInfo.id} style={{ position: "relative", display: "flex", justifyContent: "center", margin: "0 auto 30px", paddingTop: 20 }}>
+                <div className="exam-page-wrap" key={pageInfo.id} style={{ position: "relative", display: "flex", justifyContent: zoom > 100 ? "flex-start" : "center", margin: "0 auto 30px", paddingTop: 20 }}>
                   <span className="continuous-page-label">第 {pageInfo.pageNumber} 页</span>
                   <div
                     ref={(element) => { if (element) pageRefs.current.set(pageInfo.pageNumber, element); else pageRefs.current.delete(pageInfo.pageNumber); }}
@@ -747,74 +685,109 @@ export function ReviewWorkspace({
                       const region = question.regions.find((item) => item.page === pageInfo.pageNumber)!;
                       return <button type="button" key={question.id} className={"question-box " + (question.id === active.id ? "active" : "")} style={{ left: region.bbox.x + "%", top: region.bbox.y + "%", width: region.bbox.width + "%", height: region.bbox.height + "%" }} onClick={(event) => { event.stopPropagation(); selectQuestion(question, pageInfo.pageNumber); }} aria-label={"第 " + question.number + " 题范围"}><span>Q{question.number}{question.regions.length > 1 ? ` · 跨${question.regions.length}页` : ""}</span></button>;
                     })}
-                    {isCurrentPage && !activeAsset && activeRegion && editableBox && <div className="region-edit-box" style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }} onPointerDown={(event) => beginDrag(event, "move")}><span><Crop size={11} /> 拖动题框 · Del 删除</span><button type="button" className="resize-handle" onPointerDown={(event) => beginDrag(event, "resize")} aria-label="缩放题目范围" /></div>}
-                    {assetsForPage.filter((asset) => !isCurrentPage || asset.id !== activeAsset?.id).map((asset, index) => <button type="button" key={asset.id} className={`asset-box asset-box-passive role-${asset.role}`} style={{ left: asset.bbox.x + "%", top: asset.bbox.y + "%", width: asset.bbox.width + "%", height: asset.bbox.height + "%" }} onClick={(event) => { event.stopPropagation(); setCurrentPage(pageInfo.pageNumber); setActiveAssetId(asset.id); setBoxMode("asset"); }} aria-label={`编辑${asset.role === "answer" ? "答案图" : "题图"} ${index + 1}`}><span><ImageIcon size={11} /> {asset.role === "answer" ? "答案图" : "题图"} {index + 1}</span></button>)}
-                    {isCurrentPage && activeAsset?.page === pageInfo.pageNumber && editableBox && <div className={`asset-box role-${activeAsset.role}`} style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }} onPointerDown={(event) => beginDrag(event, "move")}><span><ImageIcon size={11} /> {activeAsset.role === "answer" ? "答案图" : "题图"} · Del 删除</span><button type="button" className="resize-handle" onPointerDown={(event) => beginDrag(event, "resize")} aria-label="缩放裁剪框" /></div>}
+                    {correctionsOpen && isCurrentPage && !activeAsset && activeRegion && editableBox && <div className="region-edit-box" style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }} onPointerDown={(event) => beginDrag(event, "move")}><span><Crop size={11} /> 拖动题框 · Del 删除</span><button type="button" className="resize-handle" onPointerDown={(event) => beginDrag(event, "resize")} aria-label="缩放题目范围" /></div>}
+                    {assetsForPage.filter((asset) => !correctionsOpen || !isCurrentPage || asset.id !== activeAsset?.id).map((asset, index) => <button type="button" key={asset.id} className={`asset-box asset-box-passive role-${asset.role}`} style={{ left: asset.bbox.x + "%", top: asset.bbox.y + "%", width: asset.bbox.width + "%", height: asset.bbox.height + "%" }} onClick={(event) => { event.stopPropagation(); setCurrentPage(pageInfo.pageNumber); setCorrectionsOpen(true); setActiveAssetId(asset.id); setBoxMode("asset"); }} aria-label={`编辑${asset.role === "answer" ? "答案图" : "题图"} ${index + 1}`}><span><ImageIcon size={11} /> {asset.role === "answer" ? "答案图" : "题图"} {index + 1}</span></button>)}
+                    {correctionsOpen && isCurrentPage && activeAsset?.page === pageInfo.pageNumber && editableBox && <div className={`asset-box role-${activeAsset.role}`} style={{ left: editableBox.x + "%", top: editableBox.y + "%", width: editableBox.width + "%", height: editableBox.height + "%" }} onPointerDown={(event) => beginDrag(event, "move")}><span><ImageIcon size={11} /> {activeAsset.role === "answer" ? "答案图" : "题图"} · Del 删除</span><button type="button" className="resize-handle" onPointerDown={(event) => beginDrag(event, "resize")} aria-label="缩放裁剪框" /></div>}
                   </div>
                 </div>
               );
             })}
           </div>
-          <div className="page-switch no-print"><button type="button" disabled={currentPage === pageStates[0]?.pageNumber} onClick={() => switchPage(-1)}><ChevronLeft size={15} /></button><span>第 {currentPage} 页 / 共 {pageStates.length} 页</span><button type="button" disabled={currentPage === pageStates.at(-1)?.pageNumber} onClick={() => switchPage(1)}><ChevronRight size={15} /></button></div>
+          <div className="page-switch no-print"><button type="button" disabled={currentPage === pageStates[0]?.pageNumber} aria-label="上一页原卷" onClick={() => switchPage(-1)}><ChevronLeft size={15} /></button><span>第 {currentPage} 页 / 共 {pageStates.length} 页</span><button type="button" disabled={currentPage === pageStates.at(-1)?.pageNumber} aria-label="下一页原卷" onClick={() => switchPage(1)}><ChevronRight size={15} /></button></div>
         </section>
 
-        <aside className="editor-panel no-print">
+        <aside className="editor-panel no-print" aria-label="题目审核面板">
+          <div className="editor-scroll" ref={editorScrollRef}>
+          <fieldset className="editor-fields" disabled={saving || Boolean(bulkAction)}>
           <div className="editor-head">
-            <div className="editor-title"><span className="eyebrow"><Sparkles size={12} /> AI 提取结果</span><h2>第 {active.number} 题 · {typeLabels[active.type]}</h2></div>
+            <div className="editor-title"><h2>审核第 {active.number} 题</h2></div>
             <div className="model-assessment" title={`模型标记：${active.needsHumanReview ? "需要人工核查" : "无需人工核查"}；置信度仅供参考`}>
-              <span className={active.needsHumanReview ? "needs-review" : "clear"}>{active.needsHumanReview ? <AlertTriangle size={12} /> : <Check size={12} />}{active.needsHumanReview ? "需人工核查" : "无需人工核查"}</span>
+              <span className={active.needsHumanReview ? "needs-review" : "clear"}>{active.needsHumanReview ? <AlertTriangle size={12} /> : <Check size={12} />}{active.status === "approved" ? "已入库" : active.needsHumanReview ? "需人工核查" : "待审核 · 无需核查"}</span>
               <span className="confidence-score" title="模型自评，非正确率；发现问题后会降低评分"><b>{Math.round(active.confidence * 100)}%</b><small>AI 置信度</small></span>
             </div>
           </div>
 
-          <section className="question-asset-gallery" aria-label="本题图片">
-            <div className="asset-gallery-title"><span><ImageIcon size={13} /> 本题图片</span><button type="button" className="btn btn-small" disabled={reviewingAssets} onClick={() => void reviewQuestionAssets()}><Sparkles size={13} /> {reviewingAssets ? "正在复核图片…" : "AI 复核本题图片"}</button></div>
+          <div className="two-fields">
+            <label className="edit-field"><span>题号</span><input value={active.number} onChange={(event) => patchActive({ number: event.target.value })} /></label>
+            <label className="edit-field"><span>题型</span><select value={active.type} onChange={(event) => {
+              const nextType = event.target.value as QuestionType;
+              const options = ["single", "multiple"].includes(nextType)
+                ? (active.options?.length ? active.options : ["A", "B", "C", "D"].map((key) => ({ key, content: "" })))
+                : [];
+              patchActive({ type: nextType, options });
+            }}>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          </div>
+
+          <section className="review-extraction" aria-label="AI 提取结果">
+            <h3><Sparkles size={14} /> AI 提取结果</h3>
+          <ReviewContentField disabled={reviewBusy} label="题干" editing={editingContent === "stem"} onEdit={() => setEditingContent("stem")} onDone={() => setEditingContent(null)} preview={<MathText text={active.stem || "暂无题干，点击补充"} />}>
+            <textarea aria-label="题干 LaTeX" rows={6} value={active.stem} onChange={(event) => patchActive({ stem: event.target.value })} />
+          </ReviewContentField>
+          {["single", "multiple"].includes(active.type) && <ReviewContentField disabled={reviewBusy} label="选项" editing={editingContent === "options"} onEdit={() => setEditingContent("options")} onDone={() => setEditingContent(null)} preview={<div className="review-option-preview">{(active.options ?? []).map(option => <div key={option.key}><b>{option.key}.</b><MathText text={option.content || "待补充"} /></div>)}</div>}>
+            <div className="option-editor">
+
+              {(active.options ?? []).map((option, index) => (
+                <label key={option.key}><b>{option.key}</b><input value={option.content} onChange={(event) => patchActive({ options: active.options?.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item) })} /></label>
+              ))}
+              <button type="button" className="btn btn-small" onClick={() => patchActive({ options: [...(active.options ?? []), { key: String.fromCharCode(65 + (active.options?.length ?? 0)), content: "" }] })}><Plus size={12} /> 添加选项</button>
+            </div>
+          </ReviewContentField>}
+          <ReviewContentField disabled={reviewBusy} label="答案" editing={editingContent === "answer"} onEdit={() => setEditingContent("answer")} onDone={() => setEditingContent(null)} preview={<MathText text={active.answer || "暂无答案，点击补充"} />}>
+            <textarea aria-label="答案 LaTeX" rows={3} value={active.answer} onChange={(event) => patchActive({ answer: event.target.value })} />
+          </ReviewContentField>
+          <ReviewContentField disabled={reviewBusy} label="解析" editing={editingContent === "analysis"} onEdit={() => setEditingContent("analysis")} onDone={() => setEditingContent(null)} preview={<AnalysisWithImages text={active.analysis || "暂无解析，点击补充"} assets={active.assets} renderAsset={(asset) => { const page = pages.find(p => p.pageNumber === asset.page); return page ? <CropPreview bbox={asset.bbox} imageUrl={page.imageUrl} /> : null; }} />}>
+            <textarea ref={analysisInputRef} aria-label="解析 LaTeX" rows={6} value={active.analysis} onChange={(event) => patchActive({ analysis: event.target.value })} />
+          <div className="analysis-image-inserts">{active.assets.filter(a => a.role === "answer").map((asset, index) => <button type="button" className="btn btn-small" key={asset.id} onClick={() => {
+            const input = analysisInputRef.current;
+            const start = input?.selectionStart ?? active.analysis.length;
+            const end = input?.selectionEnd ?? start;
+            patchActive({ analysis: active.analysis.slice(0, start) + `\n[[image:${index + 1}]]\n` + active.analysis.slice(end) });
+          }}>插入答案图 {index + 1}</button>)}</div>
+          </ReviewContentField>
+          {active.assets.length > 0 && <section className="question-asset-gallery" aria-label="本题图片">
+            <div className="asset-gallery-title"><span><ImageIcon size={13} /> 本题图片</span><small>{active.assets.length} 张</small></div>
+            {active.assets.length ? <div className="asset-gallery-grid">{active.assets.map((asset, index) => {
+              const pageInfo = pageStates.find((page) => page.pageNumber === asset.page);
+              if (!pageInfo) return null;
+              return <button type="button" key={asset.id} className={activeAsset?.id === asset.id ? "active" : ""} onClick={() => { setCorrectionsOpen(true); setActiveAssetId(asset.id); setBoxMode("asset"); showPage(asset.page); }}><CropPreview bbox={asset.bbox} imageUrl={pageInfo.imageUrl} /><span><b>{asset.role === "answer" ? "答案图" : "题图"} {index + 1}</b><small>第 {asset.page} 页 · 定位与编辑</small></span></button>;
+            })}</div> : <p className="asset-gallery-empty">{active.missingImages?.length ? "已有缺图反馈，请对照原页补充图片。" : "本题没有需要保留为图片的题图或答案图。"}</p>}
+          </section>}
+
+          </section>
+          </fieldset>
+          </div>
+          <fieldset className="review-editor-tools" disabled={reviewBusy}>
+          <section className="review-knowledge-tags" aria-label="知识标签">
+          <div className="tag-editor">
+            <div className="review-tags-heading"><span><Tag size={13} /> 知识标签</span><small>{active.tags.length} 个</small></div>
+            <div className="tag-list">{active.tags.map((tag) => <button key={tag} type="button" onClick={() => patchActive({ tags: active.tags.filter((item) => item !== tag) })}>{tag}<X size={11} /></button>)}</div>
+            <div className="tag-suggestions">{tagCatalog.filter((item) => !active.tags.includes(item.name)).slice(0, 12).map((item) => <button type="button" key={item.name} onClick={() => patchActive({ tags: [...active.tags, item.name] })}>{item.name}{!item.isPreset && <i>自定义</i>}</button>)}</div>
+            <div className="tag-input"><input list="controlled-tags" aria-label="添加知识标签" placeholder="选择或输入知识标签" value={newTag} onChange={(event) => setNewTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addTag(); } }} /><datalist id="controlled-tags">{tagCatalog.map((item) => <option key={item.name} value={item.name} />)}</datalist><button type="button" aria-label="添加知识标签" onClick={() => void addTag()}><Plus size={14} /></button></div>
+          </div>
+
+          </section>
+          <ReviewEditorSection id="review-image-corrections" title="图片修正" hint={active.missingImages?.length ? `${active.missingImages.length} 处待修正` : "手工调整"} open={correctionsOpen} onToggle={setCorrectionsOpen}>
+
             {!!active.missingImages?.length && <div role="alert">
               <p><strong>第 {active.number} 题仍有 {active.missingImages.length} 处图片需要人工补充或修正</strong></p>
               {active.missingImages.map((issue, index) => <div key={index}>
                 <p>{issue.page ? `第 ${issue.page} 页` : "页码待确认"} · {issue.role === "answer" ? "答案图" : "题图"}：{issue.description}。{issue.reason}</p>
-                {issue.page && <button type="button" className="btn btn-small" onClick={() => { setAssetProposal(null); addManualAsset(issue.role, issue.page!); }}>到第 {issue.page} 页补框</button>}
+                {issue.page && <button type="button" className="btn btn-small" onClick={() => { addManualAsset(issue.role, issue.page!); }}>到第 {issue.page} 页补框</button>}
               </div>)}
               <button type="button" className="btn btn-small" onClick={() => patchActive({ missingImages: [], imageIssuesResolved: true })}>已补齐或确认无需图片（保存后生效）</button>
             </div>}
-            {assetProposal?.questionId === active.id && <div role="status">
-              <p>复核建议保留 {assetProposal.assets.length} 张图片，删除 {assetProposal.removedAssets.length} 张。{assetProposal.notes}{assetProposal.needsHumanReview ? ` 发现问题或仍需核对，AI 置信度 ${Math.round(assetProposal.confidence * 100)}%。` : ""}</p>
-              {assetProposal.removedAssets.length > 0 && <ul>{assetProposal.removedAssets.map((asset) => <li key={asset.id}>删除第 {asset.page} 页「{asset.label}」：{asset.reason}</li>)}</ul>}
-              <div className="asset-gallery-grid">{assetProposal.assets.map((asset) => {
-                const page = pageStates.find((item) => item.pageNumber === asset.page);
-                return page ? <div key={asset.id}><CropPreview bbox={asset.bbox} imageUrl={page.imageUrl} /><span>第 {asset.page} 页 · {asset.role === "answer" ? "答案图" : "题图"}</span></div> : null;
-              })}</div>
-              <button type="button" className="btn btn-small" onClick={applyAssetProposal}>应用到草稿（替换本题图片）</button>
-              <button type="button" className="btn btn-small" onClick={() => setAssetProposal(null)}>保留原图</button>
-            </div>}
-            {active.assets.length ? <div className="asset-gallery-grid">{active.assets.map((asset, index) => {
-              const pageInfo = pageStates.find((page) => page.pageNumber === asset.page);
-              if (!pageInfo) return null;
-              return <button type="button" key={asset.id} className={activeAsset?.id === asset.id ? "active" : ""} onClick={() => { setActiveAssetId(asset.id); setBoxMode("asset"); showPage(asset.page); }}><CropPreview bbox={asset.bbox} imageUrl={pageInfo.imageUrl} /><span><b>{asset.role === "answer" ? "答案图" : "题图"} {index + 1}</b><small>第 {asset.page} 页 · 点击定位裁剪框</small></span></button>;
-            })}</div> : <p className="asset-gallery-empty">{active.missingImages?.length ? "已有缺图反馈，请对照原页补充图片。" : "本题没有需要保留为图片的题图或答案图。"}</p>}
-          </section>
-
           <div className="cross-page-regions">
             <div><span>人工题目范围</span><small>{active.regions.length > 1 ? `跨 ${active.regions.length} 页` : active.regions.length ? "单页题目" : "尚未框选"}</small></div>
             <div className="region-chips">
               {active.regions.map((region) => (
                 <button key={region.page} type="button" className={region.page === currentPage ? "active" : ""} onClick={() => { showPage(region.page); setBoxMode("region"); }}>第 {region.page} 页</button>
               ))}
-              {!active.regions.length && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(currentPage)}><Plus size={11} /> 从第 {currentPage} 页开始框选</button>}
+              {!activeRegion && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(currentPage)}><Plus size={11} /> 框选第 {currentPage} 页</button>}
               {active.regions.length > 0 && Math.min(...active.regions.map((region) => region.page)) > (pageStates[0]?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.min(...active.regions.map((region) => region.page)) - 1)}><Plus size={11} /> 前一页</button>}
               {active.regions.length > 0 && Math.max(...active.regions.map((region) => region.page)) < (pageStates.at(-1)?.pageNumber ?? 1) && <button type="button" className="add-region-chip" onClick={() => addQuestionRegion(Math.max(...active.regions.map((region) => region.page)) + 1)}><Plus size={11} /> 后一页</button>}
             </div>
           </div>
 
-          {!activeRegion && (
-            <div className="missing-region-card">
-              <Crop size={16} />
-              <div><strong>当前按首行所在的第 {active.page} 页定位</strong><p>常规审核无需框选整题范围；只有需要重新识别本题时，再逐页添加并调整题框。</p></div>
-              <button type="button" onClick={() => addQuestionRegion(currentPage)}><Plus size={12} /> 框选并重新识别</button>
-            </div>
-          )}
-
-          {(editableBox || active.assets.length > 0) && (
             <div className="crop-card">
               <div className="box-mode-tabs">
                 <button type="button" className={boxMode === "region" ? "active" : ""} onClick={() => setBoxMode("region")}><Crop size={12} /> 题目范围</button>
@@ -830,77 +803,29 @@ export function ReviewWorkspace({
                 <label className="asset-label-edit"><span>图片用途</span><select value={activeAsset.role} onChange={(event) => patchActive({ assets: active.assets.map((asset) => asset.id === activeAsset.id ? { ...asset, role: event.target.value as "question" | "answer" } : asset) })}><option value="question">题目图片（会进入试卷）</option><option value="answer">答案图片（仅进入解析卷）</option></select></label>
                 <label className="asset-label-edit"><span>图片名称</span><input value={activeAsset.label} onChange={(event) => patchActive({ assets: active.assets.map((asset) => asset.id === activeAsset.id ? { ...asset, label: event.target.value } : asset) })} /></label>
               </>}
-              {editableBox && <div className="bbox-grid">
+              {editableBox && <ReviewEditorSection title="高级裁剪参数" hint="百分比坐标"><div className="bbox-grid">
                 {(["x", "y", "width", "height"] as const).map((key) => (
                   <label key={key}><span>{key === "width" ? "宽" : key === "height" ? "高" : key.toUpperCase()}</span><input type="number" min="0" max="100" step=".1" value={editableBox[key].toFixed(1)} onChange={(event) => patchBox({ ...editableBox, [key]: Number(event.target.value) })} /><i>%</i></label>
                 ))}
-              </div>}
-              {!activeAsset && activeRegion && (
-                <button
-                  type="button"
-                  className={`btn reextract-question${regionAdjusted ? " adjusted" : ""}`}
-                  disabled={reextractingId === active.id}
-                  onClick={() => void reextractQuestion()}
-                >
-                  {reextractingId === active.id ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
-                  {reextractingId === active.id
-                    ? "正在按新题框识别…"
-                    : regionAdjusted
-                      ? `按新题框重新识别${active.regions.length > 1 ? `（${active.regions.length} 页）` : ""}`
-                      : "重新识别此题"}
-                </button>
-              )}
+              </div></ReviewEditorSection>}
+
             </div>
-          )}
 
-          <div className="two-fields">
-            <label className="edit-field"><span>题号</span><input value={active.number} onChange={(event) => patchActive({ number: event.target.value })} /></label>
-            <label className="edit-field"><span>题型</span><select value={active.type} onChange={(event) => {
-              const nextType = event.target.value as QuestionType;
-              const options = ["single", "multiple"].includes(nextType)
-                ? (active.options?.length ? active.options : ["A", "B", "C", "D"].map((key) => ({ key, content: "" })))
-                : [];
-              patchActive({ type: nextType, options });
-            }}>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          </div>
-
-          <label className="edit-field"><span>题干 <em>支持 $LaTeX$</em></span><textarea rows={4} value={active.stem} onChange={(event) => patchActive({ stem: event.target.value })} /></label>
-          <div className="render-preview"><span className="render-preview-label">渲染预览</span><MathText text={active.stem} /></div>
-
-          {["single", "multiple"].includes(active.type) && (
-            <div className="option-editor">
-              <span className="field-label">选项</span>
-              {(active.options ?? []).map((option, index) => (
-                <label key={option.key}><b>{option.key}</b><input value={option.content} onChange={(event) => patchActive({ options: active.options?.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item) })} /></label>
-              ))}
-              <button type="button" className="btn btn-small" onClick={() => patchActive({ options: [...(active.options ?? []), { key: String.fromCharCode(65 + (active.options?.length ?? 0)), content: "" }] })}><Plus size={12} /> 添加选项</button>
+          </ReviewEditorSection>
+          </fieldset>
+          <footer className="review-editor-footer">
+            {saveError && <p className="form-error" role="alert">{saveError}</p>}
+            <div className="review-save-state" role="status">{saving ? "正在保存…" : saved === "approved" ? "已保存，审核通过" : saved === "draft" ? "修改已保存" : dirtyQuestionIds.has(active.id) ? "有未保存修改" : active.status === "approved" ? "本题已入库" : "校对后确认入库"}{Boolean(active.missingImages?.length) && <button type="button" onClick={() => { setCorrectionsOpen(true); window.requestAnimationFrame(() => document.getElementById("review-image-corrections")?.scrollIntoView({ block: "nearest" })); }}>待补图 {active.missingImages!.length} 处</button>}</div>
+            <div className="review-save-actions">
+              <button type="button" className="btn" disabled={saving || Boolean(bulkAction)} onClick={() => void saveQuestion()}>保存修改</button>
+              <button type="button" className="btn btn-primary" disabled={saving || Boolean(bulkAction) || !documentReadyForReview} title={documentReadyForReview ? "保存修改并审核入库" : integrityMessage} onClick={() => void saveQuestion(true)}>{saving ? <LoaderCircle size={15} className="spin" /> : <Check size={15} />} 确认入库</button>
             </div>
-          )}
-
-          <label className="edit-field"><span>答案</span><input value={active.answer} onChange={(event) => patchActive({ answer: event.target.value })} /></label>
-          <label className="edit-field"><span>解析</span><textarea ref={analysisInputRef} rows={3} value={active.analysis} onChange={(event) => patchActive({ analysis: event.target.value })} /></label>
-          <div className="analysis-image-inserts">{active.assets.filter(a => a.role === "answer").map((asset, index) => <button type="button" className="btn btn-small" key={asset.id} onClick={() => {
-            const input = analysisInputRef.current;
-            const start = input?.selectionStart ?? active.analysis.length;
-            const end = input?.selectionEnd ?? start;
-            patchActive({ analysis: active.analysis.slice(0, start) + `\n[[image:${index + 1}]]\n` + active.analysis.slice(end) });
-          }}>插入答案图 {index + 1}</button>)}</div>
-          <div className="render-preview analysis-render-preview">
-            <span className="render-preview-label">解析渲染预览</span>
-            <div className="analysis-render-scroll" tabIndex={0}>
-              <AnalysisWithImages text={active.analysis || "暂无解析内容"} assets={active.assets} renderAsset={(asset) => { const page = pages.find(p => p.pageNumber === asset.page); return page ? <CropPreview bbox={asset.bbox} imageUrl={page.imageUrl} /> : null; }} />
+            <div className="review-question-switch">
+              <button type="button" disabled={saving || Boolean(bulkAction) || questions[0]?.id === active.id} onClick={() => selectQuestion(questions[questions.findIndex(q => q.id === active.id) - 1])}><ChevronLeft size={14} /> 上一题</button>
+              <span>{questions.findIndex(q => q.id === active.id) + 1} / {questions.length}</span>
+              <button type="button" disabled={saving || Boolean(bulkAction) || questions.at(-1)?.id === active.id} onClick={() => selectQuestion(questions[questions.findIndex(q => q.id === active.id) + 1])}>下一题 <ChevronRight size={14} /></button>
             </div>
-          </div>
-
-          <div className="tag-editor">
-            <span className="field-label"><Tag size={13} /> 标签</span>
-            <div className="tag-list">{active.tags.map((tag) => <button key={tag} type="button" onClick={() => patchActive({ tags: active.tags.filter((item) => item !== tag) })}>{tag}<X size={11} /></button>)}</div>
-            <div className="tag-suggestions">{tagCatalog.filter((item) => !active.tags.includes(item.name)).slice(0, 12).map((item) => <button type="button" key={item.name} onClick={() => patchActive({ tags: [...active.tags, item.name] })}>{item.name}{!item.isPreset && <i>自定义</i>}</button>)}</div>
-            <div className="tag-input"><input list="controlled-tags" placeholder="选择标签，或输入新标签加入目录" value={newTag} onChange={(event) => setNewTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addTag(); } }} /><datalist id="controlled-tags">{tagCatalog.map((item) => <option key={item.name} value={item.name} />)}</datalist><button type="button" onClick={() => void addTag()}><Plus size={14} /></button></div>
-          </div>
-
-          {saveError && <p className="form-error">{saveError}</p>}
-          <button type="button" className="btn btn-primary save-review" title={!documentReadyForReview ? "先保存修正；完整性恢复后才能审核通过" : undefined} onClick={() => void saveQuestion()}><Check size={16} /> {saved ? (documentReadyForReview ? "已保存，审核通过" : "修改已保存") : (documentReadyForReview ? "保存并通过此题" : "保存修改")}</button>
+          </footer>
         </aside>
       </div>
     </div>

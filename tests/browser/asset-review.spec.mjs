@@ -10,8 +10,8 @@ async function fixture(request, mode='delete') {
  const root=process.env.JIANTI_E2E_DATA_DIR;
  const db=new Database(path.join(root,'teacher-question-bank.sqlite3'));
  const documentId=crypto.randomUUID(), questionId=crypto.randomUUID(), pageId=crypto.randomUUID(), now=new Date().toISOString();
- const storageKey=`fixtures/${documentId}.png`, box={x:10,y:10,width:30,height:20};
- await fs.mkdir(path.join(root,'files','fixtures'),{recursive:true});
+ const storageKey=`documents/${documentId}/page.png`, box={x:10,y:10,width:30,height:20};
+ await fs.mkdir(path.join(root,'files','documents',documentId),{recursive:true});
  await fs.writeFile(path.join(root,'files',storageKey),await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="white"/><path d="M80 60V220 M40 150H240 M80 180L200 80" stroke="black" fill="none"/></svg>')).png().toBuffer());
  db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,page_count,subject,created_at,updated_at) VALUES (?,'local-demo','图片复核测试卷','application/pdf','reviewing',1,'数学',?,?)").run(documentId,now,now);
  db.prepare('INSERT INTO pages (id,document_id,page_number,storage_key,width,height,created_at) VALUES (?,?,1,?,600,800,?)').run(pageId,documentId,storageKey,now);
@@ -37,20 +37,27 @@ async function fixture(request, mode='delete') {
  return {documentId,questionId,assets,draft,db,seen,release,get captured(){return captured;},async close(){release();await new Promise(resolve=>server.close(resolve));db.close();}};
 }
 
-test('模型明确删除误图，界面显示理由并降分；采用保存后只剩原坐标图和正确引用',async({page})=>{
+test('模型接口保留复核证据；审核页手工删除误图后保存正确引用',async({page})=>{
  const f=await fixture(page.request);const errors=[];page.on('pageerror',error=>errors.push(error.message));
  try{
   await page.goto(`/review/${f.documentId}`);
+  await expect.poll(() => page.getByAltText('原试卷第 1 页').evaluate(img => img.naturalWidth)).toBe(600);
   await expect(page.locator('.confidence-score')).toContainText('95%');
-  await page.getByRole('button',{name:'AI 复核本题图片'}).click();
-  await expect(page.getByText(/复核建议保留 1 张图片，删除 3 张/)).toBeVisible();
-  await expect(page.locator('.confidence-score')).toContainText('65%');
-  await expect(page.getByText('普通文字或不等式公式，不是图片',{exact:false})).toHaveCount(3);
+  const response=await page.request.post(`/api/questions/${f.questionId}/review-assets`);
+  expect(response.status()).toBe(200);
+  const result=await response.json();
+  expect(result.removedAssets).toHaveLength(3);
+  expect(result.removedAssets.every(a=>a.reason==='普通文字或不等式公式，不是图片')).toBe(true);
   expect(f.db.prepare('SELECT confidence,needs_human_review FROM questions WHERE id=?').get(f.questionId)).toEqual({confidence:0.65,needs_human_review:1});
   expect(f.db.prepare('SELECT COUNT(*) AS n FROM question_assets WHERE question_id=?').get(f.questionId).n).toBe(4);
-  await page.getByRole('button',{name:'应用到草稿（替换本题图片）'}).click();
-  await page.getByRole('button',{name:'保存并通过此题'}).click();
-  await expect(page.getByRole('button',{name:'已保存，审核通过'})).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.confidence-score')).toContainText('65%');
+  await page.getByText('图片修正',{exact:true}).click();
+  await expect(page.getByRole('button',{name:'AI 复核本题图片'})).toHaveCount(0);
+  await page.locator('.question-asset-gallery button').first().click();
+  for(let index=0;index<3;index++) await page.getByRole('button',{name:'删除此图',exact:true}).click();
+  await page.getByRole('button',{name:'确认入库'}).click();
+  await expect(page.getByRole('status').filter({hasText:'已保存，审核通过'})).toBeVisible();
   const saved=f.db.prepare('SELECT confidence,analysis FROM questions WHERE id=?').get(f.questionId);
   expect(saved.confidence).toBe(0.65);expect(saved.analysis).toBe('公式步骤坐标图[[image:1]]结论');
   expect(f.db.prepare('SELECT id FROM question_assets WHERE question_id=?').all(f.questionId)).toEqual([{id:f.assets[3].id}]);
