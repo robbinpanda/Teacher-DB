@@ -7,11 +7,14 @@ import { AlertCircle, CheckCircle2, FileText, Gauge, LoaderCircle, ShieldCheck, 
 import { educationStages, gradesByStage } from "../lib/education-taxonomy";
 import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
+import { fetchUploadJson } from "../lib/upload-request";
+import { uploadResponseSchema } from "../lib/api-contracts";
 
-type Stage = "idle" | "rendering" | "uploading" | "queued" | "extracting" | "retry_wait" | "paused" | "waiting_model" | "done" | "error";
+type Stage = "idle" | "rendering" | "preparing" | "uploading" | "queued" | "extracting" | "retry_wait" | "paused" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
 type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; documentId?: string; renderer?: string; modelDisplayName?: string };
 type QueueSnapshot = {
+  preparations?: Array<{ documentId: string; status: string; completedPages: number; pageCount: number; lastError?: string }>;
   concurrency?: number;
   activeCount?: number;
   queuedCount?: number;
@@ -64,23 +67,6 @@ async function renderPdf(
   }
 }
 
-async function fetchWithBackoff(url: string, init: RequestInit, attempts = 5) {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      const response = await fetch(url, init);
-      if (response.ok || ![408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt === attempts) return response;
-      const retryAfter = Number(response.headers.get("retry-after"));
-      await new Promise((resolve) => window.setTimeout(resolve, Number.isFinite(retryAfter) ? retryAfter * 1000 : Math.min(8000, 500 * 2 ** (attempt - 1))));
-    } catch (error) {
-      lastError = error;
-      if (attempt === attempts) throw error;
-      await new Promise((resolve) => window.setTimeout(resolve, Math.min(8000, 500 * 2 ** (attempt - 1))));
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("网络请求失败");
-}
-
 export function UploadWorkbench() {
   const router = useRouter();
   const { subject, stage } = useEducationScope();
@@ -117,7 +103,7 @@ export function UploadWorkbench() {
     sourceTextbook: teachingProfile.textbook,
     sourceSchool: "",
   };
-  const working = tasks.some((task) => ["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
+  const working = tasks.some((task) => ["rendering", "preparing", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
   const uploadDisabled = batchActive || modelLoading || modelSaving;
 
   function syncQueueSettings(result: QueueSnapshot, syncDraft = false) {
@@ -186,10 +172,17 @@ export function UploadWorkbench() {
     const poll = async () => {
       const response = await fetch("/api/extraction-queue", { cache: "no-store" }).catch(() => undefined);
       if (!response?.ok || cancelled) return;
-      const result = await response.json() as QueueSnapshot;
+      const result = await response.json().catch(() => null) as QueueSnapshot | null;
+      if (!result || cancelled) return;
       syncQueueSettings(result);
       setTasks((items) => items.map((task) => {
         const job = result.jobs?.find((candidate) => candidate.documentId === task.documentId);
+        const preparation = result.preparations?.find(candidate => candidate.documentId === task.documentId);
+        if (task.stage === "preparing" && preparation && !job) {
+          if (preparation.status === "failed") return { ...task, stage: "error", message: preparation.lastError ?? "后台分页失败，请在审核页重试。" };
+          if (preparation.status === "complete") return { ...task, stage: "waiting_model", completedPages: preparation.completedPages, pageCount: preparation.pageCount, message: "原卷分页已保存，请配置识题模型后在审核页开始识别。" };
+          return { ...task, completedPages: preparation.completedPages, pageCount: preparation.pageCount, message: `后台正在准备页面（${preparation.completedPages}/${preparation.pageCount || "待确认"}），关闭页面后仍会继续。` };
+        }
         if (!job || ["rendering", "uploading"].includes(task.stage)) return task;
         const modelDisplayName = job.modelDisplayName ?? job.modelName ?? task.modelDisplayName;
         const questionTotal = job.questionTotal ?? null;
@@ -208,9 +201,12 @@ export function UploadWorkbench() {
         return { ...task, modelDisplayName, stage: job.status === "processing" ? "extracting" : "queued", completedPages: job.completedPages, questionTotal, completedQuestionCount, message: job.streamMessage ?? `可靠队列中：${questionProgress}。` };
       }));
     };
-    void poll();
-    const timer = window.setInterval(poll, 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    let timer: number;
+    const next = async () => {
+      try { await poll(); } finally { if (!cancelled) timer = window.setTimeout(next, 3000); }
+    };
+    void next();
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [tasks]);
 
   function patchTask(taskId: string, patch: Partial<UploadTask>) {
@@ -286,16 +282,20 @@ export function UploadWorkbench() {
       const provisional = new FormData();
       provisional.append("file", file);
       provisional.append("pageCount", "0");
+      if (profileId) provisional.append("profileId", profileId);
       Object.entries(metadata).forEach(([key, value]) => provisional.append(key, value));
-      const provisionalResponse = await fetchWithBackoff("/api/documents", { method: "POST", body: provisional });
-      const provisionalResult = await provisionalResponse.json() as { id?: string; error?: string; status?: string };
-      if (!provisionalResponse.ok || !provisionalResult.id) throw new Error(provisionalResult.error ?? "原卷预登记失败");
+      const provisionalResult = uploadResponseSchema.parse(await fetchUploadJson("/api/documents", { method: "POST", body: provisional }));
+      if (!provisionalResult.id) throw new Error("原卷预登记失败");
       const currentDocumentId = provisionalResult.id;
       persistedDocumentId = currentDocumentId;
       patchTask(taskId, { documentId: currentDocumentId });
       router.refresh();
       if (provisionalResult.status === "complete") {
         patchTask(taskId, { stage: "done", message: "相同原卷已经处理完成，可直接进入题库或审核。" });
+        return;
+      }
+      if (provisionalResult.preparationQueued) {
+        patchTask(taskId, { stage: "preparing", renderer: "后台 PDF", message: "原卷已安全保存，后台正在准备页面；关闭网页后仍会继续。" });
         return;
       }
       const name = file.name.toLowerCase();
@@ -306,9 +306,8 @@ export function UploadWorkbench() {
         original.append("file", file);
         original.append("pageCount", String(pageCount));
         Object.entries(metadata).forEach(([key, value]) => original.append(key, value));
-        const documentResponse = await fetchWithBackoff("/api/documents", { method: "POST", body: original });
-        const documentResult = await documentResponse.json() as { id?: string; error?: string };
-        if (!documentResponse.ok || !documentResult.id) throw new Error(documentResult.error ?? "原卷保存失败");
+        const documentResult = await fetchUploadJson<{ id?: string }>("/api/documents", { method: "POST", body: original });
+        if (!documentResult.id) throw new Error("原卷保存失败");
         if (documentResult.id !== currentDocumentId) throw new Error("原卷登记与分页任务不一致");
         router.refresh();
       }, async (page, pageNumber, pageCount) => {
@@ -317,9 +316,8 @@ export function UploadWorkbench() {
         form.append("pageNumber", String(pageNumber));
         form.append("width", String(page.width));
         form.append("height", String(page.height));
-        const pageResponse = await fetchWithBackoff("/api/documents/" + currentDocumentId + "/pages", { method: "POST", body: form });
-        const pageResult = await pageResponse.json() as { id?: string; error?: string };
-        if (!pageResponse.ok || !pageResult.id) throw new Error(pageResult.error ?? `第 ${pageNumber} 页保存失败`);
+        const pageResult = await fetchUploadJson<{ id?: string }>("/api/documents/" + currentDocumentId + "/pages", { method: "POST", body: form });
+        if (!pageResult.id) throw new Error(`第 ${pageNumber} 页保存失败`);
         patchTask(taskId, { completedPages: pageNumber, message: `页面证据已安全保存（${pageNumber}/${pageCount}）…` });
       });
       try {
@@ -329,11 +327,9 @@ export function UploadWorkbench() {
         router.refresh();
         return;
       }
-      const queueResponse = await fetchWithBackoff(`/api/documents/${currentDocumentId}/queue`, {
+      await fetchUploadJson(`/api/documents/${currentDocumentId}/queue`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ retry: true, profileId }),
       });
-      const queueResult = await queueResponse.json().catch(() => ({})) as { error?: string };
-      if (!queueResponse.ok) throw new Error(queueResult.error ?? "加入识别队列失败");
       patchTask(taskId, { stage: "queued", completedPages: 0, message: "已加入可靠识别队列；关闭页面后服务端仍会继续。" });
       router.refresh();
     } catch (error) {

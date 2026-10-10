@@ -2,9 +2,8 @@ import Link from "next/link";
 import { AlertCircle, ArrowRight, CheckCircle2, ClipboardCheck, Database, FileStack, LoaderCircle, ScanText, Sparkles } from "lucide-react";
 import { UploadWorkbench } from "../components/UploadWorkbench";
 import { RecentDocuments } from "../components/RecentDocuments";
-import { getBankData, getDocuments } from "../lib/question-repository";
+import { getBankData, getDocuments } from "../lib/backend-data";
 import { headers } from "next/headers";
-import { kickExtractionQueue } from "../lib/extraction-queue";
 
 export const metadata = { title: "工作台 · 拣题" };
 
@@ -12,7 +11,6 @@ export default async function Home() {
   const requestHeaders = await headers();
   const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
   const [sourceDocuments, bankData] = await Promise.all([getDocuments(ownerId), getBankData(ownerId)]);
-  void kickExtractionQueue();
 
   const reviewDocuments = sourceDocuments.filter((document) => document.status === "reviewing" && document.approvedCount < document.questionCount);
   const nextReview = reviewDocuments[0] ?? sourceDocuments.find((document) => document.status === "reviewing");

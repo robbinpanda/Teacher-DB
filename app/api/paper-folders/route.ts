@@ -1,18 +1,12 @@
-import { createPaperFolder, getPaperLibrary } from "../../../lib/paper-library";
-import { requestOwner } from "../../../lib/server";
+import { proxyBackendRequest } from "../../../lib/backend-client";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  return Response.json(await getPaperLibrary(requestOwner(request)));
+  return proxyBackendRequest(request);
 }
 
 export async function POST(request: Request) {
-  const payload = await request.json().catch(() => ({})) as { name?: string; parentId?: string | null };
-  try {
-    const folder = await createPaperFolder(requestOwner(request), payload.name, payload.parentId || null);
-    return Response.json({ folder }, { status: 201 });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "无法创建文件夹" }, { status: 400 });
-  }
+  return proxyBackendRequest(request);
 }

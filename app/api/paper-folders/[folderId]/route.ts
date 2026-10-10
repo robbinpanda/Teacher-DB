@@ -1,23 +1,12 @@
-import { deletePaperFolder, renamePaperFolder } from "../../../../lib/paper-library";
-import { requestOwner } from "../../../../lib/server";
+import { proxyBackendRequest } from "../../../../lib/backend-client";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, context: { params: Promise<{ folderId: string }> }) {
-  const { folderId } = await context.params;
-  const payload = await request.json().catch(() => ({})) as { name?: string };
-  try {
-    return Response.json(await renamePaperFolder(requestOwner(request), folderId, payload.name));
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "无法重命名文件夹" }, { status: 400 });
-  }
+export async function PATCH(request: Request) {
+  return proxyBackendRequest(request);
 }
 
-export async function DELETE(request: Request, context: { params: Promise<{ folderId: string }> }) {
-  const { folderId } = await context.params;
-  try {
-    return Response.json(await deletePaperFolder(requestOwner(request), folderId));
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "无法删除文件夹" }, { status: 400 });
-  }
+export async function DELETE(request: Request) {
+  return proxyBackendRequest(request);
 }

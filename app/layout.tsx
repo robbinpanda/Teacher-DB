@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "katex/dist/katex.min.css";
 import { AppShell } from "../components/AppShell";
-import { getTeacherMode } from "../lib/school-workflow";
+import { getTeacherMode } from "../lib/backend-data";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,7 +26,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const requestHeaders = await headers();
-  const initialMode = await getTeacherMode(requestHeaders.get("oai-authenticated-user-id") ?? "local-demo");
+  const anonymousRemote = process.env.JIANTI_DEPLOYMENT_MODE === "remote" && !requestHeaders.get("authorization") && !requestHeaders.get("cookie")?.includes("jianti-session=");
+  const initialMode = anonymousRemote ? "personal" : await getTeacherMode(requestHeaders.get("oai-authenticated-user-id") ?? "local-demo");
   return (
     <html lang="zh-CN">
       <body><AppShell initialMode={initialMode}>{children}</AppShell></body>

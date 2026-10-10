@@ -1,3 +1,4 @@
+import { stopIsolatedProcess } from "./test-runtime.mjs";
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -13,7 +14,7 @@ source.close();
 const db = new Database(path.join(directory, 'teacher-question-bank.sqlite3'));
 db.prepare('UPDATE app_settings SET extraction_paused=1').run();
 db.prepare("UPDATE document_jobs SET status='paused',lease_owner=NULL,lease_expires_at=NULL").run();
-const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-H', '127.0.0.1', '-p', '3187'], {
+const child = spawn(process.execPath, ["scripts/run-local.mjs", "--web-port=3187", "--api-port=3287"], {
   env: { ...process.env, JIANTI_DATA_DIR: directory }, stdio: 'ignore', windowsHide: true,
 });
 const base = 'http://127.0.0.1:3187';
@@ -50,6 +51,6 @@ try {
   assert.equal(db.prepare('SELECT missing_images_json AS issues FROM questions WHERE id=?').get(q.id).issues, '[]');
   console.log('PASS: unresolved approval blocked; ordinary save preserves warnings; explicit resolution clears warnings and approves.');
 } finally {
-  child.kill();
+  await stopIsolatedProcess(child);
   db.close();
 }

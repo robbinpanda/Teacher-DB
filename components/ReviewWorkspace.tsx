@@ -34,6 +34,8 @@ import { answerImagesFromFile } from "../lib/client-answer-images";
 import type { TagCatalogEntry } from "../lib/tag-catalog";
 import { missingPositiveNumbers } from "../lib/document-integrity";
 import { isValidQuestionNumber } from "../lib/question-number-source";
+import { useReviewProgress } from "./review/useReviewProgress";
+import { ReviewPending } from "./review/ReviewPending";
 import { persistDirtyQuestionDrafts } from "../lib/review-draft-persistence";
 
 function clamp(value: number, min: number, max: number) {
@@ -61,7 +63,7 @@ function CropPreview({ bbox, imageUrl }: { bbox: BoundingBox; imageUrl: string }
 }
 
 export function ReviewWorkspace({
-  sourceDocument,
+  sourceDocument: initialDocument,
   pages,
   initialQuestions,
   initialActiveId,
@@ -72,41 +74,7 @@ export function ReviewWorkspace({
   initialActiveId?: string;
 }) {
   const [questions, setQuestions] = useState(initialQuestions);
-  const [pageStates, setPageStates] = useState(pages);
-  const [job, setJob] = useState<{ status?: string | null; nextAttemptAt?: string | null; lastError?: string | null }>({
-    status: sourceDocument.jobStatus,
-    nextAttemptAt: sourceDocument.nextAttemptAt,
-    lastError: sourceDocument.error,
-  });
-  const [recognition, setRecognition] = useState<{
-    questionTotal: number | null;
-    completedQuestionNumbers: string[];
-    completedQuestionCount: number;
-    percent: number;
-    phase: string;
-    lastEventAt: string | null;
-    message: string | null;
-  }>(() => {
-    let completedQuestionNumbers: string[] = [];
-    try {
-      const parsed = JSON.parse(sourceDocument.recognizedQuestionNumbersJson ?? "[]");
-      if (Array.isArray(parsed)) completedQuestionNumbers = parsed.map(String).filter((value) => /^[1-9]\d*$/.test(value));
-    } catch {
-      completedQuestionNumbers = [];
-    }
-    const questionTotal = sourceDocument.recognitionQuestionTotal ?? null;
-    return {
-      questionTotal,
-      completedQuestionNumbers,
-      completedQuestionCount: completedQuestionNumbers.length,
-      percent: questionTotal ? Math.min(100, Math.round(completedQuestionNumbers.length / questionTotal * 100)) : 0,
-      phase: sourceDocument.jobStatus && ["paused", "failed", "retry_wait", "complete"].includes(sourceDocument.jobStatus)
-        ? sourceDocument.jobStatus
-        : sourceDocument.recognitionPhase ?? sourceDocument.jobStatus ?? "queued",
-      lastEventAt: sourceDocument.recognitionLastEventAt ?? null,
-      message: sourceDocument.recognitionMessage ?? null,
-    };
-  });
+  const { sourceDocument, pageStates, setPageStates, job, setJob, recognition, setRecognition, newResultsAvailable, processorAvailable } = useReviewProgress(initialDocument, pages);
   const initialActive = initialQuestions.find((question) => question.id === initialActiveId) ?? initialQuestions[0];
   const [activeId, setActiveId] = useState(initialActive?.id ?? "");
   const [currentPage, setCurrentPage] = useState(initialActive?.page ?? pages[0]?.pageNumber ?? 1);
@@ -117,7 +85,6 @@ export function ReviewWorkspace({
   const [bulkNotice, setBulkNotice] = useState("");
   const [showUnapprovedSummary, setShowUnapprovedSummary] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [newResultsAvailable, setNewResultsAvailable] = useState(false);
   const [boxMode, setBoxMode] = useState<"region" | "asset">("region");
   const [activeAssetId, setActiveAssetId] = useState("");
   const [newTag, setNewTag] = useState("");
@@ -149,11 +116,11 @@ export function ReviewWorkspace({
     : undefined;
   const activeRegion = active?.regions.find((region) => region.page === currentPage);
   const editableBox = activeAsset?.bbox ?? activeRegion?.bbox;
-  const currentPageInfo = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates[0];
+  const currentPageInfo: ReviewPage | undefined = pageStates.find((page) => page.pageNumber === currentPage) ?? pageStates.at(0);
   const activeAssetPageInfo = activeAsset
     ? pageStates.find((page) => page.pageNumber === activeAsset.page)
     : undefined;
-  const currentModelLabel = currentPageInfo.modelDisplayName ?? sourceDocument.modelDisplayName ?? currentPageInfo.modelName ?? sourceDocument.modelName ?? "模型记录缺失";
+  const currentModelLabel = currentPageInfo?.modelDisplayName ?? sourceDocument.modelDisplayName ?? currentPageInfo?.modelName ?? sourceDocument.modelName ?? "模型记录缺失";
   const approvedCount = questions.filter((question) => question.status === "approved").length;
   const unapprovedQuestions = questions.filter((question) => question.status !== "approved");
   const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
@@ -175,7 +142,6 @@ export function ReviewWorkspace({
         : invalidQuestionNumbers.length
           ? `存在非法题号 ${invalidQuestionNumbers.join("、")}，请改为从 1 开始、不带前导零的阿拉伯数字。`
         : "";
-  const initialCompletedRef = useRef(sourceDocument.completedPageCount);
 
   useEffect(() => {
     const params = new URLSearchParams({ subject: documentMeta.subject || "数学", stage: stageFromGrade(documentMeta.grade) });
@@ -185,45 +151,6 @@ export function ReviewWorkspace({
     }).catch(() => undefined);
   }, [documentMeta.grade, documentMeta.subject]);
 
-  useEffect(() => {
-    const waitingForFinalization = ["queued", "processing", "retry_wait"].includes(job.status ?? "");
-    if (!incompletePages.length && !missingSourcePageCount && !waitingForFinalization) return;
-    let cancelled = false;
-    const poll = async () => {
-      const response = await fetch(`/api/documents/${sourceDocument.id}/progress`, { cache: "no-store" }).catch(() => undefined);
-      if (!response?.ok || cancelled) return;
-      const result = await response.json() as {
-        job?: { status?: string; nextAttemptAt?: string | null; lastError?: string | null };
-        recognition?: typeof recognition;
-        document?: { status?: string };
-        pages?: Array<{ pageId: string; pageNumber: number; imageUrl: string; width: number; height: number; status: ReviewPage["extractionStatus"]; attempt: number; error?: string | null; nextAttemptAt?: string | null }>;
-      };
-      setJob(result.job ?? {});
-      if (result.recognition) setRecognition(result.recognition);
-      if (result.pages) {
-        const completed = result.pages.filter((page) => page.status === "complete").length;
-        setPageStates(result.pages.map((page) => ({
-          id: page.pageId,
-          pageNumber: page.pageNumber,
-          imageUrl: page.imageUrl,
-          width: page.width,
-          height: page.height,
-          extractionStatus: page.status,
-          extractionAttempt: page.attempt,
-          extractionError: page.error,
-          nextAttemptAt: page.nextAttemptAt,
-        })));
-        if (completed > initialCompletedRef.current) {
-          initialCompletedRef.current = completed;
-          setNewResultsAvailable(true);
-        }
-      }
-      if (result.job?.status === "complete" || result.document?.status === "reviewing") window.location.reload();
-    };
-    void poll();
-    const timer = window.setInterval(poll, 1000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [incompletePages.length, initialQuestions.length, job.status, missingSourcePageCount, sourceDocument.id]);
 
   useEffect(() => {
     function deleteSelectedBox(event: KeyboardEvent) {
@@ -277,6 +204,17 @@ export function ReviewWorkspace({
     setCurrentPage(result.question.page);
   }
 
+  async function preparePages() {
+    setRetrying(true); setSaveError("");
+    try {
+      const response = await fetch(`/api/documents/${sourceDocument.id}/prepare`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "分页任务提交失败");
+      window.location.reload();
+    } catch (error) { setSaveError(error instanceof Error ? error.message : "分页任务提交失败"); }
+    finally { setRetrying(false); }
+  }
+
   async function retryExtraction() {
     setRetrying(true);
     setSaveError("");
@@ -315,48 +253,14 @@ export function ReviewWorkspace({
         ? "正在校验完整性"
         : recognition.phase === "retry_wait"
           ? "等待自动重试"
-          : recognition.phase === "error"
+          : ["error", "failed"].includes(recognition.phase)
             ? "识别失败"
             : recognition.phase === "paused"
               ? "识别已暂停"
               : "正在连接模型";
 
   if (!active || !currentPageInfo || recognitionInProgress) {
-    return (
-      <div className="page-shell">
-        <Link href="/" className="btn"><ArrowLeft size={16} /> 返回</Link>
-        <section className="card extraction-empty">
-          {currentPageInfo && <div className="empty-page-preview"><NextImage src={currentPageInfo.imageUrl} alt="原始试卷首页" width={currentPageInfo.width} height={currentPageInfo.height} unoptimized priority /></div>}
-          <div className="empty-progress-panel">
-            <h1>{sourceDocument.name}</h1>
-            <p>整份试卷只调用一次模型。模型确认总题数后逐题流式返回，后端每收到一题就立即校验并保存。</p>
-            <div className="question-stream-heading">
-              <strong>{recognition.questionTotal
-                ? `已完成 ${recognition.completedQuestionCount} / ${recognition.questionTotal} 题`
-                : "正在统计整卷题目总数"}</strong>
-              <span>{recognitionPhaseLabel}</span>
-            </div>
-            <div className="question-stream-bar" role="progressbar" aria-valuemin={0} aria-valuemax={recognition.questionTotal ?? undefined} aria-valuenow={recognition.completedQuestionCount}>
-              <span style={{ width: `${recognition.percent}%` }} />
-            </div>
-            <div className="question-stream-status">
-              {recognition.completedQuestionNumbers.length
-                ? recognition.completedQuestionNumbers.map((number) => <span key={number}><Check size={13} /> 第 {number} 题</span>)
-                : <em>{recognition.message ?? "模型正在通读全部页面，题目完成后会逐个显示在这里。"}</em>}
-            </div>
-            <p className="stream-timeout-note">模型持续输出文字或思考活动时会一直处理；只有连续 90 秒没有任何活动，或模型明确报错，才会进入退避重试。</p>
-            {job.status === "retry_wait" && job.nextAttemptAt && <p className="queue-notice">网络退避中，将在 {new Date(job.nextAttemptAt).toLocaleString()} 自动继续。</p>}
-            {job.status === "paused" && <p className="queue-notice">全部识别任务已暂停。请在工作台点击“全部开始”，未完成试卷会立即重新排队。</p>}
-            {(job.lastError || sourceDocument.error) && <p className="form-error">{job.lastError || sourceDocument.error}</p>}
-            <div className="header-actions">
-              <button type="button" className="btn btn-primary" disabled={retrying || ["queued", "processing"].includes(job.status ?? "")} onClick={() => void retryExtraction()}><RefreshCw size={15} /> {retrying ? "正在加入队列…" : ["queued", "processing", "retry_wait"].includes(job.status ?? "") ? "可靠队列处理中" : "重新识别整卷"}</button>
-              {currentPageInfo && <button type="button" className="btn" onClick={() => void addManualQuestion(currentPageInfo.pageNumber)}><Plus size={15} /> 手动补一道题</button>}
-            </div>
-            {saveError && <p className="form-error">{saveError}</p>}
-          </div>
-        </section>
-      </div>
-    );
+    return <ReviewPending sourceDocument={sourceDocument} currentPageInfo={currentPageInfo} recognition={recognition} job={job} recognitionPhaseLabel={recognitionPhaseLabel} retrying={retrying} retryExtraction={retryExtraction} addManualQuestion={addManualQuestion} saveError={saveError} processorAvailable={processorAvailable} preparePages={preparePages} />;
   }
 
   function patchActive(patch: Partial<Question>) {

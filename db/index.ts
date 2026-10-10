@@ -5,6 +5,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import * as schema from "./schema";
+import { assertSqliteProvider } from "./provider";
 
 type AppDatabase = ReturnType<typeof createDrizzle>;
 
@@ -20,6 +21,7 @@ export function dataDirectory() {
 }
 
 export function getSqlite() {
+  assertSqliteProvider();
   if (!globalThis.__JIANTI_SQLITE__) {
     const directory = dataDirectory();
     mkdirSync(directory, { recursive: true });

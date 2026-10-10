@@ -1,5 +1,5 @@
 import { ReviewWorkspace } from "../../../components/ReviewWorkspace";
-import { getReviewData } from "../../../lib/question-repository";
+import { getReviewData } from "../../../lib/backend-data";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 

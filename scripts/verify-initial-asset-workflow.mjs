@@ -1,3 +1,4 @@
+import { stopIsolatedProcess } from "./test-runtime.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -32,7 +33,7 @@ for (const paper of papers) {
   db.prepare("UPDATE documents SET status='extracting',error=NULL WHERE id=?").run(paper.id);
 }
 const log = fs.openSync(path.join(directory, "server.log"), "w");
-const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", "3188"], {
+const child = spawn(process.execPath, ["scripts/run-local.mjs", "--web-port=3188", "--api-port=3288"], {
   env: { ...process.env, JIANTI_DATA_DIR: directory }, stdio: ["ignore", log, log], windowsHide: true,
 });
 const base = "http://127.0.0.1:3188";
@@ -79,5 +80,5 @@ try {
   fs.writeFileSync(path.join(directory, 'results.json'), JSON.stringify({ questions, assets }, null, 2));
   console.log('PASS: 21 questions,', assets.length, 'crops,', questions.filter(q => JSON.parse(q.missing_images_json).length).length, 'questions with missing-image feedback; one model call, no review endpoint.');
 } finally {
-  child.kill(); db.close(); fs.closeSync(log);
+  await stopIsolatedProcess(child); db.close(); fs.closeSync(log);
 }

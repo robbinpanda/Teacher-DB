@@ -287,7 +287,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
           : doc.jobStatus === "processing"
             ? `${doc.recognitionMessage ?? "AI 整卷识别"} · ${questionProgressLabel}`
             : null;
-    const statusLabel = queueLabel ?? (doc.status === "uploading"
+    const statusLabel = queueLabel ?? (doc.status === "awaiting_model" ? "等待配置模型" : doc.status === "uploading"
       ? "原卷页面预处理中"
       : doc.status === "extracting"
         ? `等待识别 · ${questionProgressLabel}`

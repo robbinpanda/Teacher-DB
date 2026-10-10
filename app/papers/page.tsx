@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { PaperLibrary } from "../../components/PaperLibrary";
-import { getPaperLibrary } from "../../lib/paper-library";
+import { getPaperLibrary } from "../../lib/backend-data";
 
 export const metadata = { title: "试卷库 · 拣题" };
 

@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { AssignmentWorkspace, type AssignmentDetail } from "../../../components/AssignmentWorkspace";
-import { getAssignmentDetail, getTeacherMode } from "../../../lib/school-workflow";
+import { getAssignmentDetail, getTeacherMode } from "../../../lib/backend-data";
 
 export const metadata = { title: "作业批改与学情 · 拣题" };
 

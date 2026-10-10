@@ -1,5 +1,7 @@
 import { teachingSkillSchemaSql } from "../lib/teaching-skill-store";
 import { getSqlite } from ".";
+import { createHash } from "node:crypto";
+import { runMigrations } from "./migrations";
 import {
   installDatabaseInvariants,
   repairApprovedQuestionReviewFlags,
@@ -323,8 +325,7 @@ const upgrades: Record<string, Record<string, string>> = {
 
 let initialized = false;
 
-function initialize() {
-  const sqlite = getSqlite();
+function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   sqlite.exec(schemaSql);
   sqlite.exec(teachingSkillSchemaSql);
   for (const [table, columns] of Object.entries(upgrades)) {
@@ -517,6 +518,41 @@ function initialize() {
        ) WHERE duplicate_position > 1
      )`,
   );
+}
+
+export const DATABASE_VERSION = 3;
+
+function initialize() {
+  runMigrations(getSqlite(), [
+    {
+      version: 1,
+      name: "existing-schema-and-integrity-baseline",
+      checksum: createHash("sha256").update(schemaSql + teachingSkillSchemaSql + JSON.stringify(upgrades)).digest("hex"),
+      up: installBaseline,
+    },
+    {
+      version: 2,
+      name: "independent-runtime-heartbeats",
+      checksum: "runtime-processes-v1",
+      up: sqlite => sqlite.exec(`CREATE TABLE runtime_processes (
+        id TEXT PRIMARY KEY, role TEXT NOT NULL, pid INTEGER NOT NULL,
+        started_at TEXT NOT NULL, heartbeat_at TEXT NOT NULL, expires_at TEXT NOT NULL
+      ); CREATE INDEX runtime_processes_role_expiry_idx ON runtime_processes(role, expires_at)`),
+    },
+    {
+      version: 3,
+      name: "durable-pdf-preparation",
+      checksum: "document-preparations-v1",
+      up: sqlite => sqlite.exec(`CREATE TABLE document_preparations (
+        document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+        owner_id TEXT NOT NULL, profile_id TEXT,
+        status TEXT NOT NULL CHECK(status IN ('queued','processing','retry_wait','complete','failed')),
+        attempt INTEGER NOT NULL DEFAULT 0, completed_pages INTEGER NOT NULL DEFAULT 0,
+        lease_owner TEXT, lease_expires_at TEXT, next_attempt_at TEXT, last_error TEXT,
+        updated_at TEXT NOT NULL
+      ); CREATE INDEX document_preparations_claim_idx ON document_preparations(status, next_attempt_at, lease_expires_at)`),
+    },
+  ]);
   initialized = true;
 }
 

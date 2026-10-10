@@ -25,6 +25,8 @@ export async function ensureOwnerModelSettings(ownerId: string) {
   }
 }
 
+export class ModelConfigurationError extends Error {}
+
 export async function resolveModelProfile(ownerId: string, requestedId?: string) {
   await ensureOwnerModelSettings(ownerId);
   const db = getDb();
@@ -33,7 +35,7 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
     const setting = await db.query.appSettings.findFirst({ where: eq(appSettings.ownerId, ownerId) });
     profileId = setting?.selectedModelProfileId ?? undefined;
   }
-  if (!profileId) throw new Error("尚未配置或选择识题模型，请先到“模型配置”填写 API Key、API Base URL 和模型名称");
+  if (!profileId) throw new ModelConfigurationError("尚未配置或选择识题模型，请先到“模型配置”填写 API Key、API Base URL 和模型名称");
   const profile = await db.query.modelProfiles.findFirst({
     where: and(
       eq(modelProfiles.id, profileId),
@@ -41,9 +43,9 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
       eq(modelProfiles.enabled, true),
     ),
   });
-  if (!profile) throw new Error("所选模型配置不存在或已停用");
+  if (!profile) throw new ModelConfigurationError("所选模型配置不存在或已停用");
   if (!profile.apiKeyCiphertext || !profile.apiKeyIv) {
-    throw new Error("该模型配置缺少 API Key");
+    throw new ModelConfigurationError("该模型配置缺少 API Key");
   }
   const apiKey = await decryptSecret(profile.apiKeyCiphertext, profile.apiKeyIv);
   return { ...profile, provider: normalizeModelProtocol(profile.provider), apiKey };

@@ -1,7 +1,7 @@
 import { PaperBuilder } from "../../../components/PaperBuilder";
-import { getApprovedQuestions } from "../../../lib/question-repository";
+import { getApprovedQuestions } from "../../../lib/backend-data";
 import { headers } from "next/headers";
-import { getPaperTemplates } from "../../../lib/paper-template-repository";
+import { getPaperTemplates } from "../../../lib/backend-data";
 
 export const metadata = { title: "组卷 · 拣题" };
 

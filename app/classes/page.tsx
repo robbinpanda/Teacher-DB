@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ClassManager } from "../../components/ClassManager";
-import { getTeacherMode, getTeachingClass, listTeachingClasses } from "../../lib/school-workflow";
+import { getTeacherMode, getTeachingClass, listTeachingClasses } from "../../lib/backend-data";
 
 export const metadata = { title: "班级学生 · 拣题" };
 

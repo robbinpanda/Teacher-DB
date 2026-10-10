@@ -1,3 +1,4 @@
+import { stopIsolatedProcess } from "./test-runtime.mjs";
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -21,7 +22,7 @@ INSERT INTO questions (id,document_id,number,type,stem,page_number,bbox_json,cre
   VALUES ('migration-sentinel','migration-doc','1','fill','preserve me',1,'{}','t0','t0');`);
 oldDb.close();
 const base = 'http://127.0.0.1:3182';
-const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-H', '127.0.0.1', '-p', '3182'], {
+const child = spawn(process.execPath, ["scripts/run-local.mjs", "--web-port=3182", "--api-port=3282"], {
   env: { ...process.env, JIANTI_DATA_DIR: path.relative(process.cwd(), dataDir) }, stdio: 'ignore', windowsHide: true,
 });
 async function call(url, method = 'GET', body, headers = {}) {
@@ -143,7 +144,7 @@ try {
   console.log('review fixes e2e: ok (relative storage upload/read, schema upgrade, closed assignments, strict scores, provenance round trip, legacy variations)');
 } finally {
   const exited=child.exitCode===null ? new Promise(resolve=>child.once('exit',resolve)) : Promise.resolve();
-  child.kill();
+  await stopIsolatedProcess(child);
   await exited;
   const temporaryRoot=path.resolve('tmp');
   assert.ok(dataDir.startsWith(temporaryRoot + path.sep), 'cleanup must stay inside tmp');

@@ -1,3 +1,4 @@
+import { stopIsolatedProcess } from "./test-runtime.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -32,7 +33,7 @@ for (const paper of papers) {
   db.prepare("UPDATE documents SET status='extracting',error=NULL WHERE id=?").run(paper.id);
 }
 const log = fs.openSync(path.join(directory, "server.log"), "w");
-const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", "3186"], {
+const child = spawn(process.execPath, ["scripts/run-local.mjs", "--web-port=3186", "--api-port=3286"], {
   env: { ...process.env, JIANTI_DATA_DIR: directory }, stdio: ["ignore", log, log], windowsHide: true,
 });
 const base = "http://127.0.0.1:3186";
@@ -103,7 +104,7 @@ try {
   assert.equal(results.length, 42);
   console.log("PASS: 2 fresh paper extractions; 42 reviews, saves and crop retrieval checks.");
 } finally {
-  child.kill();
+  await stopIsolatedProcess(child);
   db.close();
   fs.closeSync(log);
 }

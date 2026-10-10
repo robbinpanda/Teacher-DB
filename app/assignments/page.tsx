@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AssignmentList } from "../../components/AssignmentList";
-import { getTeacherMode, listAssignments } from "../../lib/school-workflow";
+import { getTeacherMode, listAssignments } from "../../lib/backend-data";
 
 export const metadata = { title: "作业批改 · 拣题" };
 

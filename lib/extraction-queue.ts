@@ -58,6 +58,7 @@ function futureIso(delayMs: number) {
 }
 
 function schedulePump(delayMs = 0) {
+  if (process.env.JIANTI_PROCESS_ROLE !== "worker" && process.env.JIANTI_EMBEDDED_WORKER !== "1") return;
   if (global.__teacherDbQueueTimer) clearTimeout(global.__teacherDbQueueTimer);
   global.__teacherDbQueueTimer = setTimeout(() => {
     global.__teacherDbQueueTimer = undefined;
@@ -71,6 +72,7 @@ export async function enqueueDocumentExtraction(input: {
   documentId: string;
   profileId?: string;
   retry?: boolean;
+  commit?: (transaction: Database.Database) => void;
 }) {
   await ensureDatabase();
   const sqlite = getSqlite();
@@ -91,6 +93,7 @@ export async function enqueueDocumentExtraction(input: {
   const queueStatus = queueSettings?.paused ? "paused" : "queued";
   const pausedReason = queueSettings?.pauseReason ?? "识别队列已暂停，请点击“全部开始”后继续。";
   sqliteTransaction((transaction) => {
+    input.commit?.(transaction);
     // 整卷识别必须从同一份页面快照开始；旧的逐页运行记录不能混入新一轮进度。
     transaction.prepare("DELETE FROM extraction_runs WHERE document_id = ?").run(input.documentId);
     for (const page of pages) {
@@ -431,15 +434,9 @@ function nextRun(documentId: string) {
 }
 
 async function finishDocument(job: JobRow & { workerId: string }) {
-  const finalize = await import("../app/api/documents/[documentId]/finalize/route");
-  const response = await finalize.POST(
-    new Request("http://local/api/finalize", {
-      method: "POST",
-      headers: { "oai-authenticated-user-id": job.ownerId, "x-extraction-worker-id": job.workerId },
-    }),
-    { params: Promise.resolve({ documentId: job.documentId }) },
-  );
-  await response.json();
+  const { finalizeDocument } = await import("../server/services/document-finalize");
+  const outcome = await finalizeDocument(job.ownerId, job.documentId, job.workerId);
+  if (outcome.status >= 400) throw new Error("error" in outcome.body ? String(outcome.body.error) : "整卷收尾失败");
 }
 
 async function processJob(job: JobRow & { workerId: string }) {
@@ -493,24 +490,18 @@ async function processJob(job: JobRow & { workerId: string }) {
         return;
       }
       const document = getSqlite().prepare("SELECT name FROM documents WHERE id = ?").get(job.documentId) as { name: string };
-      const extract = await import("../app/api/extract/route");
-      const response = await extract.POST(new Request("http://local/api/extract", {
-        method: "POST",
-        headers: { "content-type": "application/json", "oai-authenticated-user-id": job.ownerId },
-        body: JSON.stringify({
+      const { extractDocument } = await import("../server/services/extraction");
+      const outcome = await extractDocument(job.ownerId, {
           documentId: job.documentId,
-          pageId: run.pageId,
-          pageNumber: run.pageNumber,
           fileName: document.name,
           profileId: job.profileId ?? undefined,
           workerId: job.workerId,
-        }),
-      }));
-      if (response.ok) {
+      });
+      if (outcome.status < 400) {
         recordQueueSuccess(job.ownerId);
         continue;
       }
-      const failure = await response.json() as ExtractionFailure;
+      const failure = outcome.body as ExtractionFailure;
       if (failure.code === "lease_lost" || !heartbeat(job.documentId, job.workerId)) return;
       // Some failures (for example decrypting the model credential) happen before
       // the page run is activated, so its attempt can remain zero. The document
@@ -641,6 +632,7 @@ async function pump() {
 }
 
 export async function kickExtractionQueue() {
+  if (process.env.JIANTI_PROCESS_ROLE !== "worker" && process.env.JIANTI_EMBEDDED_WORKER !== "1") return;
   if (global.__teacherDbQueuePump) return global.__teacherDbQueuePump;
   global.__teacherDbQueuePump = pump().finally(() => {
     global.__teacherDbQueuePump = undefined;

@@ -67,7 +67,7 @@ export type SourceDocument = {
   subject: string;
   grade: string;
   pageCount: number;
-  status: "uploading" | "extracting" | "reviewing" | "complete" | "failed";
+  status: "uploading" | "awaiting_model" | "extracting" | "reviewing" | "complete" | "failed";
   createdAt: string;
   questionCount: number;
   approvedCount: number;

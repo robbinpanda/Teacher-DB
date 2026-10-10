@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { getAssignmentDetail } from "../../../../lib/school-workflow";
+import { getAssignmentDetail } from "../../../../lib/backend-data";
 
 export const metadata = { title: "作业答题卡 · 拣题" };
 

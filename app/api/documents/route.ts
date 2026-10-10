@@ -1,112 +1,12 @@
-import { getDb, getSqlite, sqliteTransaction } from "../../../db";
-import { and, eq } from "drizzle-orm";
-import { ensureDatabase } from "../../../db/bootstrap";
-import { documents } from "../../../db/schema";
-import { now, requestOwner } from "../../../lib/server";
-import { deleteFile, putFile } from "../../../lib/file-storage";
-import { getDocuments } from "../../../lib/question-repository";
-import { findReusableDocument } from "../../../lib/document-upload";
-import { readFormDataPayload } from "../../../lib/request-payload";
+import { proxyBackendRequest } from "../../../lib/backend-client";
 
 export const runtime = "nodejs";
-
-const maxOriginalBytes = 100 * 1024 * 1024;
-const acceptedExtensions = [".pdf"];
-
-function hex(bytes: ArrayBuffer) {
-  return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
-}
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const rows = await getDocuments(requestOwner(request));
-  return Response.json({ documents: rows }, { headers: { "cache-control": "no-store" } });
+  return proxyBackendRequest(request);
 }
 
 export async function POST(request: Request) {
-  await ensureDatabase();
-  const parsed = await readFormDataPayload(request);
-  if (!parsed.ok) return parsed.response;
-  const form = parsed.value;
-  const file = form.get("file");
-  if (!(file instanceof File)) return Response.json({ error: "缺少文件" }, { status: 400 });
-  const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  if (!acceptedExtensions.includes(extension)) return Response.json({ error: "当前产品仅支持 PDF 试卷" }, { status: 415 });
-  if (file.size > maxOriginalBytes) return Response.json({ error: "原卷不能超过 100 MB" }, { status: 413 });
-  const id = crypto.randomUUID();
-  const createdAt = now();
-  const originalKey = "documents/" + id + "/original/" + file.name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
-  const pageCount = Number(form.get("pageCount") ?? 0);
-  if (!Number.isInteger(pageCount) || pageCount < 0 || pageCount > 250) {
-    return Response.json({ error: "页数必须在 0 到 250 之间" }, { status: 400 });
-  }
-  const bytes = await file.arrayBuffer();
-  if (new TextDecoder("ascii").decode(bytes.slice(0, 5)) !== "%PDF-") {
-    return Response.json({ error: "文件扩展名是 PDF，但内容不是有效的 PDF 文件" }, { status: 415 });
-  }
-  const checksum = hex(await crypto.subtle.digest("SHA-256", bytes));
-  const ownerId = requestOwner(request);
-  // A source-only deletion intentionally preserves its questions and checksum.
-  // It must not hijack a later upload of the same PDF; that upload gets a new document.
-  const existing = findReusableDocument(getSqlite(), ownerId, checksum);
-  if (existing) {
-    if (pageCount === 0) {
-      return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount: existing.pageCount, duplicate: true, resumed: existing.status !== "complete", status: existing.status });
-    }
-    if (existing.status !== "complete") {
-      await getDb().update(documents).set({
-        pageCount,
-        status: "extracting",
-        subject: String(form.get("subject") ?? "") || null,
-        grade: String(form.get("grade") ?? "") || null,
-        sourceYear: Number(form.get("sourceYear")) || null,
-        sourceExamType: String(form.get("sourceExamType") ?? "") || null,
-        sourceRegion: String(form.get("sourceRegion") ?? "") || null,
-        sourceTextbook: String(form.get("sourceTextbook") ?? "") || null,
-        sourceSchool: String(form.get("sourceSchool") ?? "") || null,
-        updatedAt: createdAt,
-      }).where(and(eq(documents.id, existing.id), eq(documents.ownerId, ownerId)));
-      return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount, duplicate: true, resumed: true });
-    }
-    return Response.json({ id: existing.id, originalKey: existing.originalKey, pageCount: existing.pageCount, duplicate: true, resumed: false });
-  }
-  await putFile(originalKey, bytes);
-  try {
-    const outcome = sqliteTransaction((transaction) => {
-      const racedExisting = findReusableDocument(transaction, ownerId, checksum);
-      if (racedExisting) return { existing: racedExisting } as const;
-      transaction.prepare(
-        `INSERT INTO documents
-          (id, owner_id, name, mime_type, original_key, status, page_count, subject, grade,
-           source_year, source_exam_type, source_region, source_textbook, source_school, checksum, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        id, ownerId, file.name, file.type || "application/octet-stream", originalKey,
-        pageCount > 0 ? "extracting" : "uploading", pageCount,
-        String(form.get("subject") ?? "") || null,
-        String(form.get("grade") ?? "") || null,
-        Number(form.get("sourceYear")) || null,
-        String(form.get("sourceExamType") ?? "") || null,
-        String(form.get("sourceRegion") ?? "") || null,
-        String(form.get("sourceTextbook") ?? "") || null,
-        String(form.get("sourceSchool") ?? "") || null,
-        checksum, createdAt, createdAt,
-      );
-      return { existing: null } as const;
-    });
-    if (outcome.existing) {
-      await deleteFile(originalKey).catch(() => undefined);
-      return Response.json({
-        id: outcome.existing.id,
-        originalKey: outcome.existing.originalKey,
-        pageCount: outcome.existing.pageCount,
-        duplicate: true,
-        resumed: outcome.existing.status !== "complete",
-        status: outcome.existing.status,
-      });
-    }
-  } catch (error) {
-    await deleteFile(originalKey).catch(() => undefined);
-    throw error;
-  }
-  return Response.json({ id, originalKey, pageCount, checksum, duplicate: false }, { status: 201 });
+  return proxyBackendRequest(request);
 }

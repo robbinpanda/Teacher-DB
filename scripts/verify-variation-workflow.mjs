@@ -5,6 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { stopIsolatedProcess } from "./test-runtime.mjs";
 
 const appPort = 3180;
 const modelPort = 3181;
@@ -62,7 +63,7 @@ async function jsonRequest(url, init) {
 }
 
 await new Promise((resolve) => modelServer.listen(modelPort, "127.0.0.1", resolve));
-const nextProcess = spawn(process.execPath, [path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(appPort)], {
+const nextProcess = spawn(process.execPath, ["scripts/run-local.mjs", `--web-port=${appPort}`, `--api-port=${appPort + 100}`], {
   cwd: process.cwd(),
   env: { ...process.env, JIANTI_DATA_DIR: dataDir, MODEL_KEY_ENCRYPTION_SECRET: "variation-e2e-secret-2026" },
   stdio: ["ignore", "pipe", "pipe"],
@@ -133,11 +134,7 @@ try {
     console.log("variation workflow e2e: ok");
   }
 } finally {
-  const exited = nextProcess.exitCode === null
-    ? new Promise((resolve) => nextProcess.once("exit", resolve))
-    : Promise.resolve();
-  nextProcess.kill();
-  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 3000))]);
+  await stopIsolatedProcess(nextProcess);
   await new Promise((resolve) => modelServer.close(resolve));
   console.log(`Isolated test data: ${dataDir}`);
 }

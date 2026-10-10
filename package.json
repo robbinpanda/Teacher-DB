@@ -6,9 +6,18 @@
     "node": ">=22.13.0 <23"
   },
   "scripts": {
-    "dev": "next dev -p 3050",
+    "dev": "node scripts/run-local.mjs --dev",
     "build": "next build",
-    "start": "next start -p 3050",
+    "start": "node scripts/run-local.mjs",
+    "local": "node scripts/run-local.mjs --build",
+    "local:python": "node scripts/run-local.mjs --build --with-python",
+    "api": "node --import ./server/register.mjs --import tsx server/main.ts",
+    "worker": "node --import ./server/register.mjs --import tsx server/worker.ts",
+    "backend:verify": "node scripts/verify-backend.mjs",
+    "processor:verify": "node scripts/verify-processor.mjs",
+    "remote:verify": "node scripts/verify-remote.mjs",
+    "local:verify": "node scripts/verify-local.mjs",
+    "test:browser": "playwright test",
     "backup": "node scripts/backup.mjs",
     "backup:verify": "node scripts/verify-backup.mjs",
     "restore": "node scripts/restore.mjs",
@@ -17,11 +26,15 @@
     "skills:verify": "node scripts/verify-teaching-skills.mjs",
     "variations:verify": "node scripts/verify-variation-workflow.mjs",
     "review:verify": "node --experimental-strip-types scripts/verify-review-fixes.mjs",
+    "review:verify-startup": "node scripts/verify-review-startup.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/platform-express": "^11.2.7",
     "@types/better-sqlite3": "^9.6.0",
     "better-sqlite3": "^12.6.2",
     "drizzle-orm": "0.45.2",
@@ -31,9 +44,15 @@
     "pdfjs-dist": "^6.2.108",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "sharp": "0.34.5"
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "server-only": "^0.0.1",
+    "sharp": "0.34.5",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/katex": "^0.16.8",
     "@types/node": "22.19.19",

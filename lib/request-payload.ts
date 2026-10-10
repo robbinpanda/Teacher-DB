@@ -3,7 +3,7 @@ export type ParsedPayload<T> =
   | { ok: false; response: Response };
 
 function badRequest(message: string): ParsedPayload<never> {
-  return { ok: false, response: Response.json({ error: message }, { status: 400 }) };
+  return { ok: false, response: Response.json({ error: message, code: "invalid_request", retryable: false }, { status: 400 }) };
 }
 
 export async function readJsonPayload<T extends object>(request: Request): Promise<ParsedPayload<T>> {

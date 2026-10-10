@@ -13,7 +13,12 @@ for (const column of requiredJobColumns) {
 }
 
 const processing = sqlite.prepare("SELECT COUNT(*) AS count FROM document_jobs WHERE status = 'processing'").get().count;
-if (processing > 2) throw new Error(`文档并发越界：当前 ${processing}，上限 2`);
+const overCapacity = sqlite.prepare(`SELECT j.owner_id, COUNT(*) AS active, COALESCE(s.extraction_concurrency, 2) AS capacity
+  FROM document_jobs j LEFT JOIN app_settings s ON s.owner_id=j.owner_id
+  WHERE j.status='processing' AND j.lease_expires_at>=? GROUP BY j.owner_id
+  HAVING COUNT(*) > COALESCE(s.extraction_concurrency, 2)`).all(new Date().toISOString());
+// Lowering concurrency does not cancel existing work. Report draining jobs
+// rather than treating that legitimate transition as corrupt queue state.
 
 const duplicates = sqlite.prepare(
   `SELECT idempotency_key, COUNT(*) AS count FROM extraction_runs
@@ -39,5 +44,5 @@ if (foreignKeyErrors.length) throw new Error(`发现 ${foreignKeyErrors.length} 
 const summary = sqlite.prepare(
   `SELECT status, COUNT(*) AS count FROM document_jobs GROUP BY status ORDER BY status`,
 ).all();
-console.log(JSON.stringify({ ok: true, processing, duplicateQuestionNumbers, jobs: summary }, null, 2));
+console.log(JSON.stringify({ ok: true, processing, drainingOwners: overCapacity, duplicateQuestionNumbers, jobs: summary }, null, 2));
 sqlite.close();

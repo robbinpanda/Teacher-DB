@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { PaperPrintable } from "../../../../components/PaperPrintable";
-import { verifyPaperExportToken } from "../../../../lib/paper-export-token";
-import { getPaperPrintData } from "../../../../lib/question-repository";
+import { getPaperPrintDataForToken } from "../../../../lib/backend-data";
 import { normalizePaperSettings } from "../../../../lib/paper-templates";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +15,7 @@ export default async function PaperPrintPage({
 }) {
   const { paperId } = await params;
   const query = await searchParams;
-  const claims = verifyPaperExportToken(query.token, paperId);
-  if (!claims) notFound();
-  const paper = await getPaperPrintData(paperId, claims.ownerId);
+  const paper = await getPaperPrintDataForToken(paperId, query.token).catch(() => null);
   if (!paper) notFound();
   const settings = normalizePaperSettings(paper.settings, paper.questions);
   return (

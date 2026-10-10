@@ -48,3 +48,4 @@ next-env.d.ts
 /data/
 /data.pre-restore-*/
 /backups/
+__pycache__/

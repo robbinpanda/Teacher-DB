@@ -1,5 +1,5 @@
 import { QuestionBank } from "../../components/QuestionBank";
-import { getBankData } from "../../lib/question-repository";
+import { getBankData } from "../../lib/backend-data";
 import { headers } from "next/headers";
 
 export const metadata = { title: "我的题库 · 拣题" };

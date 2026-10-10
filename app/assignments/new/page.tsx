@@ -1,8 +1,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AssignmentCreator } from "../../../components/AssignmentCreator";
-import { getPaperLibrary } from "../../../lib/paper-library";
-import { getTeacherMode, listTeachingClasses } from "../../../lib/school-workflow";
+import { getPaperLibrary } from "../../../lib/backend-data";
+import { getTeacherMode, listTeachingClasses } from "../../../lib/backend-data";
 
 export const metadata = { title: "布置作业 · 拣题" };
 

@@ -75,14 +75,7 @@ if /i "%~1"=="--check" (
   exit /b 0
 )
 
-powershell.exe -NoProfile -Command "try { $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3050/api/health' -TimeoutSec 2; if ($response.StatusCode -ge 200) { exit 0 } } catch {}; exit 1" >nul 2>nul
-if not errorlevel 1 (
-  echo [INFO] The app is already running. Opening the browser.
-  start "" "http://localhost:3050"
-  goto :finished
-)
-
-node -e "require('next/package.json');require('better-sqlite3');" >nul 2>nul
+node -e "require('next/package.json');require('better-sqlite3');for(const name of ['@nestjs/core','@nestjs/platform-express','tsx','zod','reflect-metadata','server-only'])require.resolve(name);" >nul 2>nul
 if errorlevel 1 (
   echo [SETUP] Installing project dependencies. Keep the network connected.
   echo.
@@ -101,8 +94,7 @@ echo [INFO] The browser will open when the app is ready.
 echo [INFO] Keep this window open. Close it to stop the app.
 echo.
 
-start "" /b powershell.exe -NoProfile -WindowStyle Hidden -Command "$url='http://localhost:3050'; for($i=0;$i -lt 120;$i++){ try { $response=Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2; if($response.StatusCode -ge 200){ Start-Process $url; exit } } catch {}; Start-Sleep -Seconds 1 }"
-call npm.cmd run dev
+call npm.cmd run local -- --open
 
 echo.
 echo [INFO] The app has stopped.

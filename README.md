@@ -80,7 +80,7 @@
 
 ### Windows 一键启动
 
-双击项目根目录的 `启动题库.cmd`。首次运行会自动安装依赖，服务就绪后会打开浏览器。
+双击项目根目录的 `启动题库.cmd`。首次运行会自动安装依赖和生产构建，NestJS、Worker、网页全部就绪后打开浏览器。后续源码未变会复用构建。
 
 停止服务可双击 `关闭题库.cmd`。
 
@@ -88,7 +88,7 @@
 
 ```bash
 npm install
-npm run dev
+npm run local
 ```
 
 打开 <http://localhost:3050>。
@@ -100,7 +100,15 @@ npm run build
 npm start
 ```
 
-> `npm run dev` 与 `npm start` 均固定使用 `3050` 端口。
+默认网页端口 `3050`、NestJS `3051`；可通过环境变量或 `--web-port=... --api-port=...` 修改。开发热更新使用 `npm run dev`。
+
+启用 FastAPI 后台 PDF 分页（首次需要 Python 3.11+ 与网络）：
+
+```bash
+npm run local:python
+```
+
+默认模式保留浏览器 PDF.js 分页，只需 Node.js。Python 模式下原卷上传后后台继续渲染，关闭网页也不会中断。运行架构、错误契约、远端登录及 PostgreSQL 迁移边界见 [架构说明](docs/architecture.md)。
 
 ## 首次使用
 
@@ -125,7 +133,7 @@ npm start
 ### 导入与识别
 
 - 仅接收 PDF，避免 DOC/DOCX 在不同排版引擎中出现公式、字体或浮动对象错位。
-- 浏览器使用 PDF.js 逐页高清渲染，原卷和页面图会立即保存。
+- 默认浏览器使用 PDF.js 逐页高清渲染；可选 FastAPI 后台分页。原卷和页面图会立即保存。
 - 每份试卷在整卷上下文中识别，题目、答案和解析一次关联并以事务写入数据库。
 - 任务状态、重试次数和处理模型都会持久化，服务重启后可以续跑。
 

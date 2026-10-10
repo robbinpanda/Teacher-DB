@@ -1,9 +1,9 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { PaperBuilder } from "../../../components/PaperBuilder";
-import { getPaperTemplates } from "../../../lib/paper-template-repository";
+import { getPaperTemplates } from "../../../lib/backend-data";
 import { normalizePaperSettings } from "../../../lib/paper-templates";
-import { getApprovedQuestions, getPaperData } from "../../../lib/question-repository";
+import { getApprovedQuestions, getPaperData } from "../../../lib/backend-data";
 
 export const metadata = { title: "编辑试卷 · 拣题" };
 

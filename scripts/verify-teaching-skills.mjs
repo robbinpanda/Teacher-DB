@@ -1,3 +1,4 @@
+import { stopIsolatedProcess } from "./test-runtime.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -37,7 +38,7 @@ const model = createServer((request, response) => {
   });
 });
 await new Promise(resolve => model.listen(modelPort, "127.0.0.1", resolve));
-const app = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], { env: { ...process.env, JIANTI_DATA_DIR: dataDir, MODEL_KEY_ENCRYPTION_SECRET: "skill-isolated-test-secret" }, stdio: ["ignore", "pipe", "pipe"] });
+const app = spawn(process.execPath, ["scripts/run-local.mjs", `--web-port=${port}`, `--api-port=${port+100}`], { env: { ...process.env, JIANTI_DATA_DIR: dataDir, MODEL_KEY_ENCRYPTION_SECRET: "skill-isolated-test-secret" }, stdio: ["ignore", "pipe", "pipe"] });
 let appLog = "";
 app.stdout.on("data", chunk => { appLog += chunk; }); app.stderr.on("data", chunk => { appLog += chunk; });
 let db;
@@ -100,7 +101,7 @@ try {
 finally {
   db?.close();
   const exited = app.exitCode === null ? new Promise(resolve => app.once("exit", resolve)) : Promise.resolve();
-  app.kill(); await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 3000))]);
+  await stopIsolatedProcess(app); await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 3000))]);
   await new Promise(resolve => model.close(resolve));
   console.log(`Isolated test data preserved: ${dataDir}`);
 }
