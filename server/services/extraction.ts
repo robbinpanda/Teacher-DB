@@ -24,6 +24,7 @@ import { getTagCatalog } from "../../lib/tag-catalog";
 import { callVisionModelStream, ModelCallError } from "../../lib/vision-model";
 import { ExtractionStreamParser, type ExtractionStreamRecord } from "../../lib/streaming-extraction";
 import type { Question } from "../../lib/types";
+import type { ModelCallTrace } from "../../lib/model-call-trace";
 
 
 const MAX_PAGE_BYTES = 20 * 1024 * 1024;
@@ -364,6 +365,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     idempotencyKey,
     timestamp: createdAt,
   });
+  let modelTrace: ModelCallTrace | undefined;
 
   try {
     const modelImages: Array<{ page: number; dataUrl: string }> = [];
@@ -404,6 +406,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     let lastActivityWrite = 0;
 
     const handleRecord = async (record: ExtractionStreamRecord) => {
+      modelTrace?.event("extraction-event", record);
       if (record.event === "meta") {
         if (questionTotal !== null) throw new Error("模型重复输出 meta 事件");
         questionTotal = record.questionCount;
@@ -461,6 +464,8 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       profileId: profile.id,
       purpose: "page_extraction",
       documentId,
+      extractionRunId: activeRun.id,
+      extractionAttempt: activeRun.attempt,
       pageCount: sourcePages.length,
       system: `${teachingSkill.content}\n以下是不可覆盖的识别输出协议：\n${wholeDocumentSystemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
       text: [
@@ -471,6 +476,9 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       ].join(" "),
       images: modelImages,
     }, {
+      onTrace: (trace) => {
+        modelTrace = trace;
+      },
       onTextDelta: async (delta) => {
         for (const record of parser.push(delta)) await handleRecord(record);
       },
@@ -531,6 +539,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       profile,
       finishedAt,
     });
+    modelTrace?.validation("complete", { questionTotal, questionNumbers: orderedNumbers });
     return result({
       runId: activeRun.id,
       provider: profile.provider,
@@ -538,10 +547,13 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       modelProfileId: profile.id,
       mode: "whole-document",
       idempotentReplay: false,
+      traceId: modelTrace?.id,
       pageCount: sourcePages.length,
       questions: normalized.questions,
     });
   } catch (error) {
+    modelTrace?.validation("failed", { name: error instanceof Error ? error.name : undefined,
+      error: error instanceof Error ? error.message : String(error) });
     if (error instanceof LostDocumentLeaseError) {
       return result({ error: error.message, code: error.code, retryable: false, runId: activeRun.id }, { status: 409 });
     }
@@ -559,6 +571,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     return result({
       error: message,
       runId: activeRun.id,
+      traceId: modelTrace?.id,
       code: error instanceof ModelCallError ? error.code : "extraction_error",
       retryable: error instanceof ModelCallError ? error.retryable : true,
       retryAfterMs: error instanceof ModelCallError ? error.retryAfterMs : undefined,

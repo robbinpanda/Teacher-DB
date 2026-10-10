@@ -6,8 +6,9 @@ import {
   extractVisionStreamEvent,
   MODEL_PROTOCOL_LABELS,
 } from "./model-protocols";
-import { getSqlite } from "../db";
+import { dataDirectory, getSqlite } from "../db";
 import { extractModelTokenUsage, recordModelUsage } from "./model-usage";
+import { ModelCallTrace } from "./model-call-trace";
 
 type VisionCall = {
   ownerId: string;
@@ -21,6 +22,8 @@ type VisionCall = {
   documentId?: string;
   pageNumber?: number;
   pageCount?: number;
+  extractionRunId?: string;
+  extractionAttempt?: number;
 };
 
 export const VISION_STREAM_IDLE_TIMEOUT_MS = 90_000;
@@ -28,6 +31,7 @@ export const VISION_STREAM_IDLE_TIMEOUT_MS = 90_000;
 type VisionStreamHandlers = {
   onTextDelta: (delta: string) => void | Promise<void>;
   onActivity?: (activity: { kind: "text" | "thinking"; delta: string }) => void | Promise<void>;
+  onTrace?: (trace: ModelCallTrace) => void;
 };
 
 export class ModelCallError extends Error {
@@ -62,6 +66,8 @@ export async function callVisionModel(input: VisionCall) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), profile.timeoutMs);
+  let trace: ModelCallTrace | undefined;
+  let failure: unknown;
   try {
     const images = input.images?.length
       ? input.images
@@ -79,7 +85,9 @@ export async function callVisionModel(input: VisionCall) {
       images,
       jsonMode: input.jsonMode,
     });
-    let response = await fetch(request.endpoint, {
+    trace = new ModelCallTrace(dataDirectory(), { ownerId: input.ownerId, profileId: profile.id,
+      provider: profile.provider, model: profile.model, purpose: input.purpose ?? "other", documentId: input.documentId });
+    let response = await trace.fetch(request.endpoint, {
       method: "POST",
       headers: request.headers,
       body: JSON.stringify(request.body),
@@ -87,7 +95,7 @@ export async function callVisionModel(input: VisionCall) {
     });
     if (response.status === 400 && input.jsonMode) {
       const firstDetail = await response.text();
-      response = await fetch(request.endpoint, {
+      response = await trace.fetch(request.endpoint, {
         method: "POST",
         headers: request.headers,
         body: JSON.stringify(compatibilityBody(request.body as Record<string, unknown>)),
@@ -122,6 +130,7 @@ export async function callVisionModel(input: VisionCall) {
     }
     const result = await response.json() as unknown;
     const content = extractVisionResponseText(request.protocol, result);
+    if (content) trace.output("text", content);
     if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
     const usage = extractModelTokenUsage(request.protocol, result);
     if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens || usage.cachedOutputTokens) {
@@ -136,8 +145,9 @@ export async function callVisionModel(input: VisionCall) {
         console.error("模型 Token 用量记录失败", usageError);
       }
     }
-    return { content, profile, usage };
+    return { content, profile, usage, traceId: trace.id };
   } catch (error) {
+    failure = error;
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new ModelCallError(`模型调用超过 ${Math.round(profile.timeoutMs / 1000)} 秒，已安全中止`, "timeout", true);
     }
@@ -152,6 +162,8 @@ export async function callVisionModel(input: VisionCall) {
     throw error;
   } finally {
     clearTimeout(timeout);
+    controller.abort();
+    trace?.finish(failure === undefined ? "complete" : "failed", failure);
   }
 }
 
@@ -189,6 +201,8 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     idleTimer.unref?.();
   };
   resetIdleTimer();
+  let trace: ModelCallTrace | undefined;
+  let failure: unknown;
   try {
     const images = input.images?.length
       ? input.images
@@ -207,7 +221,11 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
       stream: true,
       maxOutputTokens: 32768,
     });
-    let response = await fetch(request.endpoint, {
+    trace = new ModelCallTrace(dataDirectory(), { ownerId: input.ownerId, profileId: profile.id,
+      provider: profile.provider, model: profile.model, purpose: input.purpose ?? "other", documentId: input.documentId,
+      extractionRunId: input.extractionRunId, extractionAttempt: input.extractionAttempt });
+    handlers.onTrace?.(trace);
+    let response = await trace.fetch(request.endpoint, {
       method: "POST",
       headers: request.headers,
       body: JSON.stringify(request.body),
@@ -215,7 +233,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     });
     if (response.status === 400) {
       const firstDetail = await response.text();
-      response = await fetch(request.endpoint, {
+      response = await trace.fetch(request.endpoint, {
         method: "POST",
         headers: request.headers,
         body: JSON.stringify(compatibilityBody(request.body as Record<string, unknown>)),
@@ -260,12 +278,14 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
           receivedProviderEvent = true;
           resetIdleTimer();
           content += event.textDelta;
+          trace.output("text", event.textDelta);
           await handlers.onActivity?.({ kind: "text", delta: event.textDelta });
           await handlers.onTextDelta(event.textDelta);
         }
         if (event.thinkingDelta) {
           receivedProviderEvent = true;
           resetIdleTimer();
+          trace.output("thinking", event.thinkingDelta);
           await handlers.onActivity?.({ kind: "thinking", delta: event.thinkingDelta });
         }
         if (event.usagePayload) usagePayload = event.usagePayload;
@@ -280,6 +300,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
       if (fallbackText) {
         resetIdleTimer();
         content += fallbackText;
+        trace.output("text", fallbackText);
         await handlers.onActivity?.({ kind: "text", delta: fallbackText });
         await handlers.onTextDelta(fallbackText);
       }
@@ -299,8 +320,9 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
         console.error("模型 Token 用量记录失败", usageError);
       }
     }
-    return { content, profile, usage };
+    return { content, profile, usage, traceId: trace.id };
   } catch (error) {
+    failure = error;
     if (error instanceof DOMException && error.name === "AbortError") {
       if (idleTimedOut) {
         throw new ModelCallError("模型连续 90 秒没有输出文字或思考活动，已进入退避重试", "stream_idle_timeout", true);
@@ -318,5 +340,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     throw error;
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
+    controller.abort();
+    trace?.finish(failure === undefined ? "complete" : "failed", failure);
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import NextImage from "next/image";
-import { ArrowLeft, Check, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Check, FileText, Plus, RefreshCw } from "lucide-react";
 import type { ReviewDocument, ReviewPage } from "../../lib/types";
 import type { useReviewProgress } from "./useReviewProgress";
 type Progress = ReturnType<typeof useReviewProgress>;
@@ -41,6 +41,7 @@ export function ReviewPending({ sourceDocument, currentPageInfo, recognition, jo
             {job.status === "paused" && <p className="queue-notice">全部识别任务已暂停。请在工作台点击“全部开始”，未完成试卷会立即重新排队。</p>}
             {(job.lastError || sourceDocument.error) && <p className="form-error">{job.lastError || sourceDocument.error}</p>}
             <div className="header-actions">
+              <Link href={`/review/${sourceDocument.id}/logs`} className="btn"><FileText size={15} /> 查看识别日志</Link>
               {sourceDocument.status === "awaiting_model" && <Link href="/settings/models" className="btn">配置识题模型</Link>}
               <button type="button" className="btn btn-primary" disabled={!currentPageInfo || retrying || ["queued", "processing"].includes(job.status ?? "")} onClick={() => void retryExtraction()}><RefreshCw size={15} /> {retrying ? "正在加入队列…" : ["queued", "processing", "retry_wait"].includes(job.status ?? "") ? "可靠队列处理中" : "重新识别整卷"}</button>
               {!currentPageInfo && processorAvailable && <button type="button" className="btn" disabled={retrying} onClick={() => void preparePages()}>重新生成分页图</button>}

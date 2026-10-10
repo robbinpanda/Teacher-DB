@@ -24,7 +24,7 @@ try {
 } finally {
   database.close();
 }
-for (const relative of ["files", ".model-key-secret"]) {
+for (const relative of ["files", "model-traces", ".model-key-secret"]) {
   const source = path.join(dataRoot, relative);
   try { await cp(source, path.join(backupDataRoot, relative), { recursive: true, errorOnExist: true }); }
   catch (error) { if (error.code !== "ENOENT") throw error; }

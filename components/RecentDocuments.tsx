@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { AlertTriangle, ArrowRight, Check, Clock3, FileX2, ListChecks, LoaderCircle, Pause, Play, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Clock3, FileText, FileX2, ListChecks, LoaderCircle, Pause, Play, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import type { SourceDocument } from "../lib/types";
 
 type DocumentGroup = "preprocessing" | "pending_review" | "reviewed";
@@ -307,6 +307,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
           <ArrowRight size={17} className="row-arrow" />
         </Link>
         {!selectionMode && <div className="document-actions">
+          <Link href={`/review/${doc.id}/logs`} className="document-log-link" title="查看识别日志" aria-label={`识别日志 ${doc.name}`}><FileText size={15} /></Link>
           {doc.jobStatus === "failed" && <button type="button" className="document-retry" disabled={retrying} title={pagesFinished ? "重新执行收尾校验" : "重新识别整份试卷"} aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
           <button type="button" className="document-delete" title="删除试卷" aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
         </div>}

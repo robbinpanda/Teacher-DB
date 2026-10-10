@@ -68,7 +68,9 @@ PDF 打印采用短时签名授权，仅允许指定 `paperId` 的打印 read mo
 
 ## 回归验证
 
+模型调用日志保存在 `JIANTI_DATA_DIR/model-traces/YYYY-MM-DD/<traceId>/`。每次调用使用独立目录，不随 `extraction_runs` 重试、重建或试卷删除覆盖。`manifest.json` 关联教师、模型、用途、试卷和识别尝试；`request-N.json` 保存实际提示词与模型参数，省略请求认证头及图片数据（保留图片长度与 SHA-256）；`response-N.raw` 保存模型 HTTP 响应体原始字节，400 兼容回退也单独保存。收到每块数据后先写盘并同步，再进行解析；`output.txt`、`thinking.txt` 分别记录正文和思考，`events.ndjson` 记录已解析的识别事件。`result.json` 是模型调用终态，`validation.json` 是整卷校验终态，模型传输成功但题数错误会留下失败的校验结果。进程被强制结束时可能没有终态文件，已有原始回复仍可检查；过去未记录的回复无法补回。日志默认保留，并纳入完整备份，未通过通用文件 API 暴露。
 
+每份试卷的 `/review/<documentId>/logs` 提供调用历史、失败筛选、实际系统/用户提示词、模型原始正文、HTTP原始流、思考内容及解析事件。工作台、审核页和失败恢复页均有入口。`GET /api/documents/<documentId>/model-traces` 分页列出历史（每页50条），详情及内容接口再次校验日志清单的 owner/document 归属；内容按64 KiB分页并保持UTF-8边界，文件名只接受日志文件白名单。接口禁止缓存，不接受任意文件路径。日志缺少结束记录时展示“未结束 / 中断”，不把模型传输完成直接等同于整卷识别成功。
 
 
 
