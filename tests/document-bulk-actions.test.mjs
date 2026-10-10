@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
 import {
+  approveAllDocumentsWithoutReview,
   approveDocumentsWithoutReview,
   deleteDocuments,
   DocumentBulkActionError,
@@ -74,6 +75,77 @@ test("任意选中试卷不完整时整批回滚", () => {
     reviewReadinessError: (documentId) => documentId === "b" ? "识别尚未完成" : null,
   }))(), DocumentBulkActionError);
   assert.deepEqual(sqlite.prepare("SELECT status FROM questions ORDER BY id").pluck().all(), ["pending", "pending"]);
+  sqlite.close();
+});
+
+test("一键入库覆盖超过 100 份待审核试卷，仅处理当前教师且重复执行幂等", () => {
+  const sqlite = database();
+  for (let index = 0; index < 101; index += 1) {
+    const id = `ready-${index}`;
+    addDocument(sqlite, id);
+    sqlite.prepare("INSERT INTO questions VALUES (?, ?, '1', 'pending', 0, 'before')").run(`${id}-question`, id);
+  }
+  for (const id of ["other-owner", "removed", "extracting", "complete"]) {
+    addDocument(sqlite, id);
+    sqlite.prepare("INSERT INTO questions VALUES (?, ?, '1', 'pending', 0, 'before')").run(`${id}-question`, id);
+  }
+  sqlite.exec(`
+    UPDATE documents SET owner_id = 'other' WHERE id = 'other-owner';
+    UPDATE documents SET source_removed_at = 'removed' WHERE id = 'removed';
+    UPDATE documents SET status = 'extracting' WHERE id = 'extracting';
+    UPDATE documents SET status = 'complete' WHERE id = 'complete';
+  `);
+  const input = { ownerId: "teacher", timestamp: "after", reviewReadinessError: () => null };
+  const outcome = sqlite.transaction(() => approveAllDocumentsWithoutReview(sqlite, input))();
+  assert.equal(outcome.changed, 101);
+  assert.equal(outcome.documents.length, 101);
+  assert.ok(outcome.documents.every(document => document.status === "complete" && document.approved === 1));
+  assert.deepEqual(outcome.skippedDocuments, []);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) FROM questions WHERE status = 'pending'").pluck().get(), 4);
+  assert.deepEqual(sqlite.transaction(() => approveAllDocumentsWithoutReview(sqlite, input))(), {
+    changed: 0, documents: [], skippedDocuments: [],
+  });
+  sqlite.close();
+});
+
+test("一键入库跳过未识别完整的试卷，保留人工核查题目并收尾已全部通过的试卷", () => {
+  const sqlite = database();
+  for (const id of ["mixed", "ready", "incomplete", "already-approved"]) addDocument(sqlite, id);
+  sqlite.exec(`
+    INSERT INTO questions VALUES ('mixed1', 'mixed', '1', 'pending', 0, 'before');
+    INSERT INTO questions VALUES ('mixed2', 'mixed', '2', 'needs_attention', 1, 'before');
+    INSERT INTO questions VALUES ('mixed3', 'mixed', '3', 'pending', NULL, 'before');
+    INSERT INTO questions VALUES ('ready1', 'ready', '1', 'pending', 0, 'before');
+    INSERT INTO questions VALUES ('incomplete1', 'incomplete', '1', 'pending', 0, 'before');
+    INSERT INTO questions VALUES ('approved1', 'already-approved', '1', 'approved', 0, 'before');
+  `);
+  const outcome = sqlite.transaction(() => approveAllDocumentsWithoutReview(sqlite, {
+    ownerId: "teacher", timestamp: "after",
+    reviewReadinessError: id => id === "incomplete" ? "识别尚未完成" : null,
+  }))();
+  assert.equal(outcome.changed, 2);
+  assert.deepEqual(outcome.skippedDocuments, [{ id: "incomplete", name: "incomplete", reason: "识别尚未完成" }]);
+  assert.equal(outcome.documents.find(document => document.id === "mixed").reviewRequired, 2);
+  assert.deepEqual(sqlite.prepare("SELECT id, status FROM documents ORDER BY id").all(), [
+    { id: "already-approved", status: "complete" }, { id: "incomplete", status: "reviewing" },
+    { id: "mixed", status: "reviewing" }, { id: "ready", status: "complete" },
+  ]);
+  assert.deepEqual(sqlite.prepare("SELECT status FROM questions WHERE id IN ('mixed2', 'mixed3', 'incomplete1') ORDER BY id").pluck().all(), ["pending", "needs_attention", "pending"]);
+  sqlite.close();
+});
+
+test("一键入库失败时整批事务回滚，不留下半批入库状态", () => {
+  const sqlite = database();
+  for (const id of ["a", "b"]) {
+    addDocument(sqlite, id);
+    sqlite.prepare("INSERT INTO questions VALUES (?, ?, '1', 'pending', 0, 'before')").run(`${id}-question`, id);
+  }
+  assert.throws(() => sqlite.transaction(() => approveAllDocumentsWithoutReview(sqlite, {
+    ownerId: "teacher", timestamp: "after",
+    reviewReadinessError: id => { if (id === "b") throw new Error("storage failure"); return null; },
+  }))(), /storage failure/);
+  assert.deepEqual(sqlite.prepare("SELECT status FROM questions ORDER BY id").pluck().all(), ["pending", "pending"]);
+  assert.deepEqual(sqlite.prepare("SELECT status FROM documents ORDER BY id").pluck().all(), ["reviewing", "reviewing"]);
   sqlite.close();
 });
 

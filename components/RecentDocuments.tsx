@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { AlertTriangle, ArrowRight, Check, Clock3, FileText, FileX2, ListChecks, LoaderCircle, Pause, Play, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import type { SourceDocument } from "../lib/types";
 
@@ -42,9 +42,12 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
   const [retryingIds, setRetryingIds] = useState<Set<string>>(() => new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [batchAction, setBatchAction] = useState<"approve" | null>(null);
+  const [batchAction, setBatchAction] = useState<"approve" | "approve_all" | null>(null);
+  const approvingRef = useRef(false);
+  const listVersionRef = useRef(0);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [batchNotice, setBatchNotice] = useState("");
+  const [batchWarning, setBatchWarning] = useState("");
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
   const [queueState, setQueueState] = useState<QueueControlState>({ paused: false, pauseReason: null, pausedCount: 0, activeCount: 0, queuedCount: 0 });
@@ -53,7 +56,8 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      if (document.hidden) return;
+      if (document.hidden || approvingRef.current) return;
+      const version = listVersionRef.current;
       try {
         const [response, queueResponse] = await Promise.all([
           fetch("/api/documents", { cache: "no-store" }),
@@ -63,7 +67,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
         const queue = await queueResponse.json().catch(() => ({})) as Partial<QueueControlState> & { error?: string };
         if (!response.ok || !result.documents) throw new Error(result.error ?? "无法更新试卷状态");
         if (!queueResponse.ok) throw new Error(queue.error ?? "无法更新识别队列状态");
-        if (!cancelled) {
+        if (!cancelled && version === listVersionRef.current) {
           setDocuments(result.documents);
           setQueueState({
             paused: Boolean(queue.paused),
@@ -77,7 +81,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
           setListError("");
         }
       } catch (caught) {
-        if (!cancelled) setListError(caught instanceof Error ? caught.message : "无法更新试卷状态");
+        if (!cancelled && version === listVersionRef.current) setListError(caught instanceof Error ? caught.message : "无法更新试卷状态");
       }
     };
     void refresh();
@@ -172,17 +176,20 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
     }
   }
 
-  async function approveSelectedDocuments() {
+  async function approveDocuments(allPending = false) {
     const documentIds = Array.from(selectedIds);
-    if (!documentIds.length) return;
-    setBatchAction("approve");
+    if (approvingRef.current || (!allPending && !documentIds.length)) return;
+    approvingRef.current = true;
+    listVersionRef.current += 1;
+    setBatchAction(allPending ? "approve_all" : "approve");
     setListError("");
     setBatchNotice("");
+    setBatchWarning("");
     try {
       const response = await fetch("/api/documents/bulk", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "approve_without_review", documentIds }),
+        body: JSON.stringify(allPending ? { action: "approve_all_without_review" } : { action: "approve_without_review", documentIds }),
       });
       const result = await response.json().catch(() => ({})) as {
         error?: string;
@@ -190,6 +197,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
         completedDocuments?: number;
         reviewRequired?: number;
         documents?: Array<{ id: string; status: "reviewing" | "complete"; total: number; approved: number }>;
+        skippedDocuments?: Array<{ id: string; name: string; reason: string }>;
       };
       if (!response.ok || !result.documents) throw new Error(result.error ?? "批量完成失败");
       const updates = new Map(result.documents.map((document) => [document.id, document]));
@@ -198,12 +206,17 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
         return update ? { ...item, status: update.status, questionCount: update.total, approvedCount: update.approved } : item;
       }));
       setBatchNotice(`已自动入库 ${result.changed ?? 0} 道无需人工核查的题目；${result.completedDocuments ?? 0} 份试卷已全部完成${result.reviewRequired ? `，仍有 ${result.reviewRequired} 道需人工复核` : ""}。`);
+      const skipped = result.skippedDocuments ?? [];
+      if (skipped.length) setBatchWarning(`${skipped.length} 份试卷暂未入库：${skipped.map(document => `《${document.name}》${document.reason}`).join("；")}`);
+      if (allPending && (result.completedDocuments ?? 0) > 0 && result.documents.every(document => document.status === "complete") && !skipped.length) setActiveGroup("reviewed");
       setSelectedIds(new Set());
       setSelectionMode(false);
       router.refresh();
     } catch (caught) {
       setListError(caught instanceof Error ? caught.message : "批量完成失败");
     } finally {
+      listVersionRef.current += 1;
+      approvingRef.current = false;
       setBatchAction(null);
     }
   }
@@ -309,7 +322,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
         {!selectionMode && <div className="document-actions">
           <Link href={`/review/${doc.id}/logs`} className="document-log-link" title="查看识别日志" aria-label={`识别日志 ${doc.name}`}><FileText size={15} /></Link>
           {doc.jobStatus === "failed" && <button type="button" className="document-retry" disabled={retrying} title={pagesFinished ? "重新执行收尾校验" : "重新识别整份试卷"} aria-label={`重试 ${doc.name}`} onClick={() => void retryDocument(doc)}>{retrying ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>}
-          <button type="button" className="document-delete" title="删除试卷" aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
+          <button type="button" className="document-delete" title="删除试卷" disabled={Boolean(batchAction)} aria-label={`删除 ${doc.name}`} onClick={() => { setTarget(doc); setError(""); }}><Trash2 size={15} /></button>
         </div>}
       </div>
     );
@@ -359,16 +372,17 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
         <div className="document-view-summary">
           <p>{activeGroupMeta.description}</p>
           <div className="document-bulk-toolbar">
+            {activeGroup === "pending_review" && activeDocuments.length > 0 && <button type="button" className="bulk-complete" disabled={Boolean(batchAction) || Boolean(deletingMode)} onClick={() => void approveDocuments(true)}>{batchAction === "approve_all" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />} {batchAction === "approve_all" ? "全部入库中…" : "一键全部入库"}</button>}
             {!selectionMode ? <>
               <span>共 {activeDocuments.length} 份</span>
               {activeGroup === "preprocessing" && activeDocuments.length > 0 && (queueState.paused
                 ? <button type="button" className="queue-resume" disabled={queueBusy} onClick={() => void controlQueue("resume")}>{queueBusy ? <LoaderCircle className="spin" size={14} /> : <Play size={14} fill="currentColor" />} 全部开始</button>
                 : <button type="button" className="queue-pause" disabled={queueBusy} onClick={() => void controlQueue("pause")}>{queueBusy ? <LoaderCircle className="spin" size={14} /> : <Pause size={14} fill="currentColor" />} 全部暂停</button>)}
-              {activeDocuments.length > 0 && <button type="button" onClick={() => { setSelectionMode(true); setBatchNotice(""); }}><ListChecks size={14} /> 批量处理</button>}
+              {activeDocuments.length > 0 && <button type="button" disabled={Boolean(batchAction)} onClick={() => { setSelectionMode(true); setBatchNotice(""); }}><ListChecks size={14} /> 批量处理</button>}
             </> : <>
               <button type="button" className="bulk-select-all" onClick={() => setSelectedIds(allActiveSelected ? new Set() : new Set(activeDocuments.map((document) => document.id)))}>{allActiveSelected ? "取消全选" : "全选"}</button>
               <span>已选 {selectedIds.size} 份</span>
-              {activeGroup === "pending_review" && <button type="button" className="bulk-complete" disabled={!selectedIds.size || Boolean(batchAction)} onClick={() => void approveSelectedDocuments()}><Check size={14} /> {batchAction === "approve" ? "入库中…" : "完成并自动入库"}</button>}
+              {activeGroup === "pending_review" && <button type="button" className="bulk-complete" disabled={!selectedIds.size || Boolean(batchAction)} onClick={() => void approveDocuments()}><Check size={14} /> {batchAction === "approve" ? "入库中…" : "完成并自动入库"}</button>}
               <button type="button" className="bulk-delete" disabled={!selectedIds.size || Boolean(batchAction)} onClick={() => { setBatchDeleteOpen(true); setError(""); }}><Trash2 size={14} /> 批量删除</button>
               <button type="button" className="bulk-cancel" disabled={Boolean(batchAction)} onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}>取消</button>
             </>}
@@ -380,6 +394,7 @@ export function RecentDocuments({ initialDocuments }: { initialDocuments: Source
           <button type="button" disabled={queueBusy} onClick={() => void controlQueue("resume")}>{queueBusy ? <LoaderCircle className="spin" size={14} /> : <Play size={13} fill="currentColor" />} 全部开始</button>
         </div>}
         {batchNotice && <p className="document-bulk-notice"><Check size={14} /> {batchNotice}</p>}
+        {batchWarning && <p className="form-error document-bulk-warning"><AlertTriangle size={14} /> {batchWarning}</p>}
         <div className="document-list">
           {activeDocuments.map(renderDocument)}
           {!activeDocuments.length && <div className="document-group-empty">{documents.length ? activeGroupMeta.empty : "还没有处理记录，请在上方上传第一份 PDF 试卷。"}</div>}

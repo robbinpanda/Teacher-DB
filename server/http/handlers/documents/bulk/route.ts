@@ -1,6 +1,7 @@
 import { sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import {
+  approveAllDocumentsWithoutReview,
   approveDocumentsWithoutReview,
   deleteDocuments,
   DocumentBulkActionError,
@@ -16,35 +17,40 @@ export async function POST(request: Request) {
   await ensureDatabase();
   const ownerId = requestOwner(request);
   const payload = await request.json().catch(() => ({})) as {
-    action?: "approve_without_review" | "delete";
+    action?: "approve_without_review" | "approve_all_without_review" | "delete";
     documentIds?: unknown;
     mode?: BulkDeleteMode;
   };
   try {
-    const documentIds = normalizeDocumentIds(payload.documentIds);
     const timestamp = now();
-    if (payload.action === "approve_without_review") {
-      const outcome = sqliteTransaction((transaction) => approveDocumentsWithoutReview(transaction, {
-        ownerId,
-        documentIds,
-        timestamp,
-        reviewReadinessError: (documentId) => {
-          const integrity = getDocumentIntegrity(transaction, documentId)!;
-          return integrity.reviewReady ? null : integrityError(integrity);
-        },
-      }));
+    if (payload.action === "approve_without_review" || payload.action === "approve_all_without_review") {
+      const outcome = sqliteTransaction((transaction) => {
+        const input = {
+          ownerId,
+          timestamp,
+          reviewReadinessError: (documentId: string) => {
+            const integrity = getDocumentIntegrity(transaction, documentId)!;
+            return integrity.reviewReady ? null : integrityError(integrity);
+          },
+        };
+        return payload.action === "approve_all_without_review"
+          ? approveAllDocumentsWithoutReview(transaction, input)
+          : { ...approveDocumentsWithoutReview(transaction, { ...input, documentIds: normalizeDocumentIds(payload.documentIds) }), skippedDocuments: [] };
+      });
       const completedDocuments = outcome.documents.filter((document) => document.status === "complete").length;
       const reviewRequired = outcome.documents.reduce((sum, document) => sum + document.reviewRequired, 0);
       return Response.json({
         action: payload.action,
         changed: outcome.changed,
-        selectedDocuments: documentIds.length,
+        selectedDocuments: outcome.documents.length + outcome.skippedDocuments.length,
         completedDocuments,
         reviewRequired,
         documents: outcome.documents,
+        skippedDocuments: outcome.skippedDocuments,
       });
     }
     if (payload.action === "delete") {
+      const documentIds = normalizeDocumentIds(payload.documentIds);
       if (!new Set<BulkDeleteMode>(["with_questions", "source_only"]).has(payload.mode as BulkDeleteMode)) {
         throw new DocumentBulkActionError("请选择删除方式", 400);
       }

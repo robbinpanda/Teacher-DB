@@ -71,6 +71,40 @@ export function approveDocumentsWithoutReview(
   return { changed, documents };
 }
 
+export function approveAllDocumentsWithoutReview(
+  sqlite: Database.Database,
+  input: {
+    ownerId: string;
+    timestamp: string;
+    reviewReadinessError: (documentId: string) => string | null;
+  },
+) {
+  const pending = sqlite.prepare(
+    `SELECT id, name FROM documents
+      WHERE owner_id = ? AND status = 'reviewing' AND source_removed_at IS NULL
+      ORDER BY updated_at DESC, id`,
+  ).all(input.ownerId) as Array<{ id: string; name: string }>;
+  const documents: ReturnType<typeof approveDocumentsWithoutReview>["documents"] = [];
+  const skippedDocuments: Array<{ id: string; name: string; reason: string }> = [];
+  let changed = 0;
+  for (const document of pending) {
+    const reason = input.reviewReadinessError(document.id);
+    if (reason) {
+      skippedDocuments.push({ ...document, reason });
+      continue;
+    }
+    const outcome = approveDocumentsWithoutReview(sqlite, {
+      ...input,
+      documentIds: [document.id],
+      // Readiness was checked in this same transaction above.
+      reviewReadinessError: () => null,
+    });
+    changed += outcome.changed;
+    documents.push(...outcome.documents);
+  }
+  return { changed, documents, skippedDocuments };
+}
+
 export function deleteDocuments(
   sqlite: Database.Database,
   input: { ownerId: string; documentIds: string[]; mode: BulkDeleteMode; timestamp: string },
