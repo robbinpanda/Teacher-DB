@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, FileText, Gauge, LoaderCircle, ShieldCheck, Sparkles, UploadCloud } from "lucide-react";
-import { educationStages, gradesByStage } from "../lib/education-taxonomy";
+import { AlertCircle, CheckCircle2, FileText, LoaderCircle, Plus, UploadCloud, X } from "lucide-react";
+import { educationStages, gradesByStage, subjects, type EducationStage } from "../lib/education-taxonomy";
 import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
 import { fetchUploadJson } from "../lib/upload-request";
 import { uploadResponseSchema } from "../lib/api-contracts";
+import { WorkbenchDialog } from "./WorkbenchDialog";
 
 type Stage = "idle" | "rendering" | "preparing" | "uploading" | "queued" | "extracting" | "retry_wait" | "paused" | "waiting_model" | "done" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
@@ -69,7 +70,13 @@ async function renderPdf(
 
 export function UploadWorkbench() {
   const router = useRouter();
-  const { subject, stage } = useEducationScope();
+  const { subject, stage, setSubject, setStage } = useEducationScope();
+  const [open, setOpen] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [taskSyncError, setTaskSyncError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const concurrencyRef = useRef(DEFAULT_UPLOAD_CONCURRENCY);
   const concurrencyDraftDirtyRef = useRef(false);
@@ -104,6 +111,7 @@ export function UploadWorkbench() {
     sourceSchool: "",
   };
   const working = tasks.some((task) => ["rendering", "preparing", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
+  const hasPendingTasks = tasks.some(task => task.documentId && !["done", "error", "waiting_model"].includes(task.stage));
   const uploadDisabled = batchActive || modelLoading || modelSaving;
 
   function syncQueueSettings(result: QueueSnapshot, syncDraft = false) {
@@ -148,6 +156,7 @@ export function UploadWorkbench() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!open) return;
     void fetch("/api/model-profiles", { cache: "no-store" })
       .then(async (response) => ({ response, result: await response.json() as ModelProfilesResponse }))
       .then(({ response, result }) => {
@@ -164,14 +173,15 @@ export function UploadWorkbench() {
       })
       .finally(() => { if (!cancelled) setModelLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [open]);
 
   useEffect(() => {
-    if (!tasks.some((task) => task.documentId && !["done", "error", "waiting_model"].includes(task.stage))) return;
+    if (!hasPendingTasks) return;
     let cancelled = false;
     const poll = async () => {
       const response = await fetch("/api/extraction-queue", { cache: "no-store" }).catch(() => undefined);
-      if (!response?.ok || cancelled) return;
+      if (cancelled) return;
+      if (!response?.ok) throw new Error("无法同步导入进度");
       const result = await response.json().catch(() => null) as QueueSnapshot | null;
       if (!result || cancelled) return;
       syncQueueSettings(result);
@@ -196,18 +206,18 @@ export function UploadWorkbench() {
         };
         if (job.status === "paused") return {
           ...task, modelDisplayName, stage: "paused", completedPages: job.completedPages, questionTotal, completedQuestionCount,
-          message: `已保存 ${questionProgress}；全部识别已暂停，点击下方“全部开始”后继续。`,
+          message: `已保存 ${questionProgress}；识别已暂停，可在工作台“待处理”中点击“全部开始”继续。`,
         };
         return { ...task, modelDisplayName, stage: job.status === "processing" ? "extracting" : "queued", completedPages: job.completedPages, questionTotal, completedQuestionCount, message: job.streamMessage ?? `可靠队列中：${questionProgress}。` };
       }));
     };
     let timer: number;
     const next = async () => {
-      try { await poll(); } finally { if (!cancelled) timer = window.setTimeout(next, 3000); }
+      try { await poll(); setTaskSyncError(""); } catch { setTaskSyncError("暂时无法同步导入进度，正在自动重试。"); } finally { if (!cancelled) timer = window.setTimeout(next, 3000); }
     };
     void next();
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [tasks]);
+  }, [hasPendingTasks]);
 
   function patchTask(taskId: string, patch: Partial<UploadTask>) {
     setTasks((items) => items.map((item) => item.id === taskId ? { ...item, ...patch } : item));
@@ -218,7 +228,7 @@ export function UploadWorkbench() {
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_UPLOAD_CONCURRENCY) {
       setConcurrencyError(true);
       setConcurrencyFeedback(`请输入 1–${MAX_UPLOAD_CONCURRENCY} 的整数`);
-      return;
+      return false;
     }
     setConcurrencySaving(true);
     setConcurrencyError(false);
@@ -233,10 +243,12 @@ export function UploadWorkbench() {
       if (!response.ok || typeof result.concurrency !== "number") throw new Error(result.error ?? "并发设置应用失败");
       concurrencyDraftDirtyRef.current = false;
       syncQueueSettings(result, true);
-      setConcurrencyFeedback(`已应用 ${result.concurrency} 份并发，浏览器任务与后台队列已同步调整`);
+      setConcurrencyFeedback(`已应用：同时处理 ${result.concurrency} 份试卷`);
+      return true;
     } catch (error) {
       setConcurrencyError(true);
       setConcurrencyFeedback(error instanceof Error ? error.message : "并发设置应用失败");
+      return false;
     } finally {
       setConcurrencySaving(false);
     }
@@ -371,67 +383,89 @@ export function UploadWorkbench() {
     }
   }
 
-  function onDrop(event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    void processFiles(Array.from(event.dataTransfer.files));
+  function chooseFiles(files: File[]) {
+    if (batchActive || submitting) return;
+    setFileError("");
+    if (files.some(file => !file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf")) {
+      setFileError("仅支持 PDF 试卷，请移除其他格式的文件后重新选择。");
+      return;
+    }
+    const combined = [...selectedFiles];
+    for (const file of files) {
+      if (!combined.some(item => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) combined.push(file);
+    }
+    if (combined.length > 100) { setFileError("每批最多导入 100 份试卷，请分批上传。"); return; }
+    if (combined.some(file => file.size === 0)) { setFileError("文件为空，请选择有效的 PDF 试卷。"); return; }
+    if (combined.some(file => file.size > 100 * 1024 * 1024)) { setFileError("单份原卷不能超过 100 MB，请压缩后上传。"); return; }
+    setSelectedFiles(combined);
   }
 
-  return (
-    <div className="upload-card card">
-      <div className="upload-context">
-      <div className="section-title upload-title"><div><span className="section-kicker">第一步 · 导入</span><h2>批量导入试卷</h2><p>选择 PDF，识别完成后进入审核列表</p></div><span className="save-note"><ShieldCheck size={14} /> 进度自动保存</span></div>
-      <div className="upload-scope-note"><b>{effectiveGrade} · {subject}{teachingProfile.textbook ? ` · ${teachingProfile.textbook}` : ""}</b><span>使用所选年级、学科已启用的个人 Skill；没有个人版本时使用默认规则。卷面信息仍可在试卷详情中修改。</span></div>
-      <div className="skill-scope"><label>本批试卷年级<select value={effectiveGrade} onChange={event => setUploadGrade(event.target.value)}>{gradesByStage[stage].map(grade => <option key={grade}>{grade}</option>)}</select></label><Link href="/settings/skills">查看或定制教学 Skill</Link></div>
-      </div>
-      <div className="upload-control-grid">
-        <section className="upload-model-setting" aria-label="识别模型选择">
-          <div className="upload-model-copy"><span><Sparkles size={16} /></span><div><strong>整卷识别模型</strong><small>一份试卷的全部页面只调用一次模型</small></div></div>
-          <div className="upload-model-controls">
-            <select aria-label="选择识别模型" value={selectedProfileId} disabled={modelLoading || modelSaving || modelProfiles.length === 0} onChange={(event) => void selectModel(event.target.value)}>
+  async function startImport() {
+    if (!selectedFiles.length || uploadDisabled || submitting || modelError) return;
+    setSubmitting(true);
+    try {
+      if (concurrencyDraftDirtyRef.current && !await applyConcurrency()) return;
+      const files = [...selectedFiles];
+      setSelectedFiles([]);
+      setFileError("");
+      await processFiles(files);
+    } finally { setSubmitting(false); }
+  }
+
+  function openDrawer() { setModelLoading(true); setModelFeedback(""); setOpen(true); }
+  const selectedModel = modelProfiles.find(profile => profile.id === selectedProfileId);
+  const unconfiguredModel = !modelLoading && !modelError && !selectedModel?.apiKeyMask;
+  const pendingTasks = tasks.filter(task => !["done", "error", "waiting_model"].includes(task.stage)).length;
+  const uploadInBrowser = batchActive || submitting;
+
+  return <>
+    {tasks.length > 0 && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}>{working && <LoaderCircle size={14} className="spin" />}导入任务{pendingTasks ? ` · ${pendingTasks}` : ""}</button>}
+    <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
+    <WorkbenchDialog open={open} drawer titleId="import-title" onClose={() => setOpen(false)}>
+      <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>批量上传 PDF，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
+      <div className="wb-dialog-body">
+        <fieldset className="wb-import-fields" disabled={uploadInBrowser}>
+          <legend className="wb-sr-only">试卷信息</legend>
+          <div className="wb-field-pair">
+            <div className="wb-field"><label htmlFor="import-stage">学段</label><select id="import-stage" value={stage} onChange={event => setStage(event.target.value as EducationStage)}>{educationStages.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+            <div className="wb-field"><label htmlFor="import-subject">学科</label><select id="import-subject" value={subject} onChange={event => setSubject(event.target.value)}>{subjects.map(item => <option key={item}>{item}</option>)}</select></div>
+          </div>
+          <div className="wb-field"><label htmlFor="import-grade">年级</label><select id="import-grade" value={effectiveGrade} onChange={event => setUploadGrade(event.target.value)}>{gradesByStage[stage].map(grade => <option key={grade}>{grade}</option>)}</select></div>
+          <div className="wb-field"><div className="wb-field-heading"><span>教学 Skill</span><Link href="/settings/skills">查看与定制</Link></div><div className="wb-field-note">自动使用当前年级、学科已启用的个人 Skill；未设置时使用默认规则。{teachingProfile.textbook && <span>教材：{teachingProfile.textbook}</span>}</div></div>
+          <div className="wb-field"><div className="wb-field-heading"><label htmlFor="import-model">识别模型</label><Link href="/settings/models">管理模型</Link></div>
+            <select id="import-model" aria-label="选择识别模型" value={selectedProfileId} disabled={modelLoading || modelSaving || modelProfiles.length === 0} onChange={event => void selectModel(event.target.value)}>
               {modelProfiles.length === 0 && <option value="">{modelLoading ? "正在读取模型…" : "暂无可用模型"}</option>}
-              {modelProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.displayName}</option>)}
+              {modelProfiles.map(profile => <option value={profile.id} key={profile.id}>{profile.displayName}</option>)}
             </select>
-            <Link className="btn" href="/settings/models">管理</Link>
+            {modelFeedback && <p className={modelError ? "wb-field-error" : "wb-field-hint"} role="status">{modelFeedback}</p>}
+            {unconfiguredModel && <p className="wb-field-hint">{selectedModel ? "当前模型尚未配置 API Key。" : "尚未配置识别模型。"}可先上传并保存原卷，配置模型后在试卷详情继续识别。</p>}
           </div>
-          <p className={modelError ? "error" : modelFeedback ? "success" : ""}>{modelFeedback || (modelLoading ? "正在同步模型配置…" : "新加入队列的试卷使用此模型")}</p>
-        </section>
-        <section className="upload-concurrency" aria-label="批量处理设置">
-          <div className="upload-concurrency-copy"><span><Gauge size={16} /></span><div><strong>并行试卷数</strong><small>限制同时上传和识别的试卷数量，可随时调整</small></div></div>
-          <div className="upload-concurrency-inputs">
-            <label><input aria-label="同时处理试卷数" inputMode="numeric" type="number" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={(event) => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") void applyConcurrency(); }} /><span>份</span></label>
-            <button type="button" className="btn btn-primary" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button>
-          </div>
-          <p className={concurrencyError ? "error" : concurrencyFeedback ? "success" : queuePaused ? "paused" : ""}>{concurrencyFeedback || (queuePaused ? (queuePauseReason || "全部识别已暂停，可在试卷列表中点击“全部开始”。") : `已应用 ${appliedConcurrency} 份 · 处理中 ${queueCounts.active} 份${queueCounts.queued ? ` · 等待 ${queueCounts.queued} 份` : ""}`)}</p>
-        </section>
+        </fieldset>
+        <div className="wb-field wb-concurrency"><div className="wb-field-heading"><label htmlFor="import-concurrency">并行试卷数</label><span>已应用 {appliedConcurrency} 份</span></div>
+          <div className="wb-input-action"><input id="import-concurrency" aria-label="同时处理试卷数" type="number" inputMode="numeric" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={event => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={event => { if (event.key === "Enter") void applyConcurrency(); }} /><button type="button" className="wb-button" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button></div>
+          <p className="wb-field-hint">同时上传和识别的试卷上限，支持 1–{MAX_UPLOAD_CONCURRENCY} 份。</p>
+          {concurrencyFeedback && <p role="status" className={concurrencyError ? "wb-field-error" : "wb-field-hint"}>{concurrencyFeedback}</p>}
+          {queuePaused && <p className="wb-field-hint" title={queuePauseReason}>识别队列已暂停，可在“待处理”列表中继续。</p>}
+          {(queueCounts.active > 0 || queueCounts.queued > 0) && <p className="wb-field-hint">处理中 {queueCounts.active} 份 · 等待 {queueCounts.queued} 份</p>}
+        </div>
+        <div className="wb-field"><span>PDF 文件</span>
+          <input ref={inputRef} className="wb-sr-only" type="file" multiple accept=".pdf,application/pdf" aria-label="选择 PDF 文件" disabled={uploadInBrowser} onChange={event => { chooseFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
+          <button type="button" className={`wb-drop-zone${dragging ? " dragging" : ""}`} disabled={uploadInBrowser} onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); if (!uploadInBrowser) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); chooseFiles(Array.from(event.dataTransfer.files)); }}>
+            <UploadCloud size={26} /><strong>点击选择或拖放 PDF</strong><span>支持多选，每批最多 100 份</span>
+          </button>
+          {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
+          {selectedFiles.length > 0 && <div className="wb-file-selection"><div><strong>已选 {selectedFiles.length} 份</strong><button className="wb-text-button" type="button" disabled={uploadInBrowser} onClick={() => setSelectedFiles([])}>清空</button></div><ul>{selectedFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><FileText size={16} /><span title={file.name}>{file.name}<small>{file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(file.size / 1024))} KB`}</small></span><button type="button" className="wb-icon-button" aria-label={`移除 ${file.name}`} disabled={uploadInBrowser} onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}><X size={15} /></button></li>)}</ul></div>}
+        </div>
+        {tasks.length > 0 && <section className="wb-upload-tasks" aria-label="导入任务"><h3>导入任务 <span>{tasks.length}</span></h3>
+          {uploadInBrowser && <p className="wb-field-hint">可关闭抽屉查看列表；原卷上传完成前，请保持此页面打开。</p>}
+          {taskSyncError && <p className="wb-field-error" role="status">{taskSyncError}</p>}
+          <div aria-live="polite">{tasks.map(task => <article key={task.id} className={task.stage === "error" ? "error" : ""}>
+            {task.stage === "done" ? <CheckCircle2 size={16} /> : task.stage === "error" ? <AlertCircle size={16} /> : ["idle", "rendering", "preparing", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage) ? <LoaderCircle size={16} className="spin" /> : <FileText size={16} />}
+            <div><strong title={task.fileName}>{task.fileName}</strong><p>{task.message}</p>{task.documentId && <Link href={`/review/${task.documentId}`}>{task.stage === "done" ? "前往审核" : "查看试卷"}</Link>}</div>
+          </article>)}</div>
+        </section>}
       </div>
-      <input ref={inputRef} hidden multiple type="file" accept=".pdf,application/pdf" onChange={(event) => { void processFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
-      <div
-        className={"drop-zone " + (working ? "working " : "")}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => { if (uploadDisabled) event.preventDefault(); else onDrop(event); }}
-        onClick={() => { if (!uploadDisabled) inputRef.current?.click(); }}
-        onKeyDown={(event) => { if (!uploadDisabled && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inputRef.current?.click(); } }}
-        aria-disabled={uploadDisabled}
-        role="button"
-        tabIndex={0}
-      >
-        <span className="upload-symbol">
-          {working ? <LoaderCircle size={23} className="spin" /> : <UploadCloud size={24} />}
-        </span>
-        <strong>{working ? "试卷正在处理" : "选择 PDF 试卷"}</strong>
-        <p>{working ? "可以离开此页，后台会继续处理。" : "点击选择或将文件拖到这里，可一次导入多份"}</p>
-        <span className="upload-reliability"><ShieldCheck size={13} /> 原卷、分页图和处理进度都会保留</span>
-      </div>
-      {tasks.length > 0 && <div className="upload-task-list">
-        {tasks.map((task) => <article key={task.id} className={`upload-task ${task.stage}`}>
-          <span className="upload-task-icon">{["rendering", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage) ? <LoaderCircle className="spin" size={16} /> : task.stage === "done" ? <CheckCircle2 size={16} /> : task.stage === "error" ? <AlertCircle size={16} /> : <FileText size={16} />}</span>
-          <div><strong>{task.fileName}</strong><small>{task.message}</small>{task.modelDisplayName && <em className="upload-task-model"><Sparkles size={10} /> 识别模型：{task.modelDisplayName}</em>}{task.renderer && <em>渲染：{task.renderer}</em>}</div>
-          <b>{["queued", "extracting", "retry_wait", "paused", "done"].includes(task.stage)
-            ? task.questionTotal ? `${task.completedQuestionCount ?? 0}/${task.questionTotal} 题` : task.stage === "done" ? "已完成" : "统计题目"
-            : task.pageCount ? `${Math.min(task.completedPages, task.pageCount)}/${task.pageCount} 页` : task.stage === "idle" ? "排队中" : "准备中"}</b>
-          {task.documentId && <Link href={`/review/${task.documentId}`} onClick={(event) => event.stopPropagation()}>{task.stage === "done" ? "审核" : "查看"}</Link>}
-        </article>)}
-      </div>}
-    </div>
-  );
+      <footer className="wb-dialog-footer"><span>{selectedFiles.length ? `已选 ${selectedFiles.length} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "任务进度自动保存" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedFiles.length || uploadDisabled || submitting || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
+    </WorkbenchDialog>
+  </>;
 }

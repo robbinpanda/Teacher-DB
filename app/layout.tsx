@@ -4,6 +4,7 @@ import "katex/dist/katex.min.css";
 import { AppShell } from "../components/AppShell";
 import { getTeacherMode } from "../lib/backend-data";
 import "./globals.css";
+import "./workbench.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_BASE_URL || "http://localhost:3050"),

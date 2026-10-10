@@ -2,7 +2,10 @@ import { test, expect } from "@playwright/test";
 import Database from "better-sqlite3";
 import path from "node:path";
 
-function fixture({ owner = "local-demo", review = false, incomplete = false } = {}) {
+// Other suites create pending questions and models; use a separate teacher here.
+test.use({ extraHTTPHeaders: { "oai-authenticated-user-id": "bulk-approve-browser" } });
+
+function fixture({ owner = "bulk-approve-browser", review = false, incomplete = false } = {}) {
   const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, "teacher-question-bank.sqlite3"));
   db.pragma("foreign_keys = ON");
   const id = crypto.randomUUID(), pageId = crypto.randomUUID(), now = new Date().toISOString();

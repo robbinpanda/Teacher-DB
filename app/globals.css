@@ -617,12 +617,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 @media (max-width: 760px) {
-  .sidebar { height: 66px; padding: 8px 10px; }
-  .brand { margin-right: auto; }
+  .sidebar { height: auto; display: grid; grid-template-columns: 38px minmax(0,1fr); gap: 8px; padding: 8px 10px; }
+  .brand { margin: 0; padding: 0; }
+  .sidebar .teacher-mode-switch { width: 180px; margin: 0; justify-self: end; }
   .brand > span:last-child { display: none; }
   .brand-mark { width: 38px; height: 38px; }
   .education-switcher { display: none; }
-  .side-nav { gap: 3px; }
+  .side-nav { grid-column: 1 / -1; min-width: 0; gap: 3px; justify-content: space-between; overflow-x: auto; }
   .side-nav a { min-height: 42px; padding: 5px; }
   .side-nav a i { width: 32px; height: 32px; }
   .side-nav a span { display: none; }
@@ -844,115 +845,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .upload-control-grid .upload-concurrency > p { margin: 8px 0 0; }
 }
 
-/* Compact workbench: keep the paper workspace in the first viewport. */
-.workspace-page { max-width: 1500px; padding-top: 26px; }
-.workspace-header { min-height: 0; align-items: center; margin-bottom: 13px; }
-.workspace-header h1 { margin-top: 5px; font-size: clamp(31px,2.5vw,38px); }
-.workspace-header p { margin-top: 6px; font-size: 11px; }
-.workspace-status { width: fit-content; min-height: 0; display: flex; gap: 0; margin: 0 0 17px; overflow: hidden; border: 1px solid #dbe3df; border-radius: 13px; padding: 6px 8px; background: rgba(255,255,255,.72); box-shadow: 0 6px 18px rgba(22,57,47,.035); }
-.workspace-status article,
-.workspace-status article.needs-action { position: relative; min-width: 132px; display: flex; gap: 8px; align-items: center; border: 0; border-radius: 0; padding: 2px 17px 2px 9px; background: transparent; box-shadow: none; backdrop-filter: none; }
-.workspace-status article:not(:last-child)::after { position: absolute; display: block; content: ""; top: 5px; right: 0; width: 1px; height: 30px; background: #e1e7e4; }
-.workspace-status article > i { width: 29px; height: 29px; border-radius: 9px; }
-.workspace-status article > i svg { width: 14px; height: 14px; }
-.workspace-status article span { margin: 0; color: #74817b; font-size: 9px; }
-.workspace-status article p { gap: 4px; margin-top: 1px; line-height: 1; }
-.workspace-status strong { font-size: 18px; }
-.workspace-status small { font-size: 8px; }
-.dashboard-content { min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(350px,400px); gap: 18px; align-items: start; }
-.dashboard-library { min-width: 0; margin: 0; }
-.dashboard-library > .section-title { min-height: 47px; align-items: flex-end; margin-bottom: 10px; padding: 0 2px; }
-.dashboard-library > .section-title h2 { font-size: 21px; }
-.dashboard-library .document-view-switcher { margin-bottom: 0; }
-.dashboard-side-stack { min-width: 0; display: grid; gap: 14px; }
-.dashboard-side-stack .todo-card { min-width: 0; padding: 16px; }
-.workspace-overview { min-width: 0; display: grid; grid-template-columns: 320px minmax(0,1fr); gap: 18px; align-items: start; margin-bottom: 20px; }
-.workspace-overview .workspace-status { width: 100%; margin: 0; }
-.workspace-overview .workspace-status article { min-width: 0; flex: 1; padding: 2px 7px; }
-.workspace-overview .workspace-status small { white-space: nowrap; }
-.workspace-overview .upload-card { min-width: 0; display: grid; grid-template-columns: 170px minmax(0,1fr) 180px; gap: 14px; padding: 16px; }
-.workspace-overview .upload-context { min-width: 0; }
-.workspace-overview .upload-title { flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 10px; }
-.workspace-overview .upload-title h2 { font-size: 17px; }
-.workspace-overview .upload-title p { font-size: 10px; }
-.workspace-overview .save-note { padding: 4px 7px; font-size: 8px; white-space: nowrap; }
-.workspace-overview .upload-scope-note { margin-bottom: 8px; padding: 7px 9px; }
-.workspace-overview .upload-scope-note b { white-space: normal; font-size: 10px; }
-.workspace-overview .upload-scope-note span { display: none; }
-.workspace-overview .skill-scope { gap: 8px; margin: 0; align-items: flex-end; }
-.workspace-overview .skill-scope label { gap: 5px; font-size: 10px; }
-.workspace-overview .skill-scope select { padding: 7px 9px; }
-.workspace-overview .skill-scope > a { color: var(--green); font-size: 10px; line-height: 1.5; }
-.workspace-overview .upload-control-grid { min-width: 0; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 0; }
-.workspace-overview .upload-control-grid .upload-model-setting,
-.workspace-overview .upload-control-grid .upload-concurrency { min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 0; padding: 12px; border-radius: 11px; }
-.workspace-overview .upload-model-copy,
-.workspace-overview .upload-concurrency-copy { gap: 7px; align-items: flex-start; }
-.workspace-overview .upload-model-copy > span,
-.workspace-overview .upload-concurrency-copy > span { width: 28px; height: 28px; flex-basis: 28px; border-radius: 8px; }
-.workspace-overview .upload-model-copy strong,
-.workspace-overview .upload-concurrency-copy strong { font-size: 11px; }
-.workspace-overview .upload-model-copy small,
-.workspace-overview .upload-concurrency-copy small { margin-top: 3px; font-size: 9px; line-height: 1.5; }
-.workspace-overview .upload-model-controls,
-.workspace-overview .upload-concurrency-inputs { grid-template-columns: minmax(0,1fr) auto; gap: 6px; margin-top: 12px; }
-.workspace-overview .upload-control-grid .upload-model-setting > p,
-.workspace-overview .upload-control-grid .upload-concurrency > p { margin: 8px 0 0; font-size: 9px; overflow-wrap: anywhere; }
-.workspace-overview .upload-model-controls select,
-.workspace-overview .upload-model-controls .btn,
-.workspace-overview .upload-concurrency-inputs label,
-.workspace-overview .upload-concurrency-inputs .btn { min-height: 34px; height: 34px; }
-.workspace-overview .upload-model-controls .btn,
-.workspace-overview .upload-concurrency-inputs .btn { padding: 6px 9px; font-size: 11px; }
-.workspace-overview .drop-zone { min-width: 0; min-height: 155px; height: 100%; padding: 16px 10px; border-radius: 12px; }
-.workspace-overview .upload-symbol { width: 39px; height: 39px; margin-bottom: 9px; border-radius: 11px; }
-.workspace-overview .drop-zone strong { font-size: 13px; }
-.workspace-overview .drop-zone p { margin: 4px 0 9px; font-size: 10px; }
-.workspace-overview .upload-reliability { font-size: 9px; }
-.workspace-overview .upload-task-list { grid-column: 1 / -1; margin-top: 0; }
-.dashboard-side-stack .next-review,
-.dashboard-side-stack .todo-clear { min-height: 82px; padding: 12px; }
 .model-manager-page { margin-top: 0; }
 .model-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-
-@media (max-width: 1380px) {
-  .workspace-overview { grid-template-columns: minmax(0,1fr); gap: 12px; }
-  .workspace-overview .workspace-status { width: fit-content; }
-  .workspace-overview .workspace-status article { min-width: 132px; }
-}
-
-@media (max-width: 1120px) {
-  .dashboard-content { grid-template-columns: minmax(0,1fr); }
-}
-
-@media (max-width: 950px) {
-  .workspace-overview .upload-card { grid-template-columns: minmax(0,1fr) 200px; }
-  .workspace-overview .upload-control-grid { grid-column: 1 / -1; grid-row: 2; }
-  .workspace-overview .upload-title { flex-direction: row; align-items: flex-start; }
-}
-
-@media (max-width: 760px) {
-  .workspace-page { padding-top: 18px; }
-  .workspace-header { margin-bottom: 10px; }
-  .workspace-header p { display: none; }
-  .workspace-status { width: 100%; margin-bottom: 13px; padding: 5px; }
-  .workspace-status article,
-  .workspace-status article.needs-action { min-width: 0; flex: 1; gap: 6px; padding: 2px 7px; }
-  .workspace-status article > i { display: none; }
-  .workspace-status article:not(:last-child)::after { top: 4px; height: 28px; }
-  .workspace-status strong { font-size: 17px; }
-  .workspace-overview .workspace-status { width: 100%; }
-  .workspace-overview .workspace-status article { min-width: 0; }
-  .dashboard-side-stack { grid-template-columns: 1fr; }
-  .dashboard-library > .section-title { min-height: 42px; }
-  .model-page-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
-}
-
-@media (max-width: 540px) {
-  .workspace-overview .upload-card { grid-template-columns: minmax(0,1fr); gap: 12px; }
-  .workspace-overview .upload-control-grid { grid-template-columns: minmax(0,1fr); grid-row: auto; }
-  .workspace-overview .drop-zone { height: auto; }
-}
+@media (max-width: 760px) { .model-page-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; } }
 
 /* Personal / school teacher modes */
 .teacher-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 8px 4px 14px; padding: 3px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(255,255,255,.035); }
@@ -1051,60 +946,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 @media print {
   .answer-sheet-page { padding: 0; background: white; }.answer-sheet-print { display: none; }.answer-sheet { width: auto; min-height: 287mm; margin: 0; box-shadow: none; }
-}
-
-/* Dense workbench document list: optimized for fast teacher scanning. */
-.dashboard-library .document-view-switcher { gap: 2px; padding: 3px; border-radius: 8px; }
-.dashboard-library .document-view-switcher button { height: 31px; gap: 5px; border-radius: 6px; font-size: 9px; }
-.dashboard-library .document-view-switcher b { min-width: 17px; height: 17px; padding: 0 5px; font-size: 8px; }
-.dashboard-library .document-status-panel { margin-top: 7px; }
-.dashboard-library .document-view-summary { min-height: 25px; padding: 0 2px 5px; }
-.dashboard-library .document-view-summary p,
-.dashboard-library .document-view-summary span { font-size: 8px; }
-.dashboard-library .document-bulk-toolbar { gap: 4px; }
-.dashboard-library .document-bulk-toolbar button { min-height: 25px; border-radius: 6px; padding: 0 7px; font-size: 8px; }
-.dashboard-library .document-bulk-toolbar button svg { width: 12px; height: 12px; }
-.dashboard-library .document-list { gap: 4px; }
-.dashboard-library .document-row { min-height: 56px; grid-template-columns: 31px minmax(0,1fr) minmax(150px,34%) 14px; gap: 9px; border-radius: 8px; padding: 7px 10px; }
-.dashboard-library .document-row-wrap .document-row { padding-right: 39px; }
-.dashboard-library .document-row-wrap.paused .document-row { padding-right: 68px; }
-.dashboard-library .document-icon { width: 30px; height: 30px; border-radius: 7px; font-size: 10px; }
-.dashboard-library .document-main { display: grid; grid-template-columns: minmax(0,auto) minmax(0,1fr); align-items: center; column-gap: 8px; }
-.dashboard-library .document-main strong { grid-column: 1 / -1; font-size: 10px; line-height: 1.25; }
-.dashboard-library .document-main span { min-width: 0; overflow: hidden; margin-top: 3px; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
-.dashboard-library .document-main span svg { width: 9px; height: 9px; }
-.dashboard-library .document-main .document-model { max-width: 100%; margin-top: 3px; font-size: 7px; }
-.dashboard-library .document-progress > div:first-child { margin-bottom: 3px; font-size: 8px; }
-.dashboard-library .document-progress .progress { height: 4px; }
-.dashboard-library .row-arrow { width: 13px; height: 13px; }
-.dashboard-library .document-actions { right: 7px; gap: 3px; }
-.dashboard-library .document-delete,
-.dashboard-library .document-retry { width: 25px; height: 25px; border-radius: 6px; }
-.dashboard-library .document-delete svg,
-.dashboard-library .document-retry svg { width: 12px; height: 12px; }
-.dashboard-library .document-group-empty { padding: 25px 12px; border-radius: 8px; font-size: 9px; }
-.dashboard-library .document-selector { left: 10px; width: 17px; height: 17px; }
-.dashboard-library .document-selector input { width: 13px; height: 13px; }
-.dashboard-library .document-row-wrap.selection-active .document-row { padding-left: 35px; padding-right: 9px; }
-.dashboard-library .document-bulk-notice { margin-bottom: 5px; padding: 6px 8px; font-size: 8px; }
-
-@media (max-width: 1120px) {
-  .dashboard-library .document-row { grid-template-columns: 31px minmax(0,1fr) 125px 14px; }
-  .dashboard-library .document-main .document-model { display: none; }
-}
-
-@media (max-width: 700px) {
-  .dashboard-library .document-view-switcher button { height: 30px; gap: 3px; font-size: 8px; }
-  .dashboard-library .document-row { min-height: 51px; grid-template-columns: 28px minmax(0,1fr) 13px; gap: 7px; padding: 6px 8px; }
-  .dashboard-library .document-row-wrap .document-row { padding-right: 36px; }
-  .dashboard-library .document-icon { width: 27px; height: 27px; border-radius: 6px; font-size: 9px; }
-  .dashboard-library .document-main strong { font-size: 9px; }
-  .dashboard-library .document-main span { font-size: 7px; }
-  .dashboard-library .document-progress { grid-column: 2 / -1; }
-  .dashboard-library .document-progress > div:first-child { margin-bottom: 2px; font-size: 7px; }
-  .dashboard-library .document-actions { right: 5px; }
-  .dashboard-library .document-delete,
-  .dashboard-library .document-retry { width: 23px; height: 23px; }
 }
 
 .analysis-image-inserts { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }

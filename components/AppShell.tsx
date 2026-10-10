@@ -14,7 +14,8 @@ import {
   House,
   ClipboardCheck,
   Settings2,
-  Sparkles,
+  Menu,
+  X,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
@@ -60,6 +61,8 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
   const router = useRouter();
   const [mode, setModeState] = useState<TeacherMode>(initialMode);
   const [modeChanging, setModeChanging] = useState(false);
+  const [modeError, setModeError] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [subject, setSubject] = useState("数学");
   const [stage, setStage] = useState<EducationStage>("middle");
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -110,13 +113,15 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
     setMode: async (nextMode) => {
       if (nextMode === mode || modeChanging) return;
       setModeChanging(true);
+      setModeError("");
       try {
         const response = await fetch("/api/teacher-mode", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: nextMode }) });
         if (!response.ok) throw new Error("切换失败");
         setModeState(nextMode);
         if (nextMode === "personal" && (pathname.startsWith("/classes") || pathname.startsWith("/assignments"))) router.push("/");
         router.refresh();
-      } finally { setModeChanging(false); }
+      } catch { setModeError("切换失败，请稍后重试。"); }
+      finally { setModeChanging(false); }
     },
   }), [mode, modeChanging, pathname, router]);
 
@@ -124,12 +129,16 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
 
   return (
     <TeacherModeContext.Provider value={modeValue}><EducationScopeContext.Provider value={scope}>
-      <div className="app-frame">
-        <aside className="sidebar">
+      <div className="app-frame shell-ui">
+        <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
+          <div className="shell-brand-row">
           <Link href="/" className="brand">
             <span className="brand-mark"><BookOpen size={21} strokeWidth={2.2} /></span>
             <span><strong>拣题</strong><small>教师智能工作台</small></span>
           </Link>
+          <button type="button" className="shell-menu-toggle" aria-label={mobileNavOpen ? "收起导航" : "展开导航"} aria-expanded={mobileNavOpen} aria-controls="shell-navigation" onClick={() => setMobileNavOpen(value => !value)}>{mobileNavOpen ? <X size={20} /> : <Menu size={20} />}</button>
+          </div>
+          <div className="shell-navigation" id="shell-navigation">
           <div ref={switcherRef} className={`education-switcher${scopeOpen ? " open" : ""}`} aria-label="教学范围">
             <button
               type="button"
@@ -185,9 +194,10 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
             )}
           </div>
           <div className="teacher-mode-switch" role="group" aria-label="教师工作模式">
-            <button type="button" className={mode === "personal" ? "active" : ""} disabled={modeChanging} onClick={() => void modeValue.setMode("personal")}>个人教师</button>
-            <button type="button" className={mode === "school" ? "active" : ""} disabled={modeChanging} onClick={() => void modeValue.setMode("school")}>学校教师</button>
+            <button type="button" aria-pressed={mode === "personal"} className={mode === "personal" ? "active" : ""} disabled={modeChanging} onClick={() => void modeValue.setMode("personal")}>个人教师</button>
+            <button type="button" aria-pressed={mode === "school"} className={mode === "school" ? "active" : ""} disabled={modeChanging} onClick={() => void modeValue.setMode("school")}>学校教师</button>
           </div>
+          {modeError && <p className="shell-mode-error" role="alert">{modeError}</p>}
           <span className="nav-kicker">工作空间</span>
           <nav className="side-nav" aria-label="主导航">
             {navigation.filter((item) => !item.schoolOnly || mode === "school").map(({ href, label, icon: Icon }) => {
@@ -198,12 +208,12 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
                   : href === "/papers"
                     ? pathname === "/papers" || (/^\/papers\/[^/]+$/.test(pathname) && pathname !== "/papers/new")
                     : pathname.startsWith(href);
-              return <Link key={href} href={href} className={active ? "active" : ""}><i><Icon size={18} /></i><span>{label}</span></Link>;
+              return <Link key={href} href={href} className={active ? "active" : ""} aria-current={active ? "page" : undefined} onClick={() => setMobileNavOpen(false)}><i><Icon size={18} /></i><span>{label}</span></Link>;
             })}
           </nav>
           <div className="sidebar-footnote">
-            <span><Sparkles size={15} /></span>
-            <div><strong>{mode === "school" ? "教学闭环" : "从原卷到成卷"}</strong><small>{mode === "school" ? "出题、布置、批改、分析、补练" : "识别、审核、入库、组卷，一处完成"}</small></div>
+            {mode === "school" ? "出题 · 批改 · 教学分析" : "从原卷到题库"}
+          </div>
           </div>
         </aside>
         <main className="app-main">{children}</main>
