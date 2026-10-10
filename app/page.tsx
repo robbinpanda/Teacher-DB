@@ -35,11 +35,14 @@ export default async function Home() {
         </div>
       </header>
 
-      <section className="workspace-status" aria-label="工作概况">
-        <article className={pendingQuestions ? "needs-action" : ""}><i><ClipboardCheck size={18} /></i><div><span>待审核</span><p><strong>{pendingQuestions}</strong><small>道题</small></p></div></article>
-        <article><i><LoaderCircle size={18} /></i><div><span>处理中</span><p><strong>{processingDocuments.length}</strong><small>份试卷</small></p></div></article>
-        <article><i><Database size={18} /></i><div><span>已入库</span><p><strong>{approvedQuestions}</strong><small>道题</small></p></div></article>
-      </section>
+      <div className="workspace-overview">
+        <section className="workspace-status" aria-label="工作概况">
+          <article className={pendingQuestions ? "needs-action" : ""}><i><ClipboardCheck size={18} /></i><div><span>待审核</span><p><strong>{pendingQuestions}</strong><small>道题</small></p></div></article>
+          <article><i><LoaderCircle size={18} /></i><div><span>处理中</span><p><strong>{processingDocuments.length}</strong><small>份试卷</small></p></div></article>
+          <article><i><Database size={18} /></i><div><span>已入库</span><p><strong>{approvedQuestions}</strong><small>道题</small></p></div></article>
+        </section>
+        <UploadWorkbench />
+      </div>
 
       <section className="dashboard-content">
         <section className="recent-section dashboard-library" aria-labelledby="all-documents-heading">
@@ -47,8 +50,7 @@ export default async function Home() {
           <RecentDocuments initialDocuments={sourceDocuments} />
         </section>
 
-        <aside className="dashboard-side-stack" aria-label="导入与待办">
-          <UploadWorkbench />
+        <aside className="dashboard-side-stack" aria-label="待办试卷">
           <section className="todo-card card">
             <div className="section-title">
               <div><h2>接着处理</h2><p>需要你关注的试卷</p></div>
