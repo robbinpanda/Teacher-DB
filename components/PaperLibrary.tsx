@@ -56,6 +56,22 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
     return () => window.removeEventListener("keydown", handleEscape);
   }, []);
 
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = () => setOpenMenu(null);
+    const closeOutsideMenu = (event: Event) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".asset-menu")) close();
+    };
+    window.addEventListener("resize", close);
+    document.addEventListener("scroll", closeOutsideMenu, true);
+    document.addEventListener("pointerdown", closeOutsideMenu);
+    return () => {
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", closeOutsideMenu, true);
+      document.removeEventListener("pointerdown", closeOutsideMenu);
+    };
+  }, [openMenu]);
+
   const breadcrumbs = useMemo(() => {
     const path: PaperFolderRecord[] = [];
     let cursor = currentFolder;
@@ -182,8 +198,17 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
     });
   }
 
-  function menuToggle(key: string, open: boolean) {
-    if (open) setOpenMenu(key);
+  function menuToggle(key: string, details: HTMLDetailsElement) {
+    if (details.open) {
+      const menu = details.querySelector<HTMLDivElement>(":scope > div");
+      if (menu) {
+        const anchor = details.getBoundingClientRect();
+        const bounds = menu.getBoundingClientRect();
+        menu.style.left = `${Math.max(12, Math.min(anchor.right - bounds.width, window.innerWidth - bounds.width - 12))}px`;
+        menu.style.top = `${Math.max(12, Math.min(anchor.bottom + 6, window.innerHeight - bounds.height - 12))}px`;
+      }
+      setOpenMenu(key);
+    }
     else setOpenMenu((current) => current === key ? null : current);
   }
 
@@ -223,7 +248,7 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
               <td>{[paper.subject, paper.grade || (paper.stage ? stageLabel(paper.stage as "primary" | "middle" | "high") : "")].filter(Boolean).join(" · ") || "未设置"}</td>
               <td>{paper.questionCount} 题{uploaded && paper.questionCount > paper.approvedCount && <small>{paper.approvedCount} 题已入库</small>}</td><td><time dateTime={paper.updatedAt}>{formatTime(paper.updatedAt)}</time></td>
               <td><div className="asset-row-actions">{uploaded ? paper.sourceRemoved ? <Link href={`/bank?documentId=${paper.id}`}>查看题目</Link> : <Link href={editUrl}>{paper.status === "reviewing" ? "继续审核" : "查看识别结果"}</Link> : <Link href={editUrl}>继续编辑</Link>}
-                <details className="asset-menu" open={openMenu === menuKey} onToggle={event => menuToggle(menuKey, event.currentTarget.open)}><summary aria-label={`${paper.title} 操作`}><MoreHorizontal size={18} /></summary><div>
+                <details className="asset-menu" open={openMenu === menuKey} onToggle={event => menuToggle(menuKey, event.currentTarget)}><summary aria-label={`${paper.title} 操作`}><MoreHorizontal size={18} /></summary><div>
                   {uploaded ? <>{paper.originalUrl && <a href={paper.originalUrl} target="_blank" rel="noreferrer">查看原始试卷</a>}{!paper.sourceRemoved && <Link href={editUrl}>查看识别结果 / 审核</Link>}{paper.approvedCount > 0 && <Link href={`/bank?documentId=${paper.id}`}>进入相关题目</Link>}</> : <><Link href={`/papers/${paper.id}/preview`} target="_blank">预览试卷</Link><a href={`/api/papers/${paper.id}/pdf`}>下载试卷 PDF</a><a href={`/api/papers/${paper.id}/pdf?answers=1`}>下载答案解析</a>{mode === "school" && <Link href={`/assignments/new?paper=${paper.id}`}><CalendarPlus size={13} /> 布置作业</Link>}</>}
                   <button onClick={() => beginRename({ kind: uploaded ? "uploaded" : "paper", id: paper.id, name: paper.title })}>重命名</button>
                   <label>移动到文件夹<select aria-label={`移动${paper.title}`} disabled={busy} value={paper.folderId ?? ""} onChange={event => void run(() => movePaper(paper, event.target.value || null))}><option value="">未分文件夹</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folderPath(folder)}</option>)}</select></label>

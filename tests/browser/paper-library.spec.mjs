@@ -21,6 +21,16 @@ test('两类试卷统一管理，恢复编排不会加入其他题目，保存�
     if (width === 1440) await page.screenshot({ path: 'tmp/paper-library-1440.png', fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
+  await page.setViewportSize({ width: 1366, height: 440 });
+  await page.getByLabel('组卷链路测试 操作').click();
+  const menu = page.locator('.asset-menu[open] > div');
+  await expect(menu.getByRole('button', { name: '删除组卷作品' })).toBeInViewport();
+  const bounds = await menu.boundingBox();
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(440);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.asset-menu[open]')).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('tab', { name: /上传原卷/ }).click();
   await expect(page.locator('.asset-table tbody tr')).toHaveCount(1);
   await page.getByLabel('原卷链路测试 操作').click();
