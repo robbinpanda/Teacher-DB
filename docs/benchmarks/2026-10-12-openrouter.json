@@ -1,0 +1,409 @@
+{
+  "version": 1,
+  "startedAt": "2026-10-12T06:15:26.998Z",
+  "finishedAt": "2026-10-12T06:29:56.483Z",
+  "billingCheckedAt": "2026-10-12T06:30:18.910Z",
+  "applicationCommit": "cc4e49f",
+  "concurrency": 2,
+  "totalCostUsd": 0.126887973,
+  "summary": [
+    {
+      "model": "qwen/qwen3.7-flash",
+      "passed": 3,
+      "costUsd": 0.009845529,
+      "averageSeconds": 153.4
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "passed": 3,
+      "costUsd": 0.023196191,
+      "averageSeconds": 128.9
+    },
+    {
+      "model": "deepseek/deepseek-v4.1-flash",
+      "passed": 3,
+      "costUsd": 0.040441368,
+      "averageSeconds": 91.8
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "passed": 2,
+      "costUsd": 0.025342,
+      "averageSeconds": 48.5
+    },
+    {
+      "model": "inclusionai/ling-3.0-flash-vl",
+      "passed": 1,
+      "costUsd": 0.00355931,
+      "averageSeconds": 65.9
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "passed": 1,
+      "costUsd": 0.024503575,
+      "averageSeconds": 87.5
+    }
+  ],
+  "trials": [
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "paper": "宝山",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 56.1,
+      "costUsd": 0.0110895,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "b1a81d493586a683a6ba1a2da8f511d371028e273bfc4d111541bcb92c4a114c",
+      "traceId": "41fae78a-e182-4b0b-a241-67e8f53f60fb",
+      "providers": [
+        "Claude Platform on AWS"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "paper": "宝山",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 62.5,
+      "costUsd": 0.008128675,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "b1a81d493586a683a6ba1a2da8f511d371028e273bfc4d111541bcb92c4a114c",
+      "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+      "providers": [
+        "OpenAI"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "paper": "宝山",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 147.5,
+      "costUsd": 0.00722862,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "b1a81d493586a683a6ba1a2da8f511d371028e273bfc4d111541bcb92c4a114c",
+      "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+      "providers": [
+        "Novita"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "inclusionai/ling-3.0-flash-vl",
+      "paper": "宝山",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 55.8,
+      "costUsd": 0.00081385,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "b1a81d493586a683a6ba1a2da8f511d371028e273bfc4d111541bcb92c4a114c",
+      "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+      "providers": [
+        "Novita"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "deepseek/deepseek-v4.1-flash",
+      "paper": "宝山",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 51.5,
+      "costUsd": 0.01239933,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "b1a81d493586a683a6ba1a2da8f511d371028e273bfc4d111541bcb92c4a114c",
+      "traceId": "b1d99b7e-ef96-4a7e-b717-a50de6fbb707",
+      "providers": [
+        "Wafer"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "qwen/qwen3.7-flash",
+      "paper": "宝山",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 138.5,
+      "costUsd": 0.002985837,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "b1a81d493586a683a6ba1a2da8f511d371028e273bfc4d111541bcb92c4a114c",
+      "traceId": "5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9",
+      "providers": [
+        "Alibaba"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "paper": "崇明",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 45.2,
+      "costUsd": 0.0084467,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "102bd77711ff353ad8c9daa5e1661fdd6af081a0f256f8584904219df9c3010a",
+      "traceId": "eb1c2ec4-a354-461d-8a91-67deb7523412",
+      "providers": [
+        "Claude Platform on AWS"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "paper": "崇明",
+      "pages": 18,
+      "passed": false,
+      "storedQuestions": 21,
+      "seconds": 92.5,
+      "costUsd": 0.0076314,
+      "error": "模型重复输出 meta 事件",
+      "httpRequests": 1,
+      "inputHash": "102bd77711ff353ad8c9daa5e1661fdd6af081a0f256f8584904219df9c3010a",
+      "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+      "providers": [
+        "OpenAI"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "paper": "崇明",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 108.8,
+      "costUsd": 0.00753004,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "102bd77711ff353ad8c9daa5e1661fdd6af081a0f256f8584904219df9c3010a",
+      "traceId": "c6c92344-3896-4123-ba60-eaf8918f7e2e",
+      "providers": [
+        "Xiaomi"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "inclusionai/ling-3.0-flash-vl",
+      "paper": "崇明",
+      "pages": 18,
+      "passed": false,
+      "storedQuestions": 0,
+      "seconds": 68.7,
+      "costUsd": 0.001287136,
+      "error": "模型流在 JSON 事件中途结束",
+      "httpRequests": 1,
+      "inputHash": "102bd77711ff353ad8c9daa5e1661fdd6af081a0f256f8584904219df9c3010a",
+      "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+      "providers": [
+        "Novita"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "deepseek/deepseek-v4.1-flash",
+      "paper": "崇明",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 34.1,
+      "costUsd": 0.0192075,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "102bd77711ff353ad8c9daa5e1661fdd6af081a0f256f8584904219df9c3010a",
+      "traceId": "32824381-6f1e-4cb4-9e84-1582916b6e8d",
+      "providers": [
+        "Together"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "qwen/qwen3.7-flash",
+      "paper": "崇明",
+      "pages": 18,
+      "passed": true,
+      "storedQuestions": 21,
+      "seconds": 143.1,
+      "costUsd": 0.003078883,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "102bd77711ff353ad8c9daa5e1661fdd6af081a0f256f8584904219df9c3010a",
+      "traceId": "1560011e-192d-4ab0-b7ea-af10797bfba6",
+      "providers": [
+        "Alibaba"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "paper": "奉贤",
+      "pages": 21,
+      "passed": false,
+      "storedQuestions": 13,
+      "seconds": 44.3,
+      "costUsd": 0.0058058,
+      "error": "原页图片数量与匹配结果矛盾，请重试",
+      "httpRequests": 1,
+      "inputHash": "eef9f579ab538a1d5d162db0c86b8de9dbe92970f0d1ea932f3a730cb471a79c",
+      "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+      "providers": [
+        "Claude Platform on AWS"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "paper": "奉贤",
+      "pages": 21,
+      "passed": false,
+      "storedQuestions": 20,
+      "seconds": 107.4,
+      "costUsd": 0.0087435,
+      "error": "模型重复输出 done 事件",
+      "httpRequests": 1,
+      "inputHash": "eef9f579ab538a1d5d162db0c86b8de9dbe92970f0d1ea932f3a730cb471a79c",
+      "traceId": "b814e9ec-cc03-4d64-a971-f25fc0a4b591",
+      "providers": [
+        "OpenAI"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "paper": "奉贤",
+      "pages": 21,
+      "passed": true,
+      "storedQuestions": 20,
+      "seconds": 130.5,
+      "costUsd": 0.008437531,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "eef9f579ab538a1d5d162db0c86b8de9dbe92970f0d1ea932f3a730cb471a79c",
+      "traceId": "edb198c5-24e3-442b-8118-b33e5e71e474",
+      "providers": [
+        "Novita"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "inclusionai/ling-3.0-flash-vl",
+      "paper": "奉贤",
+      "pages": 21,
+      "passed": false,
+      "storedQuestions": 0,
+      "seconds": 73.3,
+      "costUsd": 0.001458324,
+      "error": "模型流在 JSON 事件中途结束",
+      "httpRequests": 1,
+      "inputHash": "eef9f579ab538a1d5d162db0c86b8de9dbe92970f0d1ea932f3a730cb471a79c",
+      "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+      "providers": [
+        "Novita"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "deepseek/deepseek-v4.1-flash",
+      "paper": "奉贤",
+      "pages": 21,
+      "passed": true,
+      "storedQuestions": 20,
+      "seconds": 189.7,
+      "costUsd": 0.008834538,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "eef9f579ab538a1d5d162db0c86b8de9dbe92970f0d1ea932f3a730cb471a79c",
+      "traceId": "fb821d19-e239-4f50-9ec8-350dcc3dc7bd",
+      "providers": [
+        "Morph"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    },
+    {
+      "model": "qwen/qwen3.7-flash",
+      "paper": "奉贤",
+      "pages": 21,
+      "passed": true,
+      "storedQuestions": 20,
+      "seconds": 178.6,
+      "costUsd": 0.003780809,
+      "error": null,
+      "httpRequests": 1,
+      "inputHash": "eef9f579ab538a1d5d162db0c86b8de9dbe92970f0d1ea932f3a730cb471a79c",
+      "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+      "providers": [
+        "Alibaba"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "billingVerified": true
+    }
+  ]
+}
