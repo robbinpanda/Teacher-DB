@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FileText, LoaderCircle } from "lucide-react";
 import type { SourceDocument } from "../lib/types";
 import { documentGroup } from "../lib/workbench-documents";
+import { DocumentModelLogsButton } from "./review/DocumentModelLogsButton";
 
 function processingLabel(doc: SourceDocument) {
   if (doc.jobStatus === "paused") return "识别已暂停";
@@ -41,7 +42,7 @@ export function DocumentTable({ documents, selectionMode, selectedIds, retryingI
             <span>{status}</span><small>{doc.recognitionQuestionTotal ? `已识别 ${doc.recognizedQuestionCount ?? 0}/${doc.recognitionQuestionTotal} 题` : doc.nextAttemptAt ? `${new Date(doc.nextAttemptAt).toLocaleTimeString("zh-CN")} 重试` : doc.status === "uploading" ? "原卷正在准备" : "尚未进入审核"}</small>
           </div> : <div className="wb-review-progress"><span>{doc.approvedCount}<span> / {doc.questionCount} 题</span></span><div role="progressbar" aria-label={`${doc.name} 审核进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div></div>}</td>
           <td><time dateTime={doc.createdAt} title={new Date(doc.createdAt).toLocaleString("zh-CN")}><span className="wb-cell-primary">{new Date(doc.createdAt).toLocaleDateString("zh-CN")}</span><span className="wb-cell-secondary">{new Date(doc.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span></time></td>
-          <td><div className="wb-row-actions"><Link href={href}>{group === "pending_review" ? "审核" : "查看"}</Link><Link href={`/review/${doc.id}/logs`} className="wb-muted" aria-label={`识别日志 ${doc.name}`}>日志</Link><button type="button" className="wb-danger-text" disabled={busy} aria-label={`删除 ${doc.name}`} onClick={() => onDelete(doc)}>删除</button>
+          <td><div className="wb-row-actions"><Link href={href}>{group === "pending_review" ? "审核" : "查看"}</Link><DocumentModelLogsButton documentId={doc.id} documentName={doc.name} documentError={doc.lastError} className="wb-muted" label="日志" showIcon={false} /><button type="button" className="wb-danger-text" disabled={busy} aria-label={`删除 ${doc.name}`} onClick={() => onDelete(doc)}>删除</button>
             {doc.jobStatus === "failed" && <button type="button" disabled={busy || retryingIds.has(doc.id)} aria-label={`重试 ${doc.name}`} title={doc.completedPageCount >= doc.pageCount ? "重新执行收尾校验" : "重新识别整份试卷"} onClick={() => onRetry(doc)}>{retryingIds.has(doc.id) ? <LoaderCircle size={12} className="spin" /> : "重试"}</button>}
           </div></td>
         </tr>;

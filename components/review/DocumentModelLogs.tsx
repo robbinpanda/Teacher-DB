@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Copy, FileText, RefreshCw, AlertTriangle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Copy, FileText, RefreshCw, AlertTriangle, X } from "lucide-react";
 import type { ModelTraceContent, ModelTraceDetail, ModelTraceSummary } from "../../lib/model-trace-types";
 
 type Tab = "overview" | "prompt" | "reply" | "advanced";
@@ -35,7 +35,10 @@ async function request<T>(url: string, signal?: AbortSignal): Promise<T> {
   return body as T;
 }
 
-export function DocumentModelLogs({ documentId, documentName, documentError }: { documentId: string; documentName: string; documentError?: string | null }) {
+export function DocumentModelLogs({ documentId, documentName, documentError, titleId, onClose }: {
+  documentId: string; documentName: string; documentError?: string | null; titleId?: string; onClose?: () => void;
+}) {
+  const router = useRouter();
   const base = `/api/documents/${encodeURIComponent(documentId)}/model-traces`;
   const [traces, setTraces] = useState<ModelTraceSummary[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -106,10 +109,19 @@ export function DocumentModelLogs({ documentId, documentName, documentError }: {
   }
   const visible = traces.filter(trace => !onlyFailed || trace.status === "failed");
   const promptSections = tab === "prompt" && content && !content.nextOffset && content.offset === 0 ? prompts(content.text) : [];
+  function goBack() {
+    // Navigation excludes a new tab's about:blank entry from usable history.
+    const navigation = (window as Window & { navigation?: { canGoBack: boolean } }).navigation;
+    const canGoBack = navigation ? navigation.canGoBack : window.history.length > 1 && Boolean(document.referrer);
+    if (canGoBack) router.back(); else router.replace("/");
+  }
   return <div className="page-shell model-logs-page">
     <header className="model-logs-header">
-      <div><Link href={`/review/${documentId}`} className="model-logs-back"><ArrowLeft size={15} /> 返回试卷审核</Link><h1><FileText size={23} /> 识别日志</h1><p>{documentName}</p></div>
-      <button className="btn" type="button" onClick={() => { setListLoading(true); setDetailLoading(Boolean(selected)); setContentLoading(tab !== "overview"); setRefresh(value => value + 1); }}><RefreshCw size={15} /> 刷新日志</button>
+      <div>{!onClose && <button type="button" className="model-logs-back" onClick={goBack}><ArrowLeft size={15} /> 返回上一页</button>}<h1 id={titleId}><FileText size={23} /> 识别日志</h1><p>{documentName}</p></div>
+      <div className="model-logs-actions">
+        <button className="btn" type="button" onClick={() => { setListLoading(true); setDetailLoading(Boolean(selected)); setContentLoading(tab !== "overview"); setRefresh(value => value + 1); }}><RefreshCw size={15} /> 刷新日志</button>
+        {onClose && <button className="btn" type="button" onClick={onClose} aria-label="关闭识别日志"><X size={16} /> 关闭</button>}
+      </div>
     </header>
     {listError && <p className="form-error" role="alert">{listError}</p>}
     {!traces.length && !listLoading && !listError ? <section className="card model-logs-empty"><FileText size={32} /><h2>暂无模型调用日志</h2><p>启用日志记录前的识别无法补回原始回复。今后的模型调用会自动保留提示词、回复和错误。</p>{documentError && <p className="form-error">当前试卷错误：{documentError}</p>}</section>

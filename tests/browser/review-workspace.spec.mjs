@@ -133,6 +133,11 @@ test('默认显示公式，点击预览编辑 LaTeX，返回预览并保存原�
     await expect(input).toBeFocused();
     const source = '计算 $\\frac{1}{2}+x^2$ 的值。';
     await input.fill(source);
+    await page.getByRole('button', { name: /^识别日志 / }).click();
+    await expect(page.getByRole('dialog', { name: '识别日志', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(`/review/${f.id}`);
+    await page.getByRole('button', { name: '关闭识别日志', exact: true }).click();
+    await expect(input).toHaveValue(source);
     await page.getByRole('button', { name: '完成编辑', exact: true }).click();
     await expect(stem.locator('.katex .mfrac')).toBeVisible();
     await expect(input).toHaveCount(0);

@@ -3,20 +3,21 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 /** Native modal keeps focus inside, makes the page inert, and restores trigger focus. */
-export function WorkbenchDialog({ open, titleId, onClose, busy = false, drawer = false, children }: {
-  open: boolean; titleId: string; onClose: () => void; busy?: boolean; drawer?: boolean; children: ReactNode;
+export function WorkbenchDialog({ open, titleId, onClose, busy = false, drawer = false, className = "", children }: {
+  open: boolean; titleId: string; onClose: () => void; busy?: boolean; drawer?: boolean; className?: string; children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
     if (!open || !dialog) return;
     const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.showModal();
     document.body.style.overflow = "hidden";
-    return () => { dialog.close(); document.body.style.overflow = previousOverflow; };
+    return () => { dialog.close(); document.body.style.overflow = previousOverflow; previousFocus?.focus({ preventScroll: true }); };
   }, [open]);
 
-  return <dialog ref={ref} className={`wb-dialog${drawer ? " wb-drawer" : ""}`} aria-labelledby={titleId}
+  return <dialog ref={ref} className={`wb-dialog${drawer ? " wb-drawer" : ""}${className ? ` ${className}` : ""}`} aria-labelledby={titleId}
     onKeyDown={event => {
       if (event.key !== "Tab") return;
       const elements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]"))

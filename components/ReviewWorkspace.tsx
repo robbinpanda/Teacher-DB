@@ -15,7 +15,6 @@ import {
   Crop,
   ImageIcon,
   FileUp,
-  FileText,
   Info,
   LoaderCircle,
   MoreHorizontal,
@@ -40,6 +39,7 @@ import { missingPositiveNumbers } from "../lib/document-integrity";
 import { isValidQuestionNumber } from "../lib/question-number-source";
 import { useReviewProgress } from "./review/useReviewProgress";
 import { ReviewPending } from "./review/ReviewPending";
+import { DocumentModelLogsButton } from "./review/DocumentModelLogsButton";
 import { persistDirtyQuestionDrafts } from "../lib/review-draft-persistence";
 
 function clamp(value: number, min: number, max: number) {
@@ -603,7 +603,7 @@ export function ReviewWorkspace({
         </div>
         <div className="review-progress"><span>审核进度</span><div className="progress"><i style={{ width: progress + "%" }} /></div><b>{approvedCount} / {questions.length}</b></div>
         <div className="header-actions">
-          <Link href={`/review/${sourceDocument.id}/logs`} className="btn btn-small"><FileText size={14} /> 识别日志</Link>
+          <DocumentModelLogsButton documentId={sourceDocument.id} documentName={sourceDocument.name} documentError={sourceDocument.error} />
           <input ref={answerInputRef} hidden type="file" multiple accept="application/pdf,image/*" onChange={(event) => void importAnswers(event.target.files)} />
           {newResultsAvailable && <button className="btn btn-small" type="button" title="加载刚完成的识别结果" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "识别中…" : failedPages.length ? "重试整卷" : "继续整卷识别"}</button>}

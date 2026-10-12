@@ -22,7 +22,10 @@ test("从失败审核页查看历史、提示词、完整回复和校验错误�
   const { id } = await fixture();
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await page.goto(`/review/${id}`);
-  await page.getByRole("link", { name: "查看识别日志" }).click();
+  const trigger = page.getByRole("button", { name: /^查看识别日志/ });
+  await trigger.click();
+  await expect(page.getByRole("dialog", { name: "识别日志", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(`/review/${id}`);
   await expect(page.getByRole("heading", { name: "识别日志", exact: true })).toBeVisible();
   await expect(page.getByText("校验通过", { exact: true })).toBeVisible();
   await page.getByLabel("只看失败").check();
@@ -41,7 +44,81 @@ test("从失败审核页查看历史、提示词、完整回复和校验错误�
   await expect(page.locator("pre")).not.toContainText("�");
   await page.getByRole("button", { name: "上一段" }).click();
   await expect(page.locator("pre")).toContainText("原始HTTP回复_RAW_MARKER");
+  await page.getByRole("button", { name: "关闭识别日志", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page).toHaveURL(`/review/${id}`);
   expect(errors).toEqual([]);
+});
+
+test("工作台日志弹窗保持筛选、选择和滚动，支持关闭、Esc、遮罩及手机布局", async ({ page }) => {
+  const { id } = await fixture();
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByRole("tab", { name: /^全部/ }).click();
+  const search = page.getByRole("searchbox", { name: "搜索试卷名称" });
+  await search.fill("日志浏览器测试卷");
+  await page.getByLabel("试卷排序").selectOption("oldest");
+  await page.getByRole("button", { name: "批量操作", exact: true }).click();
+  const row = page.locator(`.wb-table tbody tr:has(a[href="/review/${id}"])`);
+  await row.getByRole("checkbox").check();
+  const trigger = row.getByRole("button", { name: /^日志 / });
+  await trigger.scrollIntoViewIfNeeded();
+  const scroll = await page.evaluate(() => window.scrollY);
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "识别日志", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL("/");
+  await expect(dialog.getByText("校验通过", { exact: true })).toBeVisible();
+  await dialog.locator("button:enabled, input:enabled, select:enabled").last().focus();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "刷新日志" })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "返回试卷审核" })).toHaveCount(0);
+  await page.screenshot({ path: "tmp/model-logs-dialog-desktop.png", fullPage: true });
+  await dialog.getByRole("button", { name: "关闭识别日志" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(search).toHaveValue("日志浏览器测试卷");
+  await expect(page.getByLabel("试卷排序")).toHaveValue("oldest");
+  await expect(row.getByRole("checkbox")).toBeChecked();
+  expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+
+  await trigger.click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await page.mouse.click(2, 2);
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(box.y + box.height).toBeLessThanOrEqual(844);
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(dialog.getByRole("button", { name: "关闭识别日志" })).toBeInViewport();
+  await page.screenshot({ path: "tmp/model-logs-dialog-mobile.png", fullPage: true });
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL("/");
+  expect(errors).toEqual([]);
+});
+
+test("旧日志链接返回真正的上一页，直接打开时回到工作台", async ({ page }) => {
+  const { id } = await fixture();
+  await page.goto("/papers");
+  await page.goto(`/review/${id}/logs`);
+  await page.getByRole("button", { name: "返回上一页", exact: true }).click();
+  await expect(page).toHaveURL("/papers");
+  const direct = await page.context().newPage();
+  await direct.goto(`/review/${id}/logs`);
+  await direct.getByRole("button", { name: "返回上一页", exact: true }).click();
+  await expect(direct).toHaveURL("/");
+  await direct.close();
 });
 
 test("日志API拒绝跨教师、跨试卷、非法文件名及修改请求；空历史有明确说明", async ({ page }) => {
