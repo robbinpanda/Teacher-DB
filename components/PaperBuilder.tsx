@@ -60,15 +60,31 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   const settings: PaperSettings = useMemo(() => ({ templateId, subject: paperSubject, stage: paperStage, showAnswers, answerSpaces, assetLayouts, sections, notice, infoFields, compact, style: paperStyle }), [answerSpaces, assetLayouts, compact, infoFields, notice, paperStage, paperStyle, paperSubject, sections, showAnswers, templateId]);
   const draftFingerprint = useMemo(() => JSON.stringify({ title, subtitle, ids, settings }), [ids, settings, subtitle, title]);
   const savedFingerprint = useRef<string | null>(initialPaper ? draftFingerprint : null);
+  const currentFingerprint = useRef(draftFingerprint);
+  const saveInFlight = useRef(false);
   const typeCount = new Set(selected.map((question) => question.type)).size;
 
   useEffect(() => {
+    currentFingerprint.current = draftFingerprint;
     setSaveState((current) => {
       if (current === "saving") return current;
       if (!ids.length && !initialPaper) return "idle";
       return savedFingerprint.current === draftFingerprint ? "saved" : "dirty";
     });
   }, [draftFingerprint, ids.length, initialPaper]);
+
+  useEffect(() => {
+    const hasChanges = () => (ids.length > 0 || Boolean(initialPaper)) && savedFingerprint.current !== currentFingerprint.current;
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (hasChanges()) event.preventDefault(); };
+    const beforeNavigate = (event: MouseEvent) => {
+      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      if (!link || link.target === "_blank" || link.download || event.ctrlKey || event.metaKey || !hasChanges()) return;
+      if (!window.confirm("试卷有未保存修改，确定离开？")) { event.preventDefault(); event.stopPropagation(); }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", beforeNavigate, true);
+    return () => { window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", beforeNavigate, true); };
+  }, [ids.length, initialPaper]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -144,10 +160,12 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   }
 
   async function savePaper() {
+    if (saveInFlight.current) return;
     if (!ids.length) {
       setPdfError("请先从题库选择题目");
       return;
     }
+    saveInFlight.current = true;
     setSaveState("saving");
     setPdfError("");
     try {
@@ -156,11 +174,15 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
       const result = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "保存失败");
       savedFingerprint.current = draftFingerprint;
-      setSaveState("saved");
-      if (!initialPaper) router.replace(`/papers/${encodeURIComponent(paperId)}`);
+      const unchanged = currentFingerprint.current === draftFingerprint;
+      setSaveState(unchanged ? "saved" : "dirty");
+      // Do not replace the editor with server data while newer local edits exist.
+      if (!initialPaper && unchanged) router.replace(`/papers/${encodeURIComponent(paperId)}`);
     } catch (error) {
       setSaveState("error");
       setPdfError(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      saveInFlight.current = false;
     }
   }
 

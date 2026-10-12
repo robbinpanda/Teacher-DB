@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { BookOpen, Check, Download, FlaskConical, Upload } from "lucide-react";
 import { subjects } from "../lib/education-taxonomy";
 import { builtInTeachingSkill, skillGrades } from "../lib/teaching-skill-catalog";
@@ -24,14 +24,15 @@ function downloadSkill(name: string, content: string) {
 export function TeachingSkills() {
   const [subject, setSubject] = useState<string>("数学");
   const [grade, setGrade] = useState("九年级");
+  const canLeaveRef = useRef<() => boolean>(() => true);
   return <div className="school-page skill-page">
     <header className="school-page-header"><div><span><BookOpen size={14} /> 个性化识别方案</span><h1>教学 Skills</h1><p>让 AI 更准确地识别你的试卷。生成专属方案，测试后保存复用。</p></div></header>
-    <div className="skill-scope"><label>学科<select value={subject} onChange={e => setSubject(e.target.value)}>{subjects.map(s => <option key={s}>{s}</option>)}</select></label><label>年级<select value={grade} onChange={e => setGrade(e.target.value)}>{skillGrades.map(g => <option key={g}>{g}</option>)}</select></label><span>按适用范围管理 · 同一年级、学科可启用一个个人方案</span></div>
-    <SkillWorkbench key={`${subject}/${grade}`} subject={subject} grade={grade} />
+    <div className="skill-scope"><label>学科<select value={subject} onChange={e => { if (canLeaveRef.current()) setSubject(e.target.value); }}>{subjects.map(s => <option key={s}>{s}</option>)}</select></label><label>年级<select value={grade} onChange={e => { if (canLeaveRef.current()) setGrade(e.target.value); }}>{skillGrades.map(g => <option key={g}>{g}</option>)}</select></label><span>按适用范围管理 · 同一年级、学科可启用一个个人方案</span></div>
+    <SkillWorkbench key={`${subject}/${grade}`} subject={subject} grade={grade} canLeaveRef={canLeaveRef} />
   </div>;
 }
 
-function SkillWorkbench({ subject, grade }: { subject: string; grade: string }) {
+function SkillWorkbench({ subject, grade, canLeaveRef }: { subject: string; grade: string; canLeaveRef: RefObject<() => boolean> }) {
   const [view, setView] = useState<"home" | "create" | "detail" | "default">("home");
   const [tab, setTab] = useState<"overview" | "test" | "advanced">("overview");
   const [search, setSearch] = useState("");
@@ -57,6 +58,12 @@ function SkillWorkbench({ subject, grade }: { subject: string; grade: string }) 
   const base = builtInTeachingSkill(subject, grade);
   const dirty = Boolean(selected && (content !== selected.content || name !== selected.name));
   const latest = trials.find(trial => trial.revision === selected?.revision);
+  useEffect(() => {
+    canLeaveRef.current = () => !busy && (!dirty || window.confirm("方案有未保存修改，确定切换适用范围？"));
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty || busy) event.preventDefault(); };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => { canLeaveRef.current = () => true; window.removeEventListener("beforeunload", beforeUnload); };
+  }, [busy, dirty, canLeaveRef]);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,9 +138,9 @@ function SkillWorkbench({ subject, grade }: { subject: string; grade: string }) 
         <label className="skill-field">名称<input maxLength={100} value={name} disabled={!!busy} onChange={e => setName(e.target.value)} /></label>
         <label className="skill-field">个人 Skill · v{selected.revision}{selected.active ? " · 正在使用" : " · 未启用"}<textarea spellCheck={false} rows={15} maxLength={12000} value={content} disabled={!!busy} onChange={e => setContent(e.target.value)} /></label>
         </>}
-        <div className="skill-actions"><button className="btn" disabled={!!busy || !dirty} onClick={() => void mutate("save", { content, name })}>保存新版本</button><button className="btn" disabled={!!busy} onClick={() => downloadSkill(name, content)}><Download size={14} /> 导出</button><button className="btn btn-primary" disabled={!!busy || dirty} onClick={() => void mutate("trial", { profileId, reviewerProfileId })}><FlaskConical size={14} /> 用当前版本试识别并复核</button><button className="btn" disabled={!!busy || dirty || latest?.humanVerdict !== "approved" || !!selected.active} onClick={() => void mutate("activate")}><Check size={14} /> 4. 启用已复核版本</button>{!!selected.active && <button className="btn" disabled={!!busy} onClick={() => void mutate("deactivate")}>停用</button>}</div>
+        <div className="skill-actions"><button className="btn" disabled={!!busy || !dirty} onClick={() => void mutate("save", { content, name })}>保存新版本</button><button className="btn" disabled={!!busy} onClick={() => downloadSkill(name, content)}><Download size={14} /> 导出</button><button className="btn btn-primary" disabled={!!busy || dirty || !selected.sampleKey} onClick={() => void mutate("trial", { profileId, reviewerProfileId })}><FlaskConical size={14} /> 用当前版本试识别并复核</button><button className="btn" disabled={!!busy || dirty || latest?.humanVerdict !== "approved" || !!selected.active} onClick={() => void mutate("activate")}><Check size={14} /> 4. 启用已复核版本</button>{!!selected.active && <button className="btn" disabled={!!busy} onClick={() => void mutate("deactivate")}>停用</button>}</div>
         {dirty && <p>有未保存修改；试识别前请先保存。</p>}
-        {tab === "test" && <><p>使用生成方案时保存的原始样例测试；目前不支持更换测试样例。</p><div className="skill-scope"><label>识别模型<select value={profileId} disabled={!!busy} onChange={e => setProfileId(e.target.value)}><option value="">默认模型</option>{profiles.map(p => <option value={p.id} key={p.id}>{p.displayName}</option>)}</select></label><label>复核模型<select value={reviewerProfileId} disabled={!!busy} onChange={e => setReviewerProfileId(e.target.value)}><option value="">同模型独立复核</option>{profiles.map(p => <option value={p.id} key={p.id}>{p.displayName}</option>)}</select></label></div><div className="skill-review-grid"><div>{selected.sampleKey && <><h3>原始样例</h3><a href={`/api/files/${selected.sampleKey}`} target="_blank" rel="noreferrer">打开原图放大核对</a><Image src={`/api/files/${selected.sampleKey}`} width={1200} height={1800} unoptimized alt="用于 Skill 生成与试识别的原始试卷" className="skill-sample" /></>}</div><div>
+        {tab === "test" && <><p>{selected.sampleKey ? "使用生成方案时保存的原始样例测试；目前不支持更换测试样例。" : "此方案未保存样例，无法试识别。请通过上传样例创建新的方案。"}</p><div className="skill-scope"><label>识别模型<select value={profileId} disabled={!!busy} onChange={e => setProfileId(e.target.value)}><option value="">默认模型</option>{profiles.map(p => <option value={p.id} key={p.id}>{p.displayName}</option>)}</select></label><label>复核模型<select value={reviewerProfileId} disabled={!!busy} onChange={e => setReviewerProfileId(e.target.value)}><option value="">同模型独立复核</option>{profiles.map(p => <option value={p.id} key={p.id}>{p.displayName}</option>)}</select></label></div><div className="skill-review-grid"><div>{selected.sampleKey && <><h3>原始样例</h3><a href={`/api/files/${selected.sampleKey}`} target="_blank" rel="noreferrer">打开原图放大核对</a><Image src={`/api/files/${selected.sampleKey}`} width={1200} height={1800} unoptimized alt="用于 Skill 生成与试识别的原始试卷" className="skill-sample" /></>}</div><div>
           {latest ? <><h3>当前版本试识别 · {latest.recognition.questions.length} 题</h3><p>识别：{latest.modelName} · 复核：{latest.reviewerName}</p><p className={latest.review.accurate && latest.review.reasonable ? "skill-success" : "school-inline-error"}>模型判断：{latest.review.accurate ? "准确性通过" : "准确性有疑点"} · {latest.review.reasonable ? "合理性通过" : "合理性有疑点"}</p><p>{latest.review.summary}</p>
             {latest.recognition.warnings.map((warning, i) => <p key={i} className="school-inline-error">{warning}</p>)}
             {latest.review.issues.map((issue, i) => <p key={i} className="school-inline-error">{issue.number} · {issue.field}：{issue.reason}</p>)}

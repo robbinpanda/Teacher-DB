@@ -20,6 +20,12 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
   const { mode } = useTeacherMode();
   const [folders, setFolders] = useState(initialFolders);
   const [papers, setPapers] = useState(initialPapers);
+  const [previousPapers, setPreviousPapers] = useState(initialPapers);
+  if (previousPapers !== initialPapers) {
+    setPreviousPapers(initialPapers);
+    setPapers(initialPapers);
+    setFolders(initialFolders);
+  }
   const [search, setSearch] = useState("");
   const [createParentId, setCreateParentId] = useState<string | null | undefined>(undefined);
   const [newFolderName, setNewFolderName] = useState("");

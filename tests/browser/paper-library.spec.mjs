@@ -38,6 +38,23 @@ test('两类试卷统一管理，恢复编排不会加入其他题目，保存�
   expect(db.prepare('SELECT COUNT(*) FROM paper_items WHERE paper_id=?').pluck().get(paper)).toBe(2);
   await page.reload();
   await expect(page.locator('.printable-paper')).not.toContainText('链路题目3');
+  let release, captured;
+  const held = new Promise(resolve => { release = resolve; });
+  const received = new Promise(resolve => { captured = resolve; });
+  await page.route('**/api/papers', async route => {
+    const result = await route.fetch(); captured(); await held;
+    await route.fulfill({ response: result });
+  });
+  await page.getByRole('button', { name: '保存试卷', exact: true }).click();
+  await received;
+  await page.locator('input[value="组卷链路测试"]').fill('保存中新增的修改');
+  release();
+  await expect(page.locator('.paper-save-state')).toContainText('有未保存修改');
+  await expect(page.getByRole('button', { name: '下载试卷', exact: true })).toBeDisabled();
+  await page.unroute('**/api/papers');
+  await page.getByRole('button', { name: '保存试卷', exact: true }).click();
+  await expect(page.locator('.paper-save-state')).toContainText('已保存');
+  expect(db.prepare('SELECT title FROM papers WHERE id=?').pluck().get(paper)).toBe('保存中新增的修改');
   await page.goto(`/papers/${paper}/preview`);
   await expect(page.getByRole('link', { name: '继续编辑' })).toBeVisible();
   await expect(page.locator('.printable-paper')).toContainText('链路题目1');
