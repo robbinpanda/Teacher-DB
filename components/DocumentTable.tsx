@@ -11,6 +11,7 @@ function processingLabel(doc: SourceDocument) {
   if (doc.jobStatus === "queued") return "排队中";
   if (doc.status === "awaiting_model") return "等待配置模型";
   if (doc.status === "uploading") return "准备页面中";
+  if (!doc.jobStatus && doc.status === "extracting") return "尚未进入队列";
   return "识别中";
 }
 
@@ -43,7 +44,7 @@ export function DocumentTable({ documents, selectionMode, selectedIds, retryingI
           </div> : <div className="wb-review-progress"><span>{doc.approvedCount}<span> / {doc.questionCount} 题</span></span><div role="progressbar" aria-label={`${doc.name} 审核进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div></div>}</td>
           <td><time dateTime={doc.createdAt} title={new Date(doc.createdAt).toLocaleString("zh-CN")}><span className="wb-cell-primary">{new Date(doc.createdAt).toLocaleDateString("zh-CN")}</span><span className="wb-cell-secondary">{new Date(doc.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span></time></td>
           <td><div className="wb-row-actions"><Link href={href}>{group === "pending_review" ? "审核" : "查看"}</Link><DocumentModelLogsButton documentId={doc.id} documentName={doc.name} documentError={doc.lastError} className="wb-muted" label="日志" showIcon={false} /><button type="button" className="wb-danger-text" disabled={busy} aria-label={`删除 ${doc.name}`} onClick={() => onDelete(doc)}>删除</button>
-            {doc.jobStatus === "failed" && <button type="button" disabled={busy || retryingIds.has(doc.id)} aria-label={`重试 ${doc.name}`} title={doc.completedPageCount >= doc.pageCount ? "重新执行收尾校验" : "重新识别整份试卷"} onClick={() => onRetry(doc)}>{retryingIds.has(doc.id) ? <LoaderCircle size={12} className="spin" /> : "重试"}</button>}
+            {(doc.jobStatus === "failed" || (!doc.jobStatus && ["awaiting_model", "extracting"].includes(doc.status))) && <button type="button" disabled={busy || retryingIds.has(doc.id)} aria-label={`${doc.jobStatus ? "重试" : "开始识别"} ${doc.name}`} title={doc.completedPageCount >= doc.pageCount ? "重新执行收尾校验" : "使用当前选中的模型识别整份试卷"} onClick={() => onRetry(doc)}>{retryingIds.has(doc.id) ? <LoaderCircle size={12} className="spin" /> : doc.jobStatus ? "重试" : "开始识别"}</button>}
           </div></td>
         </tr>;
       })}</tbody>

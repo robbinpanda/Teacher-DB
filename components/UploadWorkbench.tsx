@@ -335,7 +335,12 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
       try {
         await ensureModelReady(profileId);
       } catch (error) {
-        patchTask(taskId, { stage: "waiting_model", message: (error instanceof Error ? error.message : "识题模型尚未配置") + " 原卷和分页图已经安全保存，可配置模型后在审核页重试识别。" });
+        const message = (error instanceof Error ? error.message : "识题模型尚未配置") + " 原卷和分页图已经安全保存，请选择模型后开始识别。";
+        await fetchUploadJson(`/api/documents/${currentDocumentId}`, {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "awaiting_model", error: message }),
+        });
+        patchTask(taskId, { stage: "waiting_model", message });
         router.refresh();
         return;
       }
@@ -434,11 +439,11 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
           <div className="wb-field"><div className="wb-field-heading"><span>教学 Skill</span><Link href="/settings/skills">查看与定制</Link></div><div className="wb-field-note">自动使用当前年级、学科已启用的个人 Skill；未设置时使用默认规则。{teachingProfile.textbook && <span>教材：{teachingProfile.textbook}</span>}</div></div>
           <div className="wb-field"><div className="wb-field-heading"><label htmlFor="import-model">识别模型</label><Link href="/settings/models">管理模型</Link></div>
             <select id="import-model" aria-label="选择识别模型" value={selectedProfileId} disabled={modelLoading || modelSaving || modelProfiles.length === 0} onChange={event => void selectModel(event.target.value)}>
-              {modelProfiles.length === 0 && <option value="">{modelLoading ? "正在读取模型…" : "暂无可用模型"}</option>}
+              <option value="" disabled>{modelLoading ? "正在读取模型…" : modelProfiles.length ? "请选择识别模型" : "暂无可用模型"}</option>
               {modelProfiles.map(profile => <option value={profile.id} key={profile.id}>{profile.displayName}</option>)}
             </select>
             {modelFeedback && <p className={modelError ? "wb-field-error" : "wb-field-hint"} role="status">{modelFeedback}</p>}
-            {unconfiguredModel && <p className="wb-field-hint">{selectedModel ? "当前模型尚未配置 API Key。" : "尚未配置识别模型。"}可先上传并保存原卷，配置模型后在试卷详情继续识别。</p>}
+            {unconfiguredModel && <p className="wb-field-hint">{selectedModel ? "当前模型尚未配置 API Key。" : modelProfiles.length ? "尚未选择识别模型。" : "尚未配置识别模型。"}可先上传并保存原卷，配置模型后在试卷详情继续识别。</p>}
           </div>
         </fieldset>
         <div className="wb-field wb-concurrency"><div className="wb-field-heading"><label htmlFor="import-concurrency">并行试卷数</label><span>已应用 {appliedConcurrency} 份</span></div>

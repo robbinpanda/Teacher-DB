@@ -4,7 +4,7 @@ export type DocumentStatus = typeof documentStatuses[number];
 const transitions: Record<DocumentStatus, readonly DocumentStatus[]> = {
   uploading: ["awaiting_model", "extracting", "failed"],
   awaiting_model: ["uploading", "extracting", "failed"],
-  extracting: ["uploading", "reviewing", "failed"],
+  extracting: ["uploading", "awaiting_model", "reviewing", "failed"],
   reviewing: ["uploading", "extracting", "complete", "failed"],
   failed: ["uploading", "extracting", "reviewing"],
   complete: ["reviewing", "extracting"],

@@ -59,6 +59,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     if (payload.status && !canTransitionDocument(document.status, payload.status)) {
       return { error: `不能从 ${document.status} 直接转换为 ${payload.status}`, statusCode: 409 } as const;
     }
+    if (payload.status === "awaiting_model") {
+      const job = transaction.prepare("SELECT 1 FROM document_jobs WHERE document_id = ? AND status IN ('queued','processing','retry_wait','paused')").get(documentId);
+      const preparation = transaction.prepare("SELECT 1 FROM document_preparations WHERE document_id = ? AND status IN ('queued','processing','retry_wait')").get(documentId);
+      if (job || preparation) return { error: "试卷已有处理任务，不能标记为等待配置模型", statusCode: 409 } as const;
+    }
     if (payload.status === "complete") {
       const counts = transaction.prepare(
         `SELECT COUNT(*) AS total,

@@ -160,12 +160,54 @@ test("有效 PDF 在点击开始后使用真实上传接口保存原卷和分页
   const uploaded = result.documents.find(document => document.name === name);
   expect(uploaded).toBeTruthy();
   expect(uploaded.pageCount).toBe(1);
+  expect(uploaded.status).toBe("awaiting_model");
+  expect(uploaded.jobStatus).toBeFalsy();
   expect(requests.length).toBeGreaterThanOrEqual(1);
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   await expect(page.getByRole("button", { name: /^导入任务/ })).toBeVisible();
   await page.getByRole("tab", { name: /^待处理/ }).click();
   await expect(page.locator(".document-main strong", { hasText: name })).toBeVisible();
+  await page.reload();
+  const row = page.locator(".wb-table tbody tr", { hasText: name });
+  await expect(row).toContainText("等待配置模型");
+  await expect(row.getByRole("button", { name: `开始识别 ${name}` })).toBeVisible();
   await page.request.delete(`/api/documents/${uploaded.id}`, { data: { mode: "with_questions" } });
+});
+
+test("唯一模型未选中时显示占位项，选择后才保存模型选择", async ({ page }) => {
+  let selected = null;
+  let changes = 0;
+  await page.route("**/api/model-profiles", async route => {
+    if (route.request().method() === "PATCH") {
+      selected = route.request().postDataJSON().selectedProfileId;
+      changes++;
+    }
+    await route.fulfill({ json: { profiles: [{ id: "only", displayName: "唯一已配置模型", model: "test", apiKeyMask: "configured" }], selectedProfileId: selected } });
+  });
+  await page.goto("/?import=1");
+  const select = page.getByLabel("选择识别模型");
+  await expect(select).toHaveValue("");
+  await expect(select.locator("option:checked")).toHaveText("请选择识别模型");
+  expect(changes).toBe(0);
+  await select.selectOption("only");
+  await expect.poll(() => selected).toBe("only");
+  expect(changes).toBe(1);
+});
+
+test("无队列文档可记录待选模型，已有任务时拒绝覆盖", async ({ request }) => {
+  const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, "teacher-question-bank.sqlite3"));
+  const id = crypto.randomUUID(), stamp = new Date().toISOString();
+  db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,created_at,updated_at) VALUES (?,'workbench-browser','入队状态测试','application/pdf','extracting',?,?)").run(id,stamp,stamp);
+  const response = await request.patch(`/api/documents/${id}`, { data: { status: "awaiting_model", error: "请选择模型" } });
+  expect(response.status()).toBe(200);
+  expect(db.prepare("SELECT status FROM documents WHERE id=?").pluck().get(id)).toBe("awaiting_model");
+  db.prepare("UPDATE documents SET status='extracting' WHERE id=?").run(id);
+  db.prepare("INSERT INTO document_jobs (document_id,owner_id,status,queued_at,updated_at) VALUES (?,'workbench-browser','paused',?,?)").run(id,stamp,stamp);
+  expect((await request.patch(`/api/documents/${id}`, { data: { status: "awaiting_model" } })).status()).toBe(409);
+  expect(db.prepare("SELECT status FROM documents WHERE id=?").pluck().get(id)).toBe("extracting");
+  db.prepare("DELETE FROM document_jobs WHERE document_id=?").run(id);
+  db.prepare("DELETE FROM documents WHERE id=?").run(id);
+  db.close();
 });
 
 test("表格删除确认支持取消、保留题目与批量删除", async ({ page }) => {

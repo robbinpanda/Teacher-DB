@@ -104,7 +104,7 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
       setQueueState(result);
       setDocuments((items) => items.map((item) => {
         if (documentGroup(item) !== "preprocessing") return item;
-        if (action === "pause" && item.jobStatus !== "processing") {
+        if (action === "pause" && item.jobStatus && item.jobStatus !== "processing") {
           return { ...item, status: "extracting", jobStatus: "paused", nextAttemptAt: null };
         }
         if (action === "resume" && ["paused", "retry_wait", "failed", "queued"].includes(item.jobStatus ?? "")) {
