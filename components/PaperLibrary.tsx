@@ -188,7 +188,7 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
   }
 
   return <div className="paper-library-page">
-    <header className="paper-library-header"><div><h1>试卷库</h1><p>统一管理上传原卷与组卷作品，保留题目来源与可编辑版式。</p></div><div className="resource-actions"><Link href="/?import=1" className="btn">上传原卷</Link><Link href="/papers/new" className="btn btn-primary"><FilePlus2 size={15} /> 新建组卷</Link></div></header>
+    <header className="paper-library-header"><div><h1>试卷库</h1><p>收藏每一份原卷，打磨每一份作品。</p></div><div className="resource-actions"><Link href="/?import=1" className="btn"><FileText size={16} />上传原卷</Link><Link href="/papers/new" className="btn btn-primary"><Plus size={17} /> 新建组卷</Link></div></header>
     <div className="resource-tabs" role="tablist" aria-label="试卷类型">{([['all', '全部试卷'], ['uploaded', '上传原卷'], ['assembled', '组卷作品']] as const).map(([value, label]) => <button key={value} role="tab" aria-selected={kind === value} onClick={() => { setKind(value); setOpenMenu(null); }}>{label}<span>{papers.filter(p => value === 'all' || p.kind === value).length}</span></button>)}<button className="resource-folder-toggle" aria-expanded={foldersOpen} onClick={() => setFoldersOpen(!foldersOpen)}><Folder size={15} /> 文件夹管理</button></div>
     <div className={`paper-library-shell asset-library${foldersOpen || !allPapersView ? " with-folders" : ""}`}>
       {(foldersOpen || !allPapersView) && <aside className="paper-folder-tree">
@@ -200,7 +200,8 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
       <main className="paper-library-main">
         <div className="paper-library-toolbar">
           <nav className="paper-breadcrumbs" aria-label="当前位置">
-            {allPapersView ? <button type="button" onClick={openAllPapers}>全部试卷</button> : rootView ? <button type="button" onClick={() => openFolder(null)}>未分文件夹</button> : <><button type="button" onClick={openAllPapers}>试卷库</button>{breadcrumbs.map((folder) => <span key={folder.id}><ChevronRight size={12} /><button type="button" onClick={() => openFolder(folder.id)}>{folder.name}</button></span>)}</>}
+            {allPapersView ? <strong>{kind === "uploaded" ? "上传原卷" : kind === "assembled" ? "组卷作品" : "全部试卷"}</strong> : rootView ? <button type="button" onClick={() => openFolder(null)}>未分文件夹</button> : <><button type="button" onClick={openAllPapers}>试卷库</button>{breadcrumbs.map((folder) => <span key={folder.id}><ChevronRight size={12} /><button type="button" onClick={() => openFolder(folder.id)}>{folder.name}</button></span>)}</>}
+            <span className="asset-result-count">{visiblePapers.length} 份{normalizedSearch ? "匹配" : ""}</span>
           </nav>
           <div className="paper-library-controls">
             <label className="paper-library-search"><Search size={13} /><input aria-label="搜索当前范围试卷" placeholder="搜索试卷名称、学科…" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
@@ -210,7 +211,6 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
           </div>
         </div>
         {error && createParentId === undefined && !renameTarget && <p className="paper-library-error">{error}</p>}
-        <div className="paper-library-summary"><strong>{normalizedSearch ? `搜索“${search.trim()}”` : allPapersView ? "全部试卷" : rootView ? "未分文件夹" : currentFolder?.name}</strong><span>{visibleFolders.length ? `${visibleFolders.length} 个文件夹 · ` : ""}{visiblePapers.length} 份试卷</span></div>
         {visibleFolders.length > 0 && <div className="asset-folders">{visibleFolders.map(folder => <div key={folder.id}><button className="btn" onClick={() => openFolder(folder.id)}><Folder size={15} /> {folder.name}</button><button className="btn btn-small" aria-label={`重命名${folder.name}`} onClick={() => beginRename({ kind: "folder", id: folder.id, name: folder.name })}><Pencil size={13} /></button><button className="btn btn-small" aria-label={`删除空文件夹${folder.name}`} disabled={busy} onClick={() => void run(() => removeFolder(folder))}><Trash2 size={13} /></button></div>)}</div>}
         <div className="asset-table-scroll"><table className="asset-table"><thead><tr><th>试卷名称</th><th>类型</th><th>学科 / 年级</th><th>题量</th><th>更新时间</th><th>操作</th></tr></thead><tbody>
           {visiblePapers.map(paper => {
@@ -218,7 +218,7 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
             const uploaded = paper.kind === "uploaded";
             const editUrl = uploaded ? `/review/${paper.id}` : `/papers/${paper.id}`;
             return <tr key={menuKey} data-kind={paper.kind}>
-              <td><Link className="asset-title" href={uploaded && paper.sourceRemoved ? `/bank?documentId=${paper.id}` : editUrl}>{paper.title}</Link><small>{paper.sourceRemoved ? "原文件已删除 · 保留题目来源" : statusLabels[paper.status] ?? paper.status}{paper.subtitle ? ` · ${paper.subtitle}` : ""}</small></td>
+              <td><div className="asset-identity"><span className={`asset-type-icon ${paper.kind}`} aria-hidden="true">{uploaded ? <FileText size={21} strokeWidth={1.7} /> : <FilePlus2 size={21} strokeWidth={1.7} />}</span><div><Link className="asset-title" href={uploaded && paper.sourceRemoved ? `/bank?documentId=${paper.id}` : editUrl}>{paper.title}</Link><small>{paper.sourceRemoved ? "原文件已删除 · 保留题目来源" : statusLabels[paper.status] ?? paper.status}{paper.subtitle ? ` · ${paper.subtitle}` : ""}</small></div></div></td>
               <td><span className="resource-badge">{uploaded ? "上传原卷" : "组卷作品"}</span></td>
               <td>{[paper.subject, paper.grade || (paper.stage ? stageLabel(paper.stage as "primary" | "middle" | "high") : "")].filter(Boolean).join(" · ") || "未设置"}</td>
               <td>{paper.questionCount} 题{uploaded && paper.questionCount > paper.approvedCount && <small>{paper.approvedCount} 题已入库</small>}</td><td><time dateTime={paper.updatedAt}>{formatTime(paper.updatedAt)}</time></td>

@@ -1,43 +1,94 @@
-/* Shared resource management surfaces */
-.resource-actions, .asset-folders, .asset-folders > div { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.resource-tabs { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 16px; border-bottom:1px solid var(--line); padding-bottom:10px; }
-.resource-tabs button { display:flex; gap:8px; align-items:center; min-height:38px; padding:8px 14px; background:transparent; border:1px solid transparent; border-radius:8px; color:var(--muted); cursor:pointer; font-size:14px; }
-.resource-tabs button[aria-selected="true"] { color:var(--green); background:#e9f3ed; border-color:#d1e3d8; font-weight:600; }
-.resource-tabs button span { font-size:12px; }
-.resource-tabs .resource-folder-toggle { margin-left:auto; border-color:var(--line); }
-.paper-library-page { padding:28px 32px 48px; }
+/* Resource surfaces: shared typography and controls, separate from printed papers. */
+:is(.paper-library-page, .bank-explorer-page, .skill-page) {
+  --resource-ink: #233c33;
+  --resource-muted: #718078;
+  --resource-border: #e3e9e5;
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: var(--resource-ink);
+  background: #f7f9f8;
+}
+:is(.paper-library-page, .bank-explorer-page, .skill-page) h1 {
+  font-family: inherit; font-size: 28px; font-weight: 650; letter-spacing: -.035em; line-height: 1.3;
+}
+:is(.paper-library-page, .bank-explorer-page, .skill-page) .btn {
+  min-height: 38px; padding: 8px 14px; border-radius: 8px; box-shadow: none;
+  font-size: 13px; font-weight: 500; gap: 7px;
+}
+:is(.paper-library-page, .bank-explorer-page, .skill-page) .btn-primary {
+  background: #216e50; border-color: #216e50; color: white;
+}
+:is(.paper-library-page, .bank-explorer-page, .skill-page) .btn-primary:hover:not(:disabled) { background: #18563e; }
+:is(.paper-library-page, .bank-explorer-page, .skill-page) :is(button, a, input, select, summary):focus-visible {
+  outline: 2px solid #29815d; outline-offset: 3px;
+}
+.resource-actions, .asset-folders, .asset-folders > div { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.resource-tabs { display:flex; gap:24px; align-items:center; flex-wrap:wrap; margin:0 0 22px; border-bottom:1px solid var(--resource-border, var(--line)); padding:0; }
+.resource-tabs button { position:relative; display:flex; gap:8px; align-items:center; min-height:46px; padding:10px 2px 14px; background:transparent; border:0; border-radius:0; color:#718078; cursor:pointer; font:inherit; font-size:14px; }
+.resource-tabs button[aria-selected="true"] { color:#216e50; font-weight:600; }
+.resource-tabs button[aria-selected="true"]::after { content:""; position:absolute; bottom:-1px; left:0; right:0; height:3px; background:#216e50; border-radius:3px 3px 0 0; }
+.resource-tabs button span { min-width:22px; padding:2px 6px; border-radius:5px; background:#edf1ee; font-size:11px; line-height:1.4; text-align:center; }
+.resource-tabs button[aria-selected="true"] span { background:#e0eee6; }
+.resource-tabs .resource-folder-toggle { margin-left:auto; padding:8px 10px; min-height:34px; border-radius:7px; font-size:13px; }
+.resource-tabs .resource-folder-toggle:hover { background:#edf1ee; }
+.paper-library-page { padding:36px 36px 48px; }
 .paper-library-header, .paper-library-shell { max-width:none; }
-.paper-library-header h1 { font-size:28px; }
-.paper-library-header p { font-size:14px; }
-.paper-library-shell.asset-library { display:block; min-height:340px; border-radius:10px; box-shadow:none; overflow:visible; }
+.paper-library-header { align-items:center; margin-bottom:28px; }
+.paper-library-header h1 { margin:0; }
+.paper-library-header p { font-size:13px; margin:8px 0 0; color:#718078; }
+.paper-library-shell.asset-library { display:block; min-height:0; border:1px solid var(--resource-border); border-radius:12px; box-shadow:0 2px 4px #233c3303; overflow:visible; }
 .paper-library-shell.asset-library.with-folders { display:grid; grid-template-columns:210px minmax(0,1fr); }
-.asset-library .paper-folder-tree { border-radius:10px 0 0 10px; }
+.asset-library .paper-folder-tree { border-radius:12px 0 0 12px; background:#fafcfb; }
 .asset-library .paper-folder-tree button { font-size:13px; }
-.asset-library .paper-library-main { padding:16px; min-width:0; }
-.asset-library .paper-library-toolbar { flex-wrap:wrap; gap:12px; }
-.asset-library .paper-library-search { width:260px; }
+.asset-library .paper-folder-heading strong { font-size:12px; }
+.asset-library .paper-library-main { padding:0; min-width:0; }
+.asset-library .paper-library-toolbar { flex-wrap:wrap; gap:12px; min-height:76px; padding:18px 22px; border:0; }
+.asset-library .paper-breadcrumbs { gap:10px; font-size:14px; }
+.asset-library .paper-breadcrumbs button { font-size:13px; }
+.asset-library .paper-breadcrumbs .asset-result-count { color:#859188; font-size:12px; font-weight:400; }
+.asset-library .paper-library-search { width:270px; background:#fafcfb; border-radius:7px; }
 .asset-library input, .asset-library select { font-size:13px; min-height:36px; }
-.asset-library .paper-library-summary, .asset-library .paper-breadcrumbs button { font-size:13px; }
-.asset-table-scroll { overflow-x:auto; padding-bottom:200px; margin-bottom:-180px; }
+.asset-library .paper-library-controls > select { border-radius:7px; }
+/* Keep menus outside the scroll clipping area without adding empty visible rows. */
+.asset-table-scroll { overflow-x:auto; padding-bottom:240px; margin-bottom:-240px; }
 .asset-table { width:100%; border-collapse:collapse; font-size:13px; text-align:left; min-width:760px; }
-.asset-table th { padding:12px; color:var(--muted); font-weight:500; background:#f7f9f8; white-space:nowrap; }
-.asset-table td { padding:14px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
-.asset-table td:first-child { width:40%; min-width:220px; }
+.asset-table th { padding:12px 18px; color:#7a8980; font-size:12px; font-weight:500; background:#f8faf9; border-top:1px solid var(--resource-border); border-bottom:1px solid var(--resource-border); white-space:nowrap; }
+.asset-table td { padding:19px 18px; border-bottom:1px solid #edf1ee; vertical-align:middle; }
+.asset-table th:first-child, .asset-table td:first-child { padding-left:22px; }
+.asset-table tbody tr:last-child td { border-bottom:0; }
+.asset-table tbody tr:hover { background:#fcfdfc; }
+.asset-table td:first-child { width:40%; min-width:230px; }
+.asset-identity { display:flex; gap:13px; align-items:center; }
+.asset-identity > div { min-width:0; }
+.asset-type-icon { width:42px; height:46px; flex:0 0 auto; display:grid; place-items:center; border:1px solid #dfece4; border-radius:9px; color:#3b8060; background:#f1f7f3; }
+.asset-type-icon.uploaded { background:#f1f5fa; color:#5e7aab; border-color:#e1e8f3; }
 .asset-title { display:block; font-size:14px; font-weight:600; line-height:1.6; overflow-wrap:anywhere; }
-.asset-table small { display:block; font-size:12px; color:var(--muted); margin-top:4px; line-height:1.6; }
-.resource-badge { display:inline-block; background:#eef3f0; padding:4px 8px; border-radius:5px; font-size:12px; white-space:nowrap; }
-.asset-table time { white-space:nowrap; font-size:12px; }
-.asset-row-actions { display:flex; align-items:center; gap:12px; white-space:nowrap; color:var(--green); }
-.asset-menu { position:relative; color:var(--text); }
-.asset-menu summary { cursor:pointer; display:flex; padding:8px; border-radius:5px; }
-.asset-menu[open] summary { background:#e9f3ed; }
-.asset-menu > div { position:absolute; z-index:30; right:0; top:100%; width:230px; background:white; border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px #1234; padding:8px; }
-.asset-menu a, .asset-menu button, .asset-menu label { display:block; width:100%; text-align:left; padding:9px; font-size:13px; border:0; background:transparent; cursor:pointer; }
+.asset-title:hover { color:#216e50; }
+.asset-table small { display:block; font-size:12px; color:#849087; margin-top:5px; line-height:1.5; }
+.resource-badge { display:inline-flex; align-items:center; background:#edf4ef; color:#4a7960; padding:4px 8px; border-radius:5px; font-size:12px; white-space:nowrap; }
+.asset-table [data-kind="uploaded"] .resource-badge { background:#edf2f9; color:#5d77a0; }
+.asset-table time { white-space:nowrap; font-size:12px; color:#78867e; font-variant-numeric:tabular-nums; }
+.asset-row-actions { display:flex; align-items:center; gap:10px; white-space:nowrap; color:#216e50; font-size:13px; }
+.asset-row-actions > a { padding:7px 0; font-weight:500; }
+.asset-row-actions > a:hover { text-decoration:underline; text-underline-offset:4px; }
+.asset-menu { position:relative; color:#7b8980; }
+.asset-menu summary { cursor:pointer; display:flex; padding:7px; border-radius:6px; list-style:none; }
+.asset-menu[open] summary, .asset-menu summary:hover { background:#edf4ef; color:#216e50; }
+.asset-menu > div { position:absolute; z-index:30; right:0; top:calc(100% + 5px); width:230px; background:white; border:1px solid var(--resource-border); border-radius:10px; box-shadow:0 10px 32px #233c3320; padding:6px; }
+.asset-menu a, .asset-menu button, .asset-menu label { display:block; width:100%; text-align:left; padding:10px; font-size:13px; color:#43594e; border:0; border-radius:5px; background:transparent; cursor:pointer; }
 .asset-menu a:hover, .asset-menu button:hover { background:#f2f6f3; }
-.asset-menu select { display:block; width:100%; margin-top:5px; }
+.asset-menu select { display:block; width:100%; margin-top:7px; }
 .asset-menu .danger { color:#a33737; }
-.asset-folders { margin:12px 0; }
-@media(max-width:800px) { .paper-library-page { padding:20px 12px; } .paper-library-header { flex-wrap:wrap; gap:12px; } .paper-library-shell.asset-library.with-folders { display:block; } .resource-tabs .resource-folder-toggle { margin-left:0; } }
+.asset-folders { margin:0; padding:0 22px 18px; }
+@media(max-width:800px) {
+  .paper-library-page { padding:24px 16px; }
+  .paper-library-header { flex-wrap:wrap; gap:18px; }
+  .paper-library-shell.asset-library.with-folders { display:block; }
+  .resource-tabs { gap:16px; }
+  .resource-tabs .resource-folder-toggle { margin-left:0; }
+  .asset-library .paper-library-toolbar { padding:14px; }
+  .asset-library .paper-library-controls { flex-wrap:wrap; width:100%; }
+  .asset-library .paper-library-search { flex:1; min-width:160px; }
+}
 .skill-page { max-width:1600px; padding:28px 32px; }
 .skill-page .school-page-header h1 { font-size:28px; }
 .skill-page .school-page-header p, .skill-page p, .skill-page input, .skill-page select, .skill-page textarea { font-size:14px; }
