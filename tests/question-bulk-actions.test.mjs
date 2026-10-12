@@ -13,7 +13,7 @@ test("批量题目 id 会去重并限制数量", () => {
   assert.throws(() => normalizeQuestionIds(Array.from({ length: 501 }, (_, index) => `q${index}`)), QuestionBulkActionError);
 });
 
-test("批量删除题目同时清理组卷引用并保留原试卷", () => {
+test("批量删除拒绝引用中的题目，解除引用后可删除且保留原试卷", () => {
   const sqlite = new Database(":memory:");
   sqlite.pragma("foreign_keys = ON");
   sqlite.exec(`
@@ -28,6 +28,12 @@ test("批量删除题目同时清理组卷引用并保留原试卷", () => {
     INSERT INTO question_assets VALUES ('a1', 'q1', 'crop-1.jpg');
     INSERT INTO paper_items VALUES ('q1'), ('q2');
   `);
+  assert.throws(() => sqlite.transaction(() => deleteQuestions(sqlite, {
+    ownerId: "teacher", questionIds: ["q1", "q2"], timestamp: "after",
+  }))(), /仍被组卷引用/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) FROM questions").pluck().get(), 2);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) FROM paper_items").pluck().get(), 2);
+  sqlite.prepare("DELETE FROM paper_items WHERE question_id = 'q1'").run();
   const outcome = sqlite.transaction(() => deleteQuestions(sqlite, {
     ownerId: "teacher",
     questionIds: ["q1"],

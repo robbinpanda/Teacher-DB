@@ -36,6 +36,13 @@ export function deleteQuestions(
     throw new QuestionBulkActionError("选中的题目已不存在或无权操作", 404);
   }
 
+  const referenced = sqlite.prepare(
+    `SELECT COUNT(*) AS count FROM paper_items WHERE question_id IN (${marks})`,
+  ).get(...input.questionIds) as { count: number };
+  if (referenced.count) {
+    throw new QuestionBulkActionError("所选题目仍被组卷引用，请先在组卷中移除引用后再删除；本次未删除任何题目");
+  }
+
   const cropRows = sqlite.prepare(
     `SELECT crop_key AS cropKey FROM question_assets
       WHERE question_id IN (${marks}) AND crop_key IS NOT NULL`,
@@ -43,7 +50,6 @@ export function deleteQuestions(
   const documentIds = Array.from(new Set(rows.map((row) => row.documentId)));
   const documentMarks = placeholders(documentIds.length);
 
-  sqlite.prepare(`DELETE FROM paper_items WHERE question_id IN (${marks})`).run(...input.questionIds);
   const deleted = sqlite.prepare(
     `DELETE FROM questions WHERE id IN (${marks})
        AND document_id IN (SELECT id FROM documents WHERE owner_id = ?)`,

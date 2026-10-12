@@ -43,6 +43,7 @@ import { typeLabels } from "../lib/question-labels";
 import { moveOrderedItem } from "../lib/ordered-selection";
 import { stripLeadingQuestionNumber } from "../lib/question-text.js";
 import { AnalysisWithImages } from "./AnalysisWithImages";
+import { SelectionCheckbox } from "./SelectionCheckbox";
 import { MathText } from "./MathText";
 import { useEducationScope } from "./AppShell";
 
@@ -133,10 +134,11 @@ export function QuestionBank({
   const [activeTag, setActiveTag] = useState("全部");
   const [source, setSource] = useState(requestedDocumentId ?? "全部");
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchError, setSearchError] = useState("");
   const [bankStats, setBankStats] = useState(stats);
   const [deleting, setDeleting] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [selection, setSelection] = useState<ExplorerSelection>(defaultSelection);
@@ -169,6 +171,17 @@ export function QuestionBank({
   const [variationDiscarding, setVariationDiscarding] = useState(false);
   const [variationError, setVariationError] = useState("");
 
+  // Clear immediately on scope changes, before stale results can be selected.
+  const selectionScope = JSON.stringify([library, query, type, activeTag, source, page, selection, stage, subject, gradeFilter, regionFilter, textbookFilter, originFilter]);
+  const [previousScope, setPreviousScope] = useState(selectionScope);
+  if (previousScope !== selectionScope) {
+    setPreviousScope(selectionScope);
+    setSelectedQuestions([]);
+    setBasketOpen(false);
+    setLoading(true);
+    setDeleteError("");
+  }
+  const selectionBusy = loading || deleting || moving || Boolean(searchError);
   const selected = selectedQuestions;
   const selectedIds = new Set(selected.map((question) => question.id));
   const tags = ["全部", ...availableTags];
@@ -211,7 +224,7 @@ export function QuestionBank({
       }
     }, 220);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [activeTag, page, query, refreshKey, selection, source, stage, subject, type, requestedDocumentId, gradeFilter, regionFilter, textbookFilter, originFilter]);
+  }, [activeTag, page, query, refreshKey, selection, source, stage, subject, type, requestedDocumentId, gradeFilter, regionFilter, textbookFilter, originFilter, library]);
 
   useEffect(() => {
     if (!variationTarget) return;
@@ -273,8 +286,8 @@ export function QuestionBank({
   }
 
   async function deleteSelectedQuestions() {
-    if (!selected.length || deleting) return;
-    if (!window.confirm(`确定永久删除已选的 ${selected.length} 道题吗？\n\n题目会同时从已保存的组卷中移除，此操作无法撤销；原试卷仍会保留。`)) return;
+    if (library !== "personal" || !selected.length || selectionBusy) return;
+    if (!window.confirm(`确定永久删除已选的 ${selected.length} 道题吗？\n\n已被组卷引用的题目会阻止本次删除。删除无法撤销；原试卷仍会保留。`)) return;
     setDeleting(true);
     setDeleteError("");
     try {
@@ -346,19 +359,20 @@ export function QuestionBank({
   }
 
   async function moveQuestions(folderId: string | null) {
-    if (!selected.length) return;
-    const response = await fetch("/api/questions/folder", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids: selected.map((question) => question.id), folderId }),
-    });
-    const result = await response.json().catch(() => ({})) as { moved?: number; error?: string };
-    if (!response.ok) { setOperationError(result.error ?? "移动题目失败"); return; }
-    setQuestions((items) => items.map((question) => selectedIds.has(question.id) ? { ...question, folderId } : question));
-    setSelectedQuestions([]);
-    setBasketOpen(false);
-    setNotice(`已移动 ${result.moved ?? selected.length} 道题`);
-    setRefreshKey((value) => value + 1);
+    if (library !== "personal" || !selected.length || selectionBusy) return;
+    setMoving(true); setOperationError("");
+    try {
+      const response = await fetch("/api/questions/folder", {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: selected.map((question) => question.id), folderId }),
+      });
+      const result = await response.json().catch(() => ({})) as { moved?: number; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "移动题目失败");
+      setSelectedQuestions([]); setBasketOpen(false);
+      setNotice(`已移动 ${result.moved ?? selected.length} 道题`);
+      setLoading(true); setRefreshKey((value) => value + 1);
+    } catch (error) { setOperationError(error instanceof Error ? error.message : "移动题目失败"); }
+    finally { setMoving(false); }
   }
 
   async function importPackage(file: File) {
@@ -614,11 +628,6 @@ export function QuestionBank({
         </aside>}
 
         <main className="bank-explorer-main">
-          {selected.length > 0 && <div className="explorer-commandbar">
-            {selected.length > 0 && <label className="move-selected"><FolderOpen size={14} /><span>移动 {selected.length} 题到</span><select defaultValue="" onChange={(event) => { if (event.target.value !== "") void moveQuestions(event.target.value === "unfiled" ? null : event.target.value); event.target.value = ""; }}><option value="" disabled>选择文件夹</option><option value="unfiled">未分类</option>{bankFolders.map((folder) => <option key={folder.id} value={folder.id}>{folderTrail(folder.id).map((item) => item.name).join(" / ")}</option>)}</select></label>}
-            {selected.length > 0 && <button type="button" className="danger" disabled={deleting} onClick={() => void deleteSelectedQuestions()}><Trash2 size={14} /> 删除</button>}
-          </div>}
-
           {selection.kind !== "all" && <nav className="explorer-addressbar" aria-label="当前位置"><button type="button" onClick={() => chooseLocation(defaultSelection)}><House size={13} /> 题库</button>{trail.map((folder) => <span key={folder.id}><ChevronRight size={12} /><button type="button" onClick={() => chooseLocation({ kind: "folder", value: folder.id })}>{folder.name}</button></span>)}{smartLabel.map((label) => <span key={label}><ChevronRight size={12} /><b>{label}</b></span>)}</nav>}
 
           <section className="bank-toolbar explorer-toolbar" aria-label="筛选题目">
@@ -638,20 +647,30 @@ export function QuestionBank({
           </section>
 
           <div className="bank-content explorer-content">
-            <div className="bank-list-head"><div><button type="button" className={allPageSelected ? "active" : ""} onClick={togglePage} disabled={!questions.length} aria-label={allPageSelected ? "取消选择当前页" : "选择当前页"}>{allPageSelected && <Check size={12} />}</button><span>{loading ? <><LoaderCircle size={12} className="spin" /> 查询中…</> : `${pagination.total} 道题`}</span>{!loading && pagination.pageCount > 1 && <small>第 {pagination.page} / {pagination.pageCount} 页</small>}</div><div className="bank-list-tools"><span>展开查看答案与解析</span><div className="view-switch" role="group" aria-label="题库视图"><button type="button" className={viewMode === "list" ? "active" : ""} onClick={() => setViewMode("list")} title="列表"><List size={15} /></button><button type="button" className={viewMode === "tiles" ? "active" : ""} onClick={() => setViewMode("tiles")} title="平铺"><Grid2X2 size={14} /></button></div></div></div>
+            {selected.length > 0 && <div className="resource-bulkbar" role="region" aria-label="题目批量操作" aria-busy={deleting || moving}>
+              <strong>已选 {selected.length} 道题</strong>
+              <Link className={`btn btn-primary${selectionBusy ? " disabled-link" : ""}`} aria-disabled={selectionBusy} href={paperHref}><FilePlus2 size={15} />批量加入组卷</Link>
+              <button className="btn" disabled={selectionBusy} onClick={() => setBasketOpen(true)}>排序 / 导出</button>
+              <label>移动到<select aria-label="批量移动题目" disabled={selectionBusy} value="" onChange={event => { if (event.target.value) void moveQuestions(event.target.value === "unfiled" ? null : event.target.value); }}><option value="" disabled>选择文件夹</option><option value="unfiled">未分文件夹</option>{bankFolders.map(folder => <option key={folder.id} value={folder.id}>{folderTrail(folder.id).map(item => item.name).join(" / ")}</option>)}</select></label>
+              <button className="btn resource-danger" disabled={selectionBusy} onClick={() => void deleteSelectedQuestions()}><Trash2 size={14} />{deleting ? "删除中…" : "删除所选题目"}</button>
+              <button className="btn" disabled={deleting || moving} onClick={() => { setSelectedQuestions([]); setBasketOpen(false); }}>取消选择</button>
+              {moving && <span role="status">移动中…</span>}
+            </div>}
+
+            <div className="bank-list-head"><div><label className="resource-select-all"><SelectionCheckbox label="全选当前页题目" checked={allPageSelected} indeterminate={selected.length > 0 && !allPageSelected} disabled={!questions.length || selectionBusy} onChange={togglePage} />全选当前页</label><span>{loading ? <><LoaderCircle size={12} className="spin" /> 查询中…</> : `${pagination.total} 道题`}</span>{!loading && pagination.pageCount > 1 && <small>第 {pagination.page} / {pagination.pageCount} 页</small>}</div><div className="bank-list-tools"><span>切换筛选、文件夹、分页或题库会清空选择</span><div className="view-switch" role="group" aria-label="题库视图"><button type="button" className={viewMode === "list" ? "active" : ""} onClick={() => setViewMode("list")} title="列表"><List size={15} /></button><button type="button" className={viewMode === "tiles" ? "active" : ""} onClick={() => setViewMode("tiles")} title="平铺"><Grid2X2 size={14} /></button></div></div></div>
             {(searchError || deleteError) && <p className="form-error">{searchError || deleteError}</p>}
-            <div className={`question-cards ${viewMode} ${loading ? "loading" : ""}`}>
+            <div className={`question-cards ${viewMode} ${loading ? "loading" : ""}`} aria-busy={loading} inert={selectionBusy}>
               {questions.map((question) => {
                 const checked = selectedIds.has(question.id);
                 const expanded = question.id in expandedIds;
                 const sourceLabel = [question.source.year, question.source.region, question.source.textbook, question.source.school, question.source.examType].filter(Boolean).join(" · ") || question.source.documentName;
                 return <article key={question.id} className={`question-card ${checked ? "selected " : ""}${expanded ? "expanded" : ""}`}>
-                  <button type="button" className="question-check" onClick={() => toggle(question)} aria-label={`${checked ? "取消选择" : "选择"}第 ${question.number} 题`}>{checked && <Check size={13} />}</button>
+                  <SelectionCheckbox label={`选择第 ${question.number} 题 · ${question.source.documentName}`} checked={checked} disabled={selectionBusy} onChange={() => toggle(question)} />
                   <div className="question-card-main"><div className="question-meta"><span className="pill gray">{typeLabels[question.type]}</span><span>{question.source.grade} · {question.source.subject}</span><span className="source-label" title={question.source.documentName}>{sourceLabel}</span><span className="source-question-number">· 原题号 {question.number}</span>{isVariationQuestion(question) && <span className="variation-badge"><WandSparkles size={11} /> AI 变式</span>}{question.variationReview?.mode === "multi_agent" && <span className={`variation-review-badge ${question.variationReview.status}`}><Check size={10} /> {question.variationReview.status === "revised" ? "审校后修订" : "双 Agent 审校"}</span>}{question.variationReview?.mode === "rules" && <span className="variation-review-badge rules"><Check size={10} /> 规则校验</span>}{question.source.origin === "imported" && <span className="shared-badge"><PackageOpen size={11} /> 共享包</span>}{question.assets.length > 0 && <span className="has-image"><ImageIcon size={12} /> 含图</span>}{question.tags.slice(0, 3).map((tag) => <span className="question-tag" key={tag}>#{tag}</span>)}{question.tags.length > 3 && <span className="question-tag">+{question.tags.length - 3}</span>}</div>
                     <button type="button" className="question-stem" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}><span className="question-stem-text"><MathText text={stripLeadingQuestionNumber(question.stem, question.number)} /></span></button>
-                    {expanded && <div className="question-details">{question.assets.some((asset) => asset.role === "question" && asset.url) && <div className="bank-question-assets">{question.assets.filter((asset) => asset.role === "question" && asset.url).map((asset) => <figure key={asset.id}><Image src={asset.url!} width={asset.width ?? 720} height={asset.height ?? 480} alt={asset.label || "题图"} unoptimized /><figcaption>{asset.label || "题图"}</figcaption></figure>)}</div>}{question.options?.length ? <div className="bank-options">{question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div> : null}{(question.answer || question.analysis || question.assets.some(a => a.role === "answer")) && <div className="answer-preview">{question.answer && <div><b>答案</b><MathText text={question.answer} /></div>}{(question.analysis || question.assets.some(a => a.role === "answer")) && <div><b>解析</b><AnalysisWithImages text={question.analysis} assets={question.assets} /></div>}</div>}{question.variationKind && <p className="variation-note"><WandSparkles size={12} /> 变式说明：{question.variationKind.split(":").slice(1).join(":") || "基于原题生成"}</p>}{question.variationReview && <div className="variation-review-detail"><strong>{question.variationReview.mode === "multi_agent" ? `独立审校${question.variationReview.score !== null ? ` · ${question.variationReview.score} 分` : ""}` : "已通过结构与安全规则校验"}</strong>{question.variationReview.reviewer && <span>审校：{question.variationReview.reviewer}</span>}{question.variationReview.issues.length > 0 && <span>修订记录：{question.variationReview.issues.join("；")}</span>}</div>}</div>}
+                    <div className="question-details">{question.assets.some((asset) => asset.role === "question" && asset.url) && <div className="bank-question-assets">{question.assets.filter((asset) => asset.role === "question" && asset.url).map((asset) => <figure key={asset.id}><Image src={asset.url!} width={asset.width ?? 720} height={asset.height ?? 480} alt={asset.label || "题图"} unoptimized /><figcaption>{asset.label || "题图"}</figcaption></figure>)}</div>}{question.options?.length ? <div className="bank-options">{question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div> : null}{expanded && (question.answer || question.analysis || question.assets.some(a => a.role === "answer")) && <div className="answer-preview">{question.answer && <div><b>答案</b><MathText text={question.answer} /></div>}{(question.analysis || question.assets.some(a => a.role === "answer")) && <div><b>解析</b><AnalysisWithImages text={question.analysis} assets={question.assets} /></div>}</div>}{expanded && question.variationKind && <p className="variation-note"><WandSparkles size={12} /> 变式说明：{question.variationKind.split(":").slice(1).join(":") || "基于原题生成"}</p>}{expanded && question.variationReview && <div className="variation-review-detail"><strong>{question.variationReview.mode === "multi_agent" ? `独立审校${question.variationReview.score !== null ? ` · ${question.variationReview.score} 分` : ""}` : "已通过结构与安全规则校验"}</strong>{question.variationReview.reviewer && <span>审校：{question.variationReview.reviewer}</span>}{question.variationReview.issues.length > 0 && <span>修订记录：{question.variationReview.issues.join("；")}</span>}</div>}</div>
                   </div>
-                  <div className="question-actions">{!isVariationQuestion(question) && !question.needsHumanReview ? <button type="button" className="row-action" onClick={() => openVariation(question)}><WandSparkles size={13} /> 生成变式</button> : question.needsHumanReview ? <span className="source-removed">复核后可生成</span> : null}<button type="button" className="row-action expand-action" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}>{expanded ? "收起" : "展开"}<ChevronDown size={13} /></button>{question.source.origin === "original" && !question.source.sourceRemoved ? <Link className="row-action" href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}><Pencil size={13} /> 编辑</Link> : null}</div>
+                  <div className="question-actions">{!isVariationQuestion(question) && !question.needsHumanReview ? <button type="button" className="row-action" onClick={() => openVariation(question)}><WandSparkles size={13} /> 生成变式</button> : question.needsHumanReview ? <span className="source-removed">复核后可生成</span> : null}<button type="button" className="row-action expand-action" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}>{expanded ? "收起答案解析" : "查看答案解析"}<ChevronDown size={13} /></button>{question.source.origin === "original" && !question.source.sourceRemoved ? <Link className="row-action" href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}><Pencil size={13} /> 编辑</Link> : null}</div>
                 </article>;
               })}
             </div>
@@ -662,7 +681,7 @@ export function QuestionBank({
       </div>
 
       </>}
-      {selected.length > 0 && <>{basketOpen && <button type="button" className="question-basket-backdrop" aria-label="收起选题篮" onClick={() => setBasketOpen(false)} />}{basketOpen ? <aside className="question-basket" aria-label="已选题目"><header><div><span><ShoppingBasket size={18} /></span><div><strong>选题篮</strong><small>共 {selected.length} 道，使用箭头调整组卷与导出顺序</small></div></div><button type="button" aria-label="收起选题篮" onClick={() => setBasketOpen(false)}><X size={16} /></button></header><ol>{selected.map((question, index) => <li key={question.id}><b>{index + 1}</b><div><span>{typeLabels[question.type]} · 原题号 {question.number}</span><p><MathText text={question.stem} /></p><small>{question.source.documentName}</small></div><div className="basket-item-actions"><button type="button" aria-label={`上移第 ${index + 1} 题`} disabled={index === 0} onClick={() => moveSelected(index, -1)}><ArrowUp size={13} /></button><button type="button" aria-label={`下移第 ${index + 1} 题`} disabled={index === selected.length - 1} onClick={() => moveSelected(index, 1)}><ArrowDown size={13} /></button><button type="button" className="danger" aria-label={`移除第 ${index + 1} 题`} onClick={() => removeSelected(question.id)}><Trash2 size={13} /></button></div></li>)}</ol><footer><div className="basket-destructive-actions"><button type="button" onClick={() => { setSelectedQuestions([]); setBasketOpen(false); }}>取消选择</button><button type="button" className="permanent-delete" disabled={deleting} onClick={() => void deleteSelectedQuestions()}><Trash2 size={12} /> {deleting ? "删除中…" : "永久删除"}</button></div><div><a href={`/api/exports/questions${exportIds}format=package`}><PackageOpen size={13} /> 共享包</a><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={14} /> 去组卷</Link></div></footer></aside> : <button type="button" className="question-basket-trigger" aria-expanded="false" onClick={() => setBasketOpen(true)}><span><ShoppingBasket size={20} /><b>{selected.length}</b></span><i><strong>选题篮</strong><small>查看、排序或导出</small></i><ChevronRight size={16} /></button>}</>}
+      {library === "personal" && selected.length > 0 && <>{basketOpen && <button type="button" className="question-basket-backdrop" aria-label="收起选题篮" onClick={() => setBasketOpen(false)} />}{basketOpen ? <aside className="question-basket" aria-label="已选题目"><header><div><span><ShoppingBasket size={18} /></span><div><strong>选题篮</strong><small>共 {selected.length} 道，使用箭头调整组卷与导出顺序</small></div></div><button type="button" aria-label="收起选题篮" onClick={() => setBasketOpen(false)}><X size={16} /></button></header><ol>{selected.map((question, index) => <li key={question.id}><b>{index + 1}</b><div><span>{typeLabels[question.type]} · 原题号 {question.number}</span><p><MathText text={question.stem} /></p><small>{question.source.documentName}</small></div><div className="basket-item-actions"><button type="button" aria-label={`上移第 ${index + 1} 题`} disabled={index === 0} onClick={() => moveSelected(index, -1)}><ArrowUp size={13} /></button><button type="button" aria-label={`下移第 ${index + 1} 题`} disabled={index === selected.length - 1} onClick={() => moveSelected(index, 1)}><ArrowDown size={13} /></button><button type="button" className="danger" aria-label={`移除第 ${index + 1} 题`} onClick={() => removeSelected(question.id)}><Trash2 size={13} /></button></div></li>)}</ol><footer><div className="basket-destructive-actions"><button type="button" onClick={() => { setSelectedQuestions([]); setBasketOpen(false); }}>取消选择</button><button type="button" className="permanent-delete" disabled={selectionBusy} onClick={() => void deleteSelectedQuestions()}><Trash2 size={12} /> {deleting ? "删除中…" : "永久删除"}</button></div><div><a href={`/api/exports/questions${exportIds}format=package`}><PackageOpen size={13} /> 共享包</a><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={14} /> 去组卷</Link></div></footer></aside> : <button type="button" className="question-basket-trigger" aria-expanded="false" onClick={() => setBasketOpen(true)}><span><ShoppingBasket size={20} /><b>{selected.length}</b></span><i><strong>选题篮</strong><small>查看、排序或导出</small></i><ChevronRight size={16} /></button>}</>}
 
       {variationTarget && <div className="variation-dialog-backdrop" role="presentation" onMouseDown={(event) => {
         if (event.target === event.currentTarget && !variationLoading && !variationAccepting && !variationDiscarding) {

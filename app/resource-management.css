@@ -179,7 +179,7 @@
 .bank-explorer-page .explorer-addressbar { margin:12px 20px 0; padding:0; border:0; min-height:28px; }
 .bank-explorer-page .explorer-addressbar button, .bank-explorer-page .explorer-addressbar b { font-size:12px; }
 .bank-explorer-page .bank-toolbar.explorer-toolbar { position:relative; top:auto; z-index:5; display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0; padding:20px; border:0; border-bottom:1px solid #e9eee9; border-radius:12px 12px 0 0; background:white; }
-.bank-explorer-page .search-box { flex:1 0 100%; border-radius:7px; height:40px; background:#fafcfb; }
+.bank-explorer-page .search-box { flex:1 1 230px; min-width:210px; max-width:360px; border-radius:7px; height:36px; background:#fafcfb; }
 .bank-explorer-page .select-box { flex:1 1 140px; min-width:0; max-width:210px; border-radius:7px; height:36px; background:white; }
 .bank-explorer-page .select-box > span { font-size:12px; }
 .bank-explorer-page .source-select { flex-basis:180px; max-width:260px; }
@@ -196,14 +196,14 @@
 .bank-explorer-page .bank-list-tools > span { color:#8a968e; font-weight:400; }
 .bank-list-tools { display:flex; gap:16px; align-items:center; color:#8a968e; font-size:12px; }
 .bank-explorer-page .question-cards { border:0; border-radius:0; box-shadow:none; }
-.bank-explorer-page .question-card { grid-template-columns:22px minmax(0,1fr) auto; gap:14px; padding:22px 0; border-radius:0; }
+.bank-explorer-page .question-card { grid-template-columns:22px minmax(0,1fr); gap:12px 14px; padding:22px 10px; border-radius:0; border-bottom:1px solid var(--resource-border); }
 .bank-explorer-page .question-stem, .bank-explorer-page .question-stem p { font-family:inherit; font-size:15px; line-height:1.85; }
 .bank-explorer-page .question-stem { margin-top:10px; }
 .bank-explorer-page .question-meta { height:auto; min-height:22px; flex-wrap:wrap; overflow:visible; gap:6px 10px; font-size:12px; }
 .bank-explorer-page .question-meta .pill { padding:3px 7px; border-radius:5px; font-size:11px; font-weight:500; }
 .bank-explorer-page .question-meta :is(.variation-badge, .shared-badge, .variation-review-badge) { font-size:10px; border-radius:4px; }
 .bank-explorer-page .question-meta .source-label { max-width:240px; }
-.bank-explorer-page .question-actions { max-width:225px; flex-wrap:wrap; align-self:end; gap:4px; }
+.bank-explorer-page .question-actions { grid-column:2; justify-content:flex-start; flex-wrap:wrap; gap:8px; }
 .bank-explorer-page .row-action { height:30px; padding:0 8px; font-size:12px; }
 .bank-explorer-page .expand-action { color:#2b7b55; }
 .bank-explorer-page .question-actions .source-removed { font-size:11px; white-space:nowrap; }
@@ -241,4 +241,47 @@
   .bank-explorer-page .bank-toolbar.explorer-toolbar { padding:16px; }
   .bank-list-tools > span { display:none; }
   .bank-explorer-page .select-box { flex-basis:calc(50% - 10px); max-width:none; }
+}
+/* Selection and reading improvements are scoped to the two resource libraries. */
+:is(.bank-explorer-page, .paper-library-page) .resource-checkbox { appearance:auto; width:18px; height:18px; min-height:18px; margin:2px 0; flex:0 0 auto; accent-color:var(--green); cursor:pointer; }
+:is(.bank-explorer-page, .paper-library-page) .resource-checkbox:disabled { cursor:wait; }
+:is(.bank-explorer-page, .paper-library-page) .resource-bulkbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; min-height:58px; margin:12px 0 0; padding:10px 12px; background:#f1f6f3; border:1px solid var(--resource-border); border-radius:8px; font-size:13px; }
+.paper-library-page .resource-bulkbar { margin:0 20px 14px; }
+:is(.bank-explorer-page, .paper-library-page) .resource-bulkbar .btn { min-height:34px; padding:6px 10px; }
+:is(.bank-explorer-page, .paper-library-page) .resource-bulkbar label { display:flex; align-items:center; gap:8px; }
+:is(.bank-explorer-page, .paper-library-page) .resource-bulkbar select { max-width:230px; min-height:34px; padding:4px 8px; background:white; border:1px solid #d6dfd9; border-radius:6px; }
+:is(.bank-explorer-page, .paper-library-page) .resource-danger { color:#a33737; }
+:is(.bank-explorer-page, .paper-library-page) .resource-bulkbar > span { color:var(--muted); font-size:12px; }
+.bank-explorer-page .resource-select-all { display:flex; align-items:center; gap:8px; color:var(--ink); white-space:nowrap; cursor:pointer; }
+.bank-explorer-page .bank-list-head { flex-wrap:wrap; gap:10px; }
+.bank-explorer-page .question-stem-text { display:block; overflow:visible; -webkit-line-clamp:unset; width:100%; }
+.bank-explorer-page .question-stem .math-text { overflow-wrap:anywhere; white-space:pre-wrap; }
+.bank-explorer-page .katex-display { overflow-x:auto; overflow-y:hidden; padding:5px 0; }
+.bank-explorer-page .question-meta .source-label { color:var(--muted); }
+.bank-explorer-page .question-details { margin-top:8px; }
+.bank-explorer-page .question-details:empty { display:none; }
+.bank-explorer-page .row-action { border:1px solid var(--resource-border); background:white; min-height:34px; }
+.bank-explorer-page .question-card.selected { background:#f6faf7; }
+.bank-explorer-page .select-box { flex:0 1 125px; }
+.bank-explorer-page .source-select { flex-basis:170px; }
+.bank-explorer-page .bank-more-filters { margin-left:0; }
+.paper-library-page .resource-selection-hint, .paper-library-page .resource-operation-notice { padding:0 20px; margin:0 0 12px; color:var(--muted); font-size:12px; }
+.paper-library-page .resource-operation-notice { color:var(--green); }
+.paper-library-page .asset-table { table-layout:fixed; min-width:930px; }
+.paper-library-page .asset-table :is(th,td) { padding:14px 10px; }
+.paper-library-page .asset-table .asset-selection { width:46px; min-width:46px; padding-left:18px; }
+.paper-library-page .asset-table .asset-name-column { width:34%; }
+.paper-library-page .asset-table th:nth-child(3) { width:96px; }
+.paper-library-page .asset-table th:nth-child(4) { width:110px; }
+.paper-library-page .asset-table th:nth-child(5) { width:75px; }
+.paper-library-page .asset-table th:nth-child(6) { width:100px; }
+.paper-library-page .asset-table th:nth-child(7) { width:118px; }
+.paper-library-page .asset-table th:last-child { width:146px; }
+.paper-library-page .asset-title, .paper-library-page .asset-identity small { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.paper-library-page .asset-identity > div { flex:1; }
+.paper-library-page .asset-status { font-size:12px; color:#617168; white-space:nowrap; }
+.paper-library-page .asset-table tr[aria-selected="true"] { background:#f1f7f3; }
+@media(max-width:800px) {
+  .bank-explorer-page .search-box { flex-basis:100%; max-width:none; }
+  .bank-explorer-page .select-box { flex:1 1 130px; }
 }
