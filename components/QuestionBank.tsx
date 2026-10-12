@@ -119,6 +119,7 @@ export function QuestionBank({
   const { subject, stage } = useEducationScope();
   const [questions, setQuestions] = useState(initialQuestions);
   const [pagination, setPagination] = useState(initialPagination);
+  const [foldersOpen, setFoldersOpen] = useState(false);
   const [library, setLibrary] = useState<"personal" | "platform">("personal");
   const [gradeFilter, setGradeFilter] = useState("");
   const [regionFilter, setRegionFilter] = useState("");
@@ -573,7 +574,7 @@ export function QuestionBank({
   return (
     <div className="page-shell bank-page bank-explorer-page">
       <header className="bank-page-header">
-        <div className="bank-title-row"><h1>题库</h1><div className="bank-summary" aria-label="题库概况"><span><b>{bankStats.approved}</b> 道已入库</span><i /><span>{bankStats.withAssets} 道含图</span><i /><span>{bankStats.papers} 份试卷</span></div></div>
+        <div className="bank-title-row"><h1>题库</h1><p className="resource-intro">从一道好题开始，积累你的教学资源。</p></div>
         <div className="bank-header-actions"><Link className="btn btn-primary" href="/?import=1">导入试卷题目</Link>
           <input ref={importInput} type="file" accept=".jianti" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importPackage(file); }} />
           <button type="button" className="btn" disabled={importing} onClick={() => importInput.current?.click()}>{importing ? <LoaderCircle size={15} className="spin" /> : <Upload size={15} />} 导入共享包</button>
@@ -586,14 +587,13 @@ export function QuestionBank({
         </div>
       </header>
 
-      <p className="resource-intro">发现、管理并复用题目。个人上传、共享包导入与 AI 变式均保留各自来源。</p>
-      <div className="resource-tabs" role="tablist" aria-label="题库范围"><button role="tab" aria-selected={library === "platform"} onClick={() => setLibrary("platform")}>基础题库</button><button role="tab" aria-selected={library === "personal"} onClick={() => setLibrary("personal")}>我的题库</button></div>
+      <div className="resource-tabs" role="tablist" aria-label="题库范围"><button role="tab" aria-selected={library === "platform"} onClick={() => setLibrary("platform")}>基础题库</button><button role="tab" aria-selected={library === "personal"} onClick={() => setLibrary("personal")}>我的题库</button>{library === "personal" && <button className="resource-folder-toggle" aria-expanded={foldersOpen} onClick={() => setFoldersOpen(!foldersOpen)}><Folder size={15} /> 文件夹管理</button>}</div>
       {library === "platform" && <section className="resource-unavailable"><h2>平台精选资源尚未开放</h2><p>平台还未发布可供引用的基础资源。你上传和导入的题目保存在「我的题库」。</p><div className="resource-actions"><span className="resource-badge">模卷 · 待发布</span><span className="resource-badge">名校试卷 · 待发布</span></div><button className="btn" onClick={() => setLibrary("personal")}>浏览我的题库</button></section>}
       {library === "personal" && <>
       {(notice || operationError) && <div className={`bank-notice ${operationError ? "error" : "success"}`}><span>{operationError || notice}</span><button type="button" onClick={() => { setNotice(""); setOperationError(""); }}><X size={13} /></button></div>}
 
-      <div className="bank-explorer card">
-        <aside className="bank-folder-pane" aria-label="题库文件夹">
+      <div className={`bank-explorer card${foldersOpen ? " with-folders" : ""}`}>
+        {foldersOpen && <aside className="bank-folder-pane" aria-label="题库文件夹">
           <div className="folder-pane-heading"><strong>个人文件夹</strong><button type="button" title="新建文件夹" onClick={() => void createFolder()}><FolderPlus size={15} /></button></div>
           <nav className="bank-quick-links">
             <button type="button" className={selection.kind === "all" ? "active" : ""} onClick={() => chooseLocation(defaultSelection)}><House size={15} /><span>全部题目</span><small>{bankStats.approved}</small></button>
@@ -611,19 +611,15 @@ export function QuestionBank({
               <button type="button" className="btn btn-primary profile-save" disabled={savingProfile} onClick={() => void saveProfile()}><Save size={12} /> {savingProfile ? "保存中…" : "保存画像"}</button>
             </div>}
           </section>
-        </aside>
+        </aside>}
 
         <main className="bank-explorer-main">
-          <div className="explorer-commandbar">
-            <button type="button" onClick={() => void createFolder()}><FolderPlus size={15} /> 新建文件夹</button>
-            <button type="button" disabled={importing} onClick={() => importInput.current?.click()}><PackageOpen size={15} /> 导入</button>
+          {selected.length > 0 && <div className="explorer-commandbar">
             {selected.length > 0 && <label className="move-selected"><FolderOpen size={14} /><span>移动 {selected.length} 题到</span><select defaultValue="" onChange={(event) => { if (event.target.value !== "") void moveQuestions(event.target.value === "unfiled" ? null : event.target.value); event.target.value = ""; }}><option value="" disabled>选择文件夹</option><option value="unfiled">未分类</option>{bankFolders.map((folder) => <option key={folder.id} value={folder.id}>{folderTrail(folder.id).map((item) => item.name).join(" / ")}</option>)}</select></label>}
             {selected.length > 0 && <button type="button" className="danger" disabled={deleting} onClick={() => void deleteSelectedQuestions()}><Trash2 size={14} /> 删除</button>}
-            <span className="commandbar-spacer" />
-            <div className="view-switch" role="group" aria-label="题库视图"><button type="button" className={viewMode === "list" ? "active" : ""} onClick={() => setViewMode("list")} title="列表"><List size={15} /></button><button type="button" className={viewMode === "tiles" ? "active" : ""} onClick={() => setViewMode("tiles")} title="平铺"><Grid2X2 size={14} /></button></div>
-          </div>
+          </div>}
 
-          <nav className="explorer-addressbar" aria-label="当前位置"><button type="button" onClick={() => chooseLocation(defaultSelection)}><House size={13} /> 题库</button>{trail.map((folder) => <span key={folder.id}><ChevronRight size={12} /><button type="button" onClick={() => chooseLocation({ kind: "folder", value: folder.id })}>{folder.name}</button></span>)}{smartLabel.map((label) => <span key={label}><ChevronRight size={12} /><b>{label}</b></span>)}</nav>
+          {selection.kind !== "all" && <nav className="explorer-addressbar" aria-label="当前位置"><button type="button" onClick={() => chooseLocation(defaultSelection)}><House size={13} /> 题库</button>{trail.map((folder) => <span key={folder.id}><ChevronRight size={12} /><button type="button" onClick={() => chooseLocation({ kind: "folder", value: folder.id })}>{folder.name}</button></span>)}{smartLabel.map((label) => <span key={label}><ChevronRight size={12} /><b>{label}</b></span>)}</nav>}
 
           <section className="bank-toolbar explorer-toolbar" aria-label="筛选题目">
             <label className="search-box"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="搜索题干、答案、知识点或来源" />{query && <button type="button" onClick={() => { setQuery(""); setPage(1); }} aria-label="清空搜索"><X size={14} /></button>}</label>
@@ -642,7 +638,7 @@ export function QuestionBank({
           </section>
 
           <div className="bank-content explorer-content">
-            <div className="bank-list-head"><div><button type="button" className={allPageSelected ? "active" : ""} onClick={togglePage} disabled={!questions.length} aria-label={allPageSelected ? "取消选择当前页" : "选择当前页"}>{allPageSelected && <Check size={12} />}</button><span>{loading ? <><LoaderCircle size={12} className="spin" /> 查询中…</> : `${pagination.total} 道题`}</span>{!loading && pagination.pageCount > 1 && <small>第 {pagination.page} / {pagination.pageCount} 页</small>}</div><span>点击展开：查看选项、答案与解析</span></div>
+            <div className="bank-list-head"><div><button type="button" className={allPageSelected ? "active" : ""} onClick={togglePage} disabled={!questions.length} aria-label={allPageSelected ? "取消选择当前页" : "选择当前页"}>{allPageSelected && <Check size={12} />}</button><span>{loading ? <><LoaderCircle size={12} className="spin" /> 查询中…</> : `${pagination.total} 道题`}</span>{!loading && pagination.pageCount > 1 && <small>第 {pagination.page} / {pagination.pageCount} 页</small>}</div><div className="bank-list-tools"><span>展开查看答案与解析</span><div className="view-switch" role="group" aria-label="题库视图"><button type="button" className={viewMode === "list" ? "active" : ""} onClick={() => setViewMode("list")} title="列表"><List size={15} /></button><button type="button" className={viewMode === "tiles" ? "active" : ""} onClick={() => setViewMode("tiles")} title="平铺"><Grid2X2 size={14} /></button></div></div></div>
             {(searchError || deleteError) && <p className="form-error">{searchError || deleteError}</p>}
             <div className={`question-cards ${viewMode} ${loading ? "loading" : ""}`}>
               {questions.map((question) => {
@@ -655,7 +651,7 @@ export function QuestionBank({
                     <button type="button" className="question-stem" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}><span className="question-stem-text"><MathText text={stripLeadingQuestionNumber(question.stem, question.number)} /></span></button>
                     {expanded && <div className="question-details">{question.assets.some((asset) => asset.role === "question" && asset.url) && <div className="bank-question-assets">{question.assets.filter((asset) => asset.role === "question" && asset.url).map((asset) => <figure key={asset.id}><Image src={asset.url!} width={asset.width ?? 720} height={asset.height ?? 480} alt={asset.label || "题图"} unoptimized /><figcaption>{asset.label || "题图"}</figcaption></figure>)}</div>}{question.options?.length ? <div className="bank-options">{question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div> : null}{(question.answer || question.analysis || question.assets.some(a => a.role === "answer")) && <div className="answer-preview">{question.answer && <div><b>答案</b><MathText text={question.answer} /></div>}{(question.analysis || question.assets.some(a => a.role === "answer")) && <div><b>解析</b><AnalysisWithImages text={question.analysis} assets={question.assets} /></div>}</div>}{question.variationKind && <p className="variation-note"><WandSparkles size={12} /> 变式说明：{question.variationKind.split(":").slice(1).join(":") || "基于原题生成"}</p>}{question.variationReview && <div className="variation-review-detail"><strong>{question.variationReview.mode === "multi_agent" ? `独立审校${question.variationReview.score !== null ? ` · ${question.variationReview.score} 分` : ""}` : "已通过结构与安全规则校验"}</strong>{question.variationReview.reviewer && <span>审校：{question.variationReview.reviewer}</span>}{question.variationReview.issues.length > 0 && <span>修订记录：{question.variationReview.issues.join("；")}</span>}</div>}</div>}
                   </div>
-                  <div className="question-actions">{!isVariationQuestion(question) && !question.needsHumanReview ? <button type="button" className="row-action" onClick={() => openVariation(question)}><WandSparkles size={13} /> 生成变式</button> : <span className="source-removed">{isVariationQuestion(question) ? "已是变式" : "复核后可生成"}</span>}<button type="button" className="row-action expand-action" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}>{expanded ? "收起" : "展开"}<ChevronDown size={13} /></button>{question.source.origin === "original" && !question.source.sourceRemoved ? <Link className="row-action" href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}><Pencil size={13} /> 编辑</Link> : <span className="source-removed">{question.source.origin === "imported" ? "来自共享包" : "AI 生成"}</span>}</div>
+                  <div className="question-actions">{!isVariationQuestion(question) && !question.needsHumanReview ? <button type="button" className="row-action" onClick={() => openVariation(question)}><WandSparkles size={13} /> 生成变式</button> : question.needsHumanReview ? <span className="source-removed">复核后可生成</span> : null}<button type="button" className="row-action expand-action" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}>{expanded ? "收起" : "展开"}<ChevronDown size={13} /></button>{question.source.origin === "original" && !question.source.sourceRemoved ? <Link className="row-action" href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}><Pencil size={13} /> 编辑</Link> : null}</div>
                 </article>;
               })}
             </div>

@@ -13,12 +13,17 @@ test('个人题库按真实来源筛选，知识点折叠且平台资源不混�
   }
   await page.goto('/bank');
   await expect(page.locator('.question-card')).toHaveCount(3);
+  await expect(page.getByRole('complementary', { name: '题库文件夹' })).toHaveCount(0);
+  await page.getByRole('button', { name: '文件夹管理' }).click();
+  await expect(page.getByRole('complementary', { name: '题库文件夹' })).toBeVisible();
+  await page.getByRole('button', { name: '文件夹管理' }).click();
   await expect(page.getByLabel('筛选知识点')).toBeVisible();
   await expect(page.locator('.tag-filters')).toHaveCount(0);
   await page.locator('.bank-more-filters summary').click();
   await page.getByLabel('题目来源类型').selectOption('imported');
   await expect(page.locator('.question-card')).toHaveCount(1);
   await expect(page.locator('.question-card')).toContainText('imported 测试题干');
+  await page.locator('.bank-more-filters summary').click();
   await page.getByPlaceholder('搜索题干、答案、知识点或来源').fill('不存在的题干');
   await expect(page.getByRole('heading', { name: '没有匹配的题目' })).toBeVisible();
   await page.getByRole('tab', { name: '基础题库', exact: true }).click();

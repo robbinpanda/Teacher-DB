@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { BookOpen, Check, Download, FlaskConical, Upload } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, FlaskConical, Search, Sparkles, Upload } from "lucide-react";
 import { subjects } from "../lib/education-taxonomy";
 import { builtInTeachingSkill, skillGrades } from "../lib/teaching-skill-catalog";
 import type { SkillTrial, TeachingSkill } from "../lib/teaching-skill-store";
@@ -26,8 +26,8 @@ export function TeachingSkills() {
   const [grade, setGrade] = useState("九年级");
   const canLeaveRef = useRef<() => boolean>(() => true);
   return <div className="school-page skill-page">
-    <header className="school-page-header"><div><span><BookOpen size={14} /> 个性化识别方案</span><h1>教学 Skills</h1><p>让 AI 更准确地识别你的试卷。生成专属方案，测试后保存复用。</p></div></header>
-    <div className="skill-scope"><label>学科<select value={subject} onChange={e => { if (canLeaveRef.current()) setSubject(e.target.value); }}>{subjects.map(s => <option key={s}>{s}</option>)}</select></label><label>年级<select value={grade} onChange={e => { if (canLeaveRef.current()) setGrade(e.target.value); }}>{skillGrades.map(g => <option key={g}>{g}</option>)}</select></label><span>按适用范围管理 · 同一年级、学科可启用一个个人方案</span></div>
+    <header className="school-page-header"><div><h1>教学 Skills</h1><p>把常用试卷的识别经验，保存成可复用的方案。</p></div></header>
+    <div className="skill-scope skill-library-scope"><label>学科<select value={subject} onChange={e => { if (canLeaveRef.current()) setSubject(e.target.value); }}>{subjects.map(s => <option key={s}>{s}</option>)}</select></label><label>年级<select value={grade} onChange={e => { if (canLeaveRef.current()) setGrade(e.target.value); }}>{skillGrades.map(g => <option key={g}>{g}</option>)}</select></label><span>每个学科、年级可启用一个个人方案</span></div>
     <SkillWorkbench key={`${subject}/${grade}`} subject={subject} grade={grade} canLeaveRef={canLeaveRef} />
   </div>;
 }
@@ -110,9 +110,9 @@ function SkillWorkbench({ subject, grade, canLeaveRef }: { subject: string; grad
   return <>
     <div className="resource-actions skill-navigation">{view !== "home" && <button className="btn" disabled={!!busy} onClick={() => navigate("home")}>返回我的识别方案</button>}<button className="btn btn-primary" disabled={!!busy} onClick={() => navigate("create")}>+ 创建 Skill</button><Link className="btn" href="/?import=1">去工作台使用</Link></div>
     {view === "home" && <>
-      <section className="skill-card"><header><div><h2>默认识别方案</h2><p>{grade} · {subject} · 未启用个人方案时自动使用。默认规则与个人补充规则共同生效。</p></div><button className="btn" onClick={() => navigate("default")}>查看默认规则</button></header></section>
-      <section className="skill-card"><header><div><h2>我的识别方案</h2><p>生成完成后仍需试识别与人工核对，通过后可启用到后续导入。</p></div><input aria-label="搜索识别方案" placeholder="搜索方案名称…" value={search} onChange={event => setSearch(event.target.value)} /></header>
-        {loading ? <p role="status">正在读取识别方案…</p> : error ? <p role="alert">{error}</p> : !skills.length ? <div className="skill-empty"><h3>从一份常用试卷开始</h3><p>上传样例图片 → AI 生成候选规则 → 试识别与人工核对 → 启用并复用</p><button className="btn" onClick={() => navigate("create")}>上传样例创建 Skill</button></div> : <div className="skill-catalog">{skills.filter(skill => skill.name.includes(search.trim())).map(skill => <article key={skill.id}><div><strong>{skill.name}</strong><p>{skill.grade} · {skill.subject} · v{skill.revision} · 更新于 {new Date(skill.updatedAt).toLocaleDateString("zh-CN")}</p><span className="resource-badge">{skill.active ? "已启用" : "未启用 · 打开查看测试记录"}</span></div><button className="btn" disabled={!!busy} onClick={() => void action("读取方案…", async () => { await refresh(skill.id); setView("detail"); setTab("overview"); })}>查看与编辑</button></article>)}{!skills.some(skill => skill.name.includes(search.trim())) && <p>没有匹配的方案，请调整搜索。</p>}</div>}
+      <section className="skill-card skill-default-card"><span className="skill-scheme-icon" aria-hidden="true"><BookOpen size={22} strokeWidth={1.7} /></span><div><h2>默认识别方案<span className="resource-badge">系统内置</span></h2><p>{grade} · {subject} · 默认规则始终生效，个人方案补充你的识别偏好。</p></div><button className="btn" onClick={() => navigate("default")}>查看默认规则<ChevronRight size={14} /></button></section>
+      <section className="skill-card skill-personal-card"><header><div><h2>我的识别方案<span className="skill-count">{skills.length}</span></h2><p>上传样例生成方案，核对效果后启用。</p></div><label className="skill-search"><Search size={16} /><input aria-label="搜索识别方案" placeholder="搜索方案名称…" value={search} onChange={event => setSearch(event.target.value)} /></label></header>
+        {loading ? <p role="status">正在读取识别方案…</p> : error ? <p role="alert">{error}</p> : !skills.length ? <div className="skill-empty"><h3>从一份常用试卷开始</h3><p>上传样例图片 → AI 生成候选规则 → 试识别与人工核对 → 启用并复用</p><button className="btn" onClick={() => navigate("create")}>上传样例创建 Skill</button></div> : <div className="skill-catalog">{skills.filter(skill => skill.name.includes(search.trim())).map(skill => <article key={skill.id}><span className="skill-scheme-icon personal" aria-hidden="true"><Sparkles size={21} strokeWidth={1.7} /></span><div className="skill-catalog-info"><strong>{skill.name}</strong><p>{skill.grade} · {skill.subject} · v{skill.revision} · 更新于 {new Date(skill.updatedAt).toLocaleDateString("zh-CN")}</p></div><span className={`resource-badge skill-state${skill.active ? " active" : ""}`}><i />{skill.active ? "已启用" : "未启用"}</span><button className="btn" disabled={!!busy} onClick={() => void action("读取方案…", async () => { await refresh(skill.id); setView("detail"); setTab("overview"); })}>查看与编辑<ChevronRight size={14} /></button></article>)}{!skills.some(skill => skill.name.includes(search.trim())) && <p>没有匹配的方案，请调整搜索。</p>}</div>}
       </section>
     </>}
     {view === "default" && <>

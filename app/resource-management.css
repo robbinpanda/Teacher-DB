@@ -89,45 +89,136 @@
   .asset-library .paper-library-controls { flex-wrap:wrap; width:100%; }
   .asset-library .paper-library-search { flex:1; min-width:160px; }
 }
-.skill-page { max-width:1600px; padding:28px 32px; }
-.skill-page .school-page-header h1 { font-size:28px; }
-.skill-page .school-page-header p, .skill-page p, .skill-page input, .skill-page select, .skill-page textarea { font-size:14px; }
-.skill-navigation { justify-content:flex-end; margin:16px 0; }
-.skill-page .skill-card { border-radius:10px; box-shadow:none; }
-.skill-page .skill-card h2 { font-size:18px; }
+/* Teaching Skills */
+.skill-page { display:grid; grid-template-columns:minmax(0,1fr) auto; align-content:start; gap:0 20px; max-width:none; min-height:100vh; padding:36px; }
+.skill-page > * { grid-column:1 / -1; min-width:0; }
+.skill-page > .school-page-header { grid-column:1; grid-row:1; margin:0 0 28px; align-items:center; }
+.skill-page .school-page-header h1 { margin:0; }
+.skill-page .school-page-header p { margin:8px 0 0; font-size:13px; color:#718078; }
+.skill-page > .skill-navigation { grid-column:2; grid-row:1; align-self:start; margin:10px 0 0; justify-content:flex-end; }
+.skill-page .skill-library-scope { margin:0 0 22px; padding:0 0 20px; border-bottom:1px solid var(--resource-border); gap:20px; }
+.skill-library-scope label { flex-direction:row; align-items:center; gap:10px; color:#7b8980; }
+.skill-page .skill-library-scope select { min-width:110px; padding:8px 12px; border-radius:7px; }
+.skill-library-scope > span { margin-left:auto; font-size:12px; color:#839087; }
+.skill-page .skill-card { margin:0 0 22px; padding:24px; border:1px solid var(--resource-border); border-radius:12px; box-shadow:none; }
+.skill-page .skill-card h2 { display:flex; align-items:center; gap:12px; font-size:17px; font-weight:600; margin:0; }
 .skill-page .skill-card h3 { font-size:16px; }
-.skill-catalog article { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:18px 0; border-top:1px solid var(--line); }
-.skill-catalog article strong { font-size:16px; }
-.skill-catalog article p { margin:8px 0; color:var(--muted); }
-.skill-empty { padding:20px 0; }
+.skill-page .skill-card p { font-size:13px; line-height:1.8; color:#78867e; }
+.skill-page .skill-card > header p { margin:7px 0 0; }
+.skill-page .skill-default-card { display:flex; align-items:center; gap:16px; padding:21px 24px; background:#f0f5f2; border-color:#e0eae4; }
+.skill-default-card > div { flex:1; }
+.skill-page .skill-default-card p { margin:7px 0 0; }
+.skill-default-card h2 .resource-badge { background:#e2ebe5; color:#788a7e; font-size:11px; font-weight:400; }
+.skill-default-card .btn { background:transparent; border-color:#d4e0d8; white-space:nowrap; }
+.skill-scheme-icon { width:46px; height:46px; flex:0 0 auto; display:grid; place-items:center; border-radius:11px; color:#63826e; border:1px solid #d7e5dc; background:#f9fcfa; }
+.skill-scheme-icon.personal { background:#eef4fc; border-color:#e4ebf5; color:#718bb2; }
+.skill-page .skill-personal-card { padding:0; overflow:hidden; }
+.skill-personal-card > header { margin:0; padding:24px; align-items:center; }
+.skill-count { font-size:12px; font-weight:400; border:1px solid #e1e7e3; border-radius:5px; padding:1px 7px; color:#839087; }
+.skill-search { display:flex; align-items:center; gap:9px; width:260px; min-height:38px; padding:0 12px; background:#fafcfb; border:1px solid #dfe6e1; border-radius:7px; color:#91a096; }
+.skill-search input { width:100%; min-width:0; border:0; outline:0; background:transparent; font-size:13px; }
+.skill-search:focus-within { border-color:#5e9e7b; }
+.skill-catalog article { display:flex; align-items:center; gap:16px; padding:22px 24px; border-top:1px solid #e9eee9; }
+.skill-catalog article:hover { background:#fcfdfc; }
+.skill-catalog-info { flex:1; min-width:0; }
+.skill-catalog article strong { font-size:15px; font-weight:600; overflow-wrap:anywhere; }
+.skill-page .skill-catalog article p { margin:7px 0 0; font-size:12px; }
+.skill-state { margin-right:24px; background:#f3f5f4; color:#7a8880; gap:6px; }
+.skill-state i { width:5px; height:5px; border-radius:50%; background:#a3ada6; }
+.skill-state.active { color:#287552; background:#e9f4ec; }
+.skill-state.active i { background:#3f9564; }
+.skill-catalog article .btn { border:0; background:transparent; color:#367858; }
+.skill-empty { padding:24px; border-top:1px solid #e9eee9; }
+.skill-personal-card > p, .skill-catalog > p { margin:0; padding:24px; }
 .skill-overview { max-width:1000px; line-height:1.8; }
 .skill-overview li { font-size:14px; margin:5px 0; overflow-wrap:anywhere; }
 .skill-page .skill-actions { margin-top:20px; }
 .skill-page .skill-card pre { font-size:13px; }
 .paper-preview-page { padding:24px; overflow-x:auto; }
 .paper-preview-page > nav { margin-bottom:20px; }
-@media(max-width:800px) { .skill-page { padding:20px 12px; } .skill-catalog article { align-items:flex-start; flex-wrap:wrap; } }
-.bank-explorer-page { max-width:none; padding:28px 32px 48px; }
-.bank-explorer-page .bank-page-header { margin-bottom:8px; }
-.resource-intro { font-size:14px; color:var(--muted); margin:0 0 18px; line-height:1.7; }
-.bank-explorer-page .bank-title-row h1 { font-size:28px; }
-.bank-explorer-page .bank-explorer { border-radius:10px; box-shadow:none; }
-.bank-explorer-page .bank-toolbar.explorer-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
-.bank-explorer-page .search-box { flex:1 1 280px; }
-.bank-explorer-page .select-box { flex:0 1 auto; min-width:130px; }
-.bank-explorer-page .source-select { max-width:300px; }
-.bank-explorer-page .bank-toolbar input, .bank-explorer-page .bank-toolbar select { font-size:13px; min-height:38px; }
-.bank-more-filters { position:relative; font-size:13px; }
-.bank-more-filters summary { cursor:pointer; padding:10px; border:1px solid var(--line); border-radius:8px; }
-.bank-more-filters > div { position:absolute; z-index:20; right:0; top:100%; background:white; box-shadow:0 8px 24px #1233; border:1px solid var(--line); padding:16px; border-radius:8px; width:260px; }
+
+/* Question bank: keep filters together and give the question content room. */
+.bank-explorer-page { max-width:none; padding:36px 36px 48px; }
+.bank-explorer-page .bank-page-header { min-height:0; align-items:center; margin-bottom:28px; }
+.bank-explorer-page .bank-title-row { display:block; }
+.bank-explorer-page .bank-title-row h1 { font-family:inherit; font-size:28px; font-weight:650; line-height:1.3; }
+.resource-intro { font-size:13px; color:#718078; margin:8px 0 0; line-height:1.7; }
+.bank-explorer-page .bank-explorer { display:block; min-height:0; border:1px solid var(--resource-border); border-radius:12px; box-shadow:none; overflow:visible; }
+.bank-explorer-page .bank-explorer.with-folders { display:grid; grid-template-columns:210px minmax(0,1fr); }
+.bank-explorer-page .bank-explorer-main { border-radius:12px; }
+.bank-explorer-page .bank-folder-pane { background:#fafcfb; border-radius:12px 0 0 12px; }
+.bank-explorer-page .folder-pane-heading { padding:20px 16px 12px; }
+.bank-explorer-page .folder-pane-heading strong { font-size:13px; }
+.bank-explorer-page .bank-quick-links > button, .bank-explorer-page .bank-folder-row > button:first-child { font-size:13px; min-height:38px; }
+.bank-explorer-page .folder-section > div:first-child > span, .bank-explorer-page .folder-section > p { font-size:12px; line-height:1.8; }
+.bank-explorer-page .teacher-profile-card { box-shadow:none; }
+.bank-explorer-page .teacher-profile-summary strong { font-size:12px; }
+.bank-explorer-page .teacher-profile-summary small { font-size:11px; }
+.bank-explorer-page .explorer-commandbar { padding:8px 20px; min-height:46px; background:#f1f7f3; border-radius:12px 12px 0 0; }
+.bank-explorer-page .explorer-commandbar > button, .bank-explorer-page .move-selected, .bank-explorer-page .move-selected select { font-size:12px; }
+.bank-explorer-page .move-selected { border:0; padding:0; }
+.bank-explorer-page .explorer-addressbar { margin:12px 20px 0; padding:0; border:0; min-height:28px; }
+.bank-explorer-page .explorer-addressbar button, .bank-explorer-page .explorer-addressbar b { font-size:12px; }
+.bank-explorer-page .bank-toolbar.explorer-toolbar { position:relative; top:auto; z-index:5; display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0; padding:20px; border:0; border-bottom:1px solid #e9eee9; border-radius:12px 12px 0 0; background:white; }
+.bank-explorer-page .search-box { flex:1 0 100%; border-radius:7px; height:40px; background:#fafcfb; }
+.bank-explorer-page .select-box { flex:1 1 140px; min-width:0; max-width:210px; border-radius:7px; height:36px; background:white; }
+.bank-explorer-page .select-box > span { font-size:12px; }
+.bank-explorer-page .source-select { flex-basis:180px; max-width:260px; }
+.bank-explorer-page .bank-toolbar input, .bank-explorer-page .bank-toolbar select { font-size:13px; min-height:34px; }
+.bank-explorer-page .clear-filter { order:2; font-size:12px; }
+.bank-more-filters { position:relative; margin-left:auto; font-size:13px; }
+.bank-more-filters summary { cursor:pointer; padding:8px 10px; border:1px solid #dfe6e1; border-radius:7px; color:#60746a; }
+.bank-more-filters > div { position:absolute; z-index:20; right:0; top:calc(100% + 8px); background:white; box-shadow:0 10px 28px #233c3320; border:1px solid var(--resource-border); padding:16px; border-radius:10px; width:260px; }
 .bank-more-filters label { display:block; margin:8px 0; }
-.bank-more-filters select { display:block; width:100%; margin-top:5px; border:1px solid var(--line); }
-.bank-applied-filters { display:flex; flex-wrap:wrap; flex-basis:100%; gap:8px; }
-.bank-explorer-page .question-card { padding:16px; border-radius:8px; }
-.bank-explorer-page .question-stem, .bank-explorer-page .question-stem p { font-size:14px; line-height:1.8; }
-.bank-explorer-page .question-meta, .bank-explorer-page .question-source, .bank-explorer-page .question-actions, .bank-explorer-page .row-action { font-size:12px; }
-.resource-unavailable { background:white; border:1px solid var(--line); border-radius:10px; padding:28px; line-height:1.8; }
+.bank-more-filters select { display:block; width:100%; margin-top:5px; border:1px solid #e1e7e3; border-radius:5px; }
+.bank-applied-filters { order:3; display:flex; flex-wrap:wrap; flex-basis:100%; gap:8px; }
+.bank-explorer-page .explorer-content { max-width:none; padding:0 20px 8px; }
+.bank-explorer-page .bank-list-head { min-height:60px; margin:0; padding:12px 0; font-size:12px; }
+.bank-list-tools { display:flex; gap:16px; align-items:center; color:#8a968e; font-size:12px; }
+.bank-explorer-page .question-cards { border:0; border-radius:0; box-shadow:none; }
+.bank-explorer-page .question-card { grid-template-columns:22px minmax(0,1fr) auto; gap:14px; padding:22px 0; border-radius:0; }
+.bank-explorer-page .question-stem, .bank-explorer-page .question-stem p { font-family:inherit; font-size:15px; line-height:1.85; }
+.bank-explorer-page .question-stem { margin-top:10px; }
+.bank-explorer-page .question-meta { height:auto; min-height:22px; flex-wrap:wrap; overflow:visible; gap:6px 10px; font-size:12px; }
+.bank-explorer-page .question-meta .pill { padding:3px 7px; border-radius:5px; font-size:11px; font-weight:500; }
+.bank-explorer-page .question-meta :is(.variation-badge, .shared-badge, .variation-review-badge) { font-size:10px; border-radius:4px; }
+.bank-explorer-page .question-meta .source-label { max-width:240px; }
+.bank-explorer-page .question-actions { max-width:225px; flex-wrap:wrap; align-self:end; gap:4px; }
+.bank-explorer-page .row-action { height:30px; padding:0 8px; font-size:12px; }
+.bank-explorer-page .expand-action { color:#2b7b55; }
+.bank-explorer-page .question-actions .source-removed { font-size:11px; white-space:nowrap; }
+.bank-explorer-page .bank-options > span { font-family:inherit; font-size:14px; line-height:1.8; }
+.bank-explorer-page .answer-preview { font-size:13px; line-height:1.8; padding:14px; }
+.bank-explorer-page .answer-preview > div > b { font-size:12px; }
+.bank-explorer-page .question-cards.tiles { gap:16px; padding-bottom:12px; }
+.bank-explorer-page .question-cards.tiles .question-card { grid-template-columns:22px minmax(0,1fr); padding:18px; border:1px solid #e3e9e5; border-radius:9px; }
+.bank-explorer-page .question-cards.tiles .question-actions { max-width:none; }
+.resource-unavailable { background:white; border:1px solid var(--resource-border); border-radius:12px; padding:32px; line-height:1.8; }
 .resource-unavailable h2 { font-size:18px; margin:0; }
-.resource-unavailable p { color:var(--muted); font-size:14px; }
+.resource-unavailable p { color:#78867e; font-size:14px; }
 .resource-unavailable > button { margin-top:18px; }
-@media(max-width:800px) { .bank-explorer-page { padding:20px 12px; } }
+@media(max-width:1200px) {
+  .skill-page { grid-template-columns:1fr; }
+  .skill-page > .school-page-header { margin-bottom:16px; }
+  .skill-page > .skill-navigation { grid-column:1; grid-row:2; margin:0 0 20px; justify-content:flex-start; }
+  .bank-explorer-page .bank-page-header { flex-wrap:wrap; gap:16px; }
+  .bank-explorer-page .question-card { grid-template-columns:22px minmax(0,1fr); }
+  .bank-explorer-page .question-actions { grid-column:2; max-width:none; justify-content:flex-start; }
+}
+@media(max-width:800px) {
+  .skill-page, .bank-explorer-page { padding:24px 16px; }
+  .skill-library-scope > span { margin-left:0; flex-basis:100%; }
+  .skill-page .skill-default-card { flex-wrap:wrap; }
+  .skill-default-card > div { min-width:200px; }
+  .skill-personal-card > header { flex-wrap:wrap; }
+  .skill-search { width:100%; }
+  .skill-catalog article { flex-wrap:wrap; gap:12px; }
+  .skill-catalog-info { flex-basis:calc(100% - 62px); }
+  .skill-catalog article .btn { margin-left:auto; }
+  .bank-explorer-page .bank-explorer.with-folders { display:block; }
+  .bank-explorer-page .bank-header-actions { justify-content:flex-start; flex-wrap:wrap; }
+  .bank-explorer-page .bank-header-actions > .btn { display:inline-flex; }
+  .bank-explorer-page .bank-toolbar.explorer-toolbar { padding:16px; }
+  .bank-list-tools > span { display:none; }
+  .bank-explorer-page .select-box { flex-basis:calc(50% - 10px); max-width:none; }
+}
