@@ -38,3 +38,21 @@
 .asset-menu .danger { color:#a33737; }
 .asset-folders { margin:12px 0; }
 @media(max-width:800px) { .paper-library-page { padding:20px 12px; } .paper-library-header { flex-wrap:wrap; gap:12px; } .paper-library-shell.asset-library.with-folders { display:block; } .resource-tabs .resource-folder-toggle { margin-left:0; } }
+.skill-page { max-width:1600px; padding:28px 32px; }
+.skill-page .school-page-header h1 { font-size:28px; }
+.skill-page .school-page-header p, .skill-page p, .skill-page input, .skill-page select, .skill-page textarea { font-size:14px; }
+.skill-navigation { justify-content:flex-end; margin:16px 0; }
+.skill-page .skill-card { border-radius:10px; box-shadow:none; }
+.skill-page .skill-card h2 { font-size:18px; }
+.skill-page .skill-card h3 { font-size:16px; }
+.skill-catalog article { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:18px 0; border-top:1px solid var(--line); }
+.skill-catalog article strong { font-size:16px; }
+.skill-catalog article p { margin:8px 0; color:var(--muted); }
+.skill-empty { padding:20px 0; }
+.skill-overview { max-width:1000px; line-height:1.8; }
+.skill-overview li { font-size:14px; margin:5px 0; overflow-wrap:anywhere; }
+.skill-page .skill-actions { margin-top:20px; }
+.skill-page .skill-card pre { font-size:13px; }
+.paper-preview-page { padding:24px; overflow-x:auto; }
+.paper-preview-page > nav { margin-bottom:20px; }
+@media(max-width:800px) { .skill-page { padding:20px 12px; } .skill-catalog article { align-items:flex-start; flex-wrap:wrap; } }
