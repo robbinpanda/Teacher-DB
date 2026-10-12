@@ -17,6 +17,7 @@ test('两类试卷统一管理，恢复编排不会加入其他题目，保存�
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/papers');
     await expect(page.locator('.asset-table tbody tr')).toHaveCount(2);
+    if (width === 1440) await page.screenshot({ path: 'tmp/paper-library-1440.png', fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.getByRole('tab', { name: /上传原卷/ }).click();

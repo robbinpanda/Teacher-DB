@@ -16,20 +16,17 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  GraduationCap,
   Grid2X2,
   House,
   ImageIcon,
   List,
   LoaderCircle,
-  MapPin,
   PackageOpen,
   Pencil,
   Save,
   Search,
   ShoppingBasket,
   Sparkles,
-  Tags,
   Trash2,
   Upload,
   WandSparkles,
@@ -122,6 +119,11 @@ export function QuestionBank({
   const { subject, stage } = useEducationScope();
   const [questions, setQuestions] = useState(initialQuestions);
   const [pagination, setPagination] = useState(initialPagination);
+  const [library, setLibrary] = useState<"personal" | "platform">("personal");
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [regionFilter, setRegionFilter] = useState("");
+  const [textbookFilter, setTextbookFilter] = useState("");
+  const [originFilter, setOriginFilter] = useState("");
   const [query, setQuery] = useState("");
   const [type, setType] = useState<"all" | QuestionType>("all");
   const [selectedQuestions, setSelectedQuestions] = useState<QuestionWithSource[]>([]);
@@ -185,12 +187,16 @@ export function QuestionBank({
         if (type !== "all") params.set("type", type);
         if (activeTag !== "全部") params.set("tag", activeTag);
         if (source !== "全部") params.set("documentId", source);
+        if (gradeFilter) params.set("grade", gradeFilter);
+        if (regionFilter) params.set("region", regionFilter);
+        if (textbookFilter) params.set("textbook", textbookFilter);
+        if (originFilter) params.set("sourceKind", originFilter);
         if (selection.kind === "unfiled") params.set("folderId", "unfiled");
         if (selection.kind === "folder" && selection.value) params.set("folderId", selection.value);
         if (selection.kind === "grade" && selection.value) params.set("grade", selection.value);
         if (selection.kind === "region" && selection.value && selection.value !== "未设置地区") params.set("region", selection.value);
         if (selection.kind === "textbook" && selection.value && selection.value !== "未设置教材") params.set("textbook", selection.value);
-        if (!requestedDocumentId) { params.set("subject", subject); params.set("stage", stage); }
+        if (!(requestedDocumentId && source === requestedDocumentId)) { params.set("subject", subject); params.set("stage", stage); }
         const response = await fetch(`/api/questions?${params}`, { signal: controller.signal });
         const result = await response.json().catch(() => ({})) as { questions?: QuestionWithSource[]; pagination?: Pagination; error?: string };
         if (!response.ok || !result.questions || !result.pagination) throw new Error(result.error ?? "题库查询失败");
@@ -204,7 +210,7 @@ export function QuestionBank({
       }
     }, 220);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [activeTag, page, query, refreshKey, selection, source, stage, subject, type, requestedDocumentId]);
+  }, [activeTag, page, query, refreshKey, selection, source, stage, subject, type, requestedDocumentId, gradeFilter, regionFilter, textbookFilter, originFilter]);
 
   useEffect(() => {
     if (!variationTarget) return;
@@ -257,6 +263,7 @@ export function QuestionBank({
   }
 
   function clearFilters() {
+    setGradeFilter(""); setRegionFilter(""); setTextbookFilter(""); setOriginFilter("");
     setQuery("");
     setType("all");
     setActiveTag("全部");
@@ -556,7 +563,7 @@ export function QuestionBank({
   const paperHref = "/papers/new?ids=" + encodeURIComponent(orderedSelectedIds.join(","));
   const exportIds = selected.length ? "?ids=" + encodeURIComponent(orderedSelectedIds.join(",")) + "&" : "?";
   const allPageSelected = questions.length > 0 && questions.every((question) => selectedIds.has(question.id));
-  const activeFilterCount = Number(Boolean(query.trim())) + Number(type !== "all") + Number(activeTag !== "全部") + Number(source !== "全部");
+  const activeFilterCount = Number(Boolean(query.trim())) + Number(type !== "all") + Number(activeTag !== "全部") + Number(source !== "全部") + Number(!!gradeFilter) + Number(!!regionFilter) + Number(!!textbookFilter) + Number(!!originFilter);
   const smartLabel = selection.kind === "grade" ? ["按年级", selection.value]
     : selection.kind === "region" ? ["按地区", selection.value]
       : selection.kind === "textbook" ? ["按教材", selection.value]
@@ -566,8 +573,8 @@ export function QuestionBank({
   return (
     <div className="page-shell bank-page bank-explorer-page">
       <header className="bank-page-header">
-        <div className="bank-title-row"><h1>我的题库</h1><div className="bank-summary" aria-label="题库概况"><span><b>{bankStats.approved}</b> 道已入库</span><i /><span>{bankStats.withAssets} 道含图</span><i /><span>{bankStats.papers} 份试卷</span></div></div>
-        <div className="bank-header-actions">
+        <div className="bank-title-row"><h1>题库</h1><div className="bank-summary" aria-label="题库概况"><span><b>{bankStats.approved}</b> 道已入库</span><i /><span>{bankStats.withAssets} 道含图</span><i /><span>{bankStats.papers} 份试卷</span></div></div>
+        <div className="bank-header-actions"><Link className="btn btn-primary" href="/?import=1">导入试卷题目</Link>
           <input ref={importInput} type="file" accept=".jianti" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importPackage(file); }} />
           <button type="button" className="btn" disabled={importing} onClick={() => importInput.current?.click()}>{importing ? <LoaderCircle size={15} className="spin" /> : <Upload size={15} />} 导入共享包</button>
           <details className="export-menu"><summary className="btn"><Download size={15} /> 导出 <ChevronDown size={13} /></summary><div>
@@ -579,20 +586,21 @@ export function QuestionBank({
         </div>
       </header>
 
+      <p className="resource-intro">发现、管理并复用题目。个人上传、共享包导入与 AI 变式均保留各自来源。</p>
+      <div className="resource-tabs" role="tablist" aria-label="题库范围"><button role="tab" aria-selected={library === "platform"} onClick={() => setLibrary("platform")}>基础题库</button><button role="tab" aria-selected={library === "personal"} onClick={() => setLibrary("personal")}>我的题库</button></div>
+      {library === "platform" && <section className="resource-unavailable"><h2>平台精选资源尚未开放</h2><p>平台还未发布可供引用的基础资源。你上传和导入的题目保存在「我的题库」。</p><div className="resource-actions"><span className="resource-badge">模卷 · 待发布</span><span className="resource-badge">名校试卷 · 待发布</span></div><button className="btn" onClick={() => setLibrary("personal")}>浏览我的题库</button></section>}
+      {library === "personal" && <>
       {(notice || operationError) && <div className={`bank-notice ${operationError ? "error" : "success"}`}><span>{operationError || notice}</span><button type="button" onClick={() => { setNotice(""); setOperationError(""); }}><X size={13} /></button></div>}
 
       <div className="bank-explorer card">
         <aside className="bank-folder-pane" aria-label="题库文件夹">
-          <div className="folder-pane-heading"><strong>题库目录</strong><button type="button" title="新建文件夹" onClick={() => void createFolder()}><FolderPlus size={15} /></button></div>
+          <div className="folder-pane-heading"><strong>个人文件夹</strong><button type="button" title="新建文件夹" onClick={() => void createFolder()}><FolderPlus size={15} /></button></div>
           <nav className="bank-quick-links">
             <button type="button" className={selection.kind === "all" ? "active" : ""} onClick={() => chooseLocation(defaultSelection)}><House size={15} /><span>全部题目</span><small>{bankStats.approved}</small></button>
-            <button type="button" className={selection.kind === "unfiled" ? "active" : ""} onClick={() => chooseLocation({ kind: "unfiled" })}><Folder size={15} /><span>未分类</span></button>
+            <button type="button" className={selection.kind === "unfiled" ? "active" : ""} onClick={() => chooseLocation({ kind: "unfiled" })}><Folder size={15} /><span>未分文件夹</span></button>
           </nav>
           <div className="folder-pane-scroll">
             <section className="folder-section"><div><span>我的文件夹</span><button type="button" onClick={() => void createFolder()}><FolderPlus size={12} /> 新建</button></div>{bankFolders.length ? renderFolders(null) : <p>新建文件夹，把常用题目按备课习惯归档。</p>}</section>
-            <details className="smart-folder-section" open><summary><GraduationCap size={14} /> 按年级</summary><div>{bankFacets.grades.map((facet) => <button type="button" key={facet.value} className={selection.kind === "grade" && selection.value === facet.value ? "active" : ""} onClick={() => chooseLocation({ kind: "grade", value: facet.value })}><span>{facet.value}</span><small>{facet.count}</small></button>)}</div></details>
-            <details className="smart-folder-section"><summary><MapPin size={14} /> 按地区</summary><div>{bankFacets.regions.map((facet) => <button type="button" key={facet.value} className={selection.kind === "region" && selection.value === facet.value ? "active" : ""} onClick={() => chooseLocation({ kind: "region", value: facet.value })}><span>{facet.value}</span><small>{facet.count}</small></button>)}</div></details>
-            <details className="smart-folder-section"><summary><Tags size={14} /> 按教材</summary><div>{bankFacets.textbooks.map((facet) => <button type="button" key={facet.value} className={selection.kind === "textbook" && selection.value === facet.value ? "active" : ""} onClick={() => chooseLocation({ kind: "textbook", value: facet.value })}><span>{facet.value}</span><small>{facet.count}</small></button>)}</div></details>
           </div>
           <section className={`teacher-profile-card${profileOpen ? " editing" : ""}`}>
             <button type="button" className="teacher-profile-summary" onClick={() => setProfileOpen((value) => !value)}><span><Sparkles size={14} /></span><div><strong>我的教学画像</strong><small>{profile.region} · {profile.textbook}{profile.grades.length ? ` · ${profile.grades.join("、")}` : ""}</small></div><ChevronDown size={13} /></button>
@@ -622,11 +630,19 @@ export function QuestionBank({
             <label className="select-box"><span>题型</span><select value={type} onChange={(event) => { setType(event.target.value as "all" | QuestionType); setPage(1); }}><option value="all">全部</option>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><ChevronDown size={13} /></label>
             <label className="select-box source-select"><span>来源</span><select value={source} onChange={(event) => { setSource(event.target.value); setPage(1); }}><option value="全部">全部来源</option>{bankSources.map((item) => <option key={item.id} value={item.id}>{[item.year, item.region, item.textbook, item.school, item.examType, item.name].filter(Boolean).join(" · ")}</option>)}</select><ChevronDown size={13} /></label>
             {activeFilterCount > 0 && <button className="clear-filter" type="button" onClick={clearFilters}><X size={13} /> 清除 {activeFilterCount} 项</button>}
-            {tags.length > 1 && <div className="tag-filters" aria-label="知识点筛选">{tags.map((tag) => <button key={tag} type="button" className={activeTag === tag ? "active" : ""} onClick={() => { setActiveTag(tag); setPage(1); }}>{tag}</button>)}</div>}
+            <label className="select-box"><span>年级</span><select aria-label="筛选年级" value={gradeFilter} onChange={event => { setGradeFilter(event.target.value); setPage(1); }}><option value="">全部年级</option>{bankFacets.grades.filter(f => f.value !== "未设置年级").map(f => <option key={f.value}>{f.value}</option>)}</select></label>
+            <label className="select-box"><span>知识点</span><select aria-label="筛选知识点" value={activeTag} onChange={event => { setActiveTag(event.target.value); setPage(1); }}>{tags.map(tag => <option key={tag}>{tag}</option>)}</select></label>
+            <details className="bank-more-filters"><summary>更多筛选{originFilter || regionFilter || textbookFilter ? " · 已应用" : ""}</summary><div>
+              <label>题目来源<select aria-label="题目来源类型" value={originFilter} onChange={event => { setOriginFilter(event.target.value); setPage(1); }}><option value="">全部个人资源</option><option value="uploaded">上传原卷识别</option><option value="imported">共享包导入副本</option><option value="generated">AI 变式</option></select></label>
+              <label>地区<select value={regionFilter} onChange={event => { setRegionFilter(event.target.value); setPage(1); }}><option value="">全部地区</option>{bankFacets.regions.filter(f => f.value !== "未设置地区").map(f => <option key={f.value}>{f.value}</option>)}</select></label>
+              <label>教材<select value={textbookFilter} onChange={event => { setTextbookFilter(event.target.value); setPage(1); }}><option value="">全部教材</option>{bankFacets.textbooks.filter(f => f.value !== "未设置教材").map(f => <option key={f.value}>{f.value}</option>)}</select></label>
+            </div></details>
+            {activeFilterCount > 0 && <div className="bank-applied-filters" aria-label="已应用筛选">{[query.trim(), type !== "all" ? typeLabels[type] : "", activeTag !== "全部" ? activeTag : "", source !== "全部" ? bankSources.find(s => s.id === source)?.name ?? "指定来源试卷" : "", gradeFilter, regionFilter, textbookFilter, originFilter === "uploaded" ? "上传原卷识别" : originFilter === "imported" ? "共享包导入副本" : originFilter === "generated" ? "AI 变式" : ""].filter(Boolean).map((label,index) => <span className="resource-badge" key={index}>{label}</span>)}</div>}
+
           </section>
 
           <div className="bank-content explorer-content">
-            <div className="bank-list-head"><div><button type="button" className={allPageSelected ? "active" : ""} onClick={togglePage} disabled={!questions.length} aria-label={allPageSelected ? "取消选择当前页" : "选择当前页"}>{allPageSelected && <Check size={12} />}</button><span>{loading ? <><LoaderCircle size={12} className="spin" /> 查询中…</> : `${pagination.total} 道题`}</span>{!loading && pagination.pageCount > 1 && <small>第 {pagination.page} / {pagination.pageCount} 页</small>}</div><span>双击式展开：查看选项、答案与解析</span></div>
+            <div className="bank-list-head"><div><button type="button" className={allPageSelected ? "active" : ""} onClick={togglePage} disabled={!questions.length} aria-label={allPageSelected ? "取消选择当前页" : "选择当前页"}>{allPageSelected && <Check size={12} />}</button><span>{loading ? <><LoaderCircle size={12} className="spin" /> 查询中…</> : `${pagination.total} 道题`}</span>{!loading && pagination.pageCount > 1 && <small>第 {pagination.page} / {pagination.pageCount} 页</small>}</div><span>点击展开：查看选项、答案与解析</span></div>
             {(searchError || deleteError) && <p className="form-error">{searchError || deleteError}</p>}
             <div className={`question-cards ${viewMode} ${loading ? "loading" : ""}`}>
               {questions.map((question) => {
@@ -643,12 +659,13 @@ export function QuestionBank({
                 </article>;
               })}
             </div>
-            {!questions.length && !loading && <div className="empty-state explorer-empty"><FolderOpen size={42} /><h2>这个文件夹还是空的</h2><p>{activeFilterCount ? "可以清除部分筛选条件，看看是否有匹配题目。" : "从左侧选择其他目录，或把已选题目移动到这里。"}</p>{activeFilterCount > 0 && <button className="btn btn-primary" type="button" onClick={clearFilters}>清除筛选</button>}</div>}
+            {!questions.length && !loading && !searchError && <div className="empty-state explorer-empty"><FolderOpen size={42} /><h2>{activeFilterCount ? "没有匹配的题目" : selection.kind === "folder" || selection.kind === "unfiled" ? "当前文件夹没有题目" : bankStats.approved ? "当前学科、学段没有已入库题目" : "我的题库还没有已入库题目"}</h2><p>{activeFilterCount ? "清除部分条件后重新查找；来源试卷中尚未审核的题目不会出现在题库。" : "上传试卷并完成审核后，题目会出现在这里。也可以导入共享包积累个人题目。"}</p>{activeFilterCount > 0 && <button className="btn btn-primary" type="button" onClick={clearFilters}>清除筛选</button>}</div>}
             {pagination.pageCount > 1 && <nav className="bank-pagination" aria-label="题库分页"><button type="button" disabled={pagination.page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={14} /> 上一页</button><span>第 {pagination.page} / {pagination.pageCount} 页</span><button type="button" disabled={pagination.page >= pagination.pageCount || loading} onClick={() => setPage((value) => Math.min(pagination.pageCount, value + 1))}>下一页 <ChevronRight size={14} /></button></nav>}
           </div>
         </main>
       </div>
 
+      </>}
       {selected.length > 0 && <>{basketOpen && <button type="button" className="question-basket-backdrop" aria-label="收起选题篮" onClick={() => setBasketOpen(false)} />}{basketOpen ? <aside className="question-basket" aria-label="已选题目"><header><div><span><ShoppingBasket size={18} /></span><div><strong>选题篮</strong><small>共 {selected.length} 道，使用箭头调整组卷与导出顺序</small></div></div><button type="button" aria-label="收起选题篮" onClick={() => setBasketOpen(false)}><X size={16} /></button></header><ol>{selected.map((question, index) => <li key={question.id}><b>{index + 1}</b><div><span>{typeLabels[question.type]} · 原题号 {question.number}</span><p><MathText text={question.stem} /></p><small>{question.source.documentName}</small></div><div className="basket-item-actions"><button type="button" aria-label={`上移第 ${index + 1} 题`} disabled={index === 0} onClick={() => moveSelected(index, -1)}><ArrowUp size={13} /></button><button type="button" aria-label={`下移第 ${index + 1} 题`} disabled={index === selected.length - 1} onClick={() => moveSelected(index, 1)}><ArrowDown size={13} /></button><button type="button" className="danger" aria-label={`移除第 ${index + 1} 题`} onClick={() => removeSelected(question.id)}><Trash2 size={13} /></button></div></li>)}</ol><footer><div className="basket-destructive-actions"><button type="button" onClick={() => { setSelectedQuestions([]); setBasketOpen(false); }}>取消选择</button><button type="button" className="permanent-delete" disabled={deleting} onClick={() => void deleteSelectedQuestions()}><Trash2 size={12} /> {deleting ? "删除中…" : "永久删除"}</button></div><div><a href={`/api/exports/questions${exportIds}format=package`}><PackageOpen size={13} /> 共享包</a><Link href={paperHref} className="btn btn-primary"><FilePlus2 size={14} /> 去组卷</Link></div></footer></aside> : <button type="button" className="question-basket-trigger" aria-expanded="false" onClick={() => setBasketOpen(true)}><span><ShoppingBasket size={20} /><b>{selected.length}</b></span><i><strong>选题篮</strong><small>查看、排序或导出</small></i><ChevronRight size={16} /></button>}</>}
 
       {variationTarget && <div className="variation-dialog-backdrop" role="presentation" onMouseDown={(event) => {

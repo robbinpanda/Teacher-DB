@@ -56,3 +56,27 @@
 .paper-preview-page { padding:24px; overflow-x:auto; }
 .paper-preview-page > nav { margin-bottom:20px; }
 @media(max-width:800px) { .skill-page { padding:20px 12px; } .skill-catalog article { align-items:flex-start; flex-wrap:wrap; } }
+.bank-explorer-page { max-width:none; padding:28px 32px 48px; }
+.bank-explorer-page .bank-page-header { margin-bottom:8px; }
+.resource-intro { font-size:14px; color:var(--muted); margin:0 0 18px; line-height:1.7; }
+.bank-explorer-page .bank-title-row h1 { font-size:28px; }
+.bank-explorer-page .bank-explorer { border-radius:10px; box-shadow:none; }
+.bank-explorer-page .bank-toolbar.explorer-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.bank-explorer-page .search-box { flex:1 1 280px; }
+.bank-explorer-page .select-box { flex:0 1 auto; min-width:130px; }
+.bank-explorer-page .source-select { max-width:300px; }
+.bank-explorer-page .bank-toolbar input, .bank-explorer-page .bank-toolbar select { font-size:13px; min-height:38px; }
+.bank-more-filters { position:relative; font-size:13px; }
+.bank-more-filters summary { cursor:pointer; padding:10px; border:1px solid var(--line); border-radius:8px; }
+.bank-more-filters > div { position:absolute; z-index:20; right:0; top:100%; background:white; box-shadow:0 8px 24px #1233; border:1px solid var(--line); padding:16px; border-radius:8px; width:260px; }
+.bank-more-filters label { display:block; margin:8px 0; }
+.bank-more-filters select { display:block; width:100%; margin-top:5px; border:1px solid var(--line); }
+.bank-applied-filters { display:flex; flex-wrap:wrap; flex-basis:100%; gap:8px; }
+.bank-explorer-page .question-card { padding:16px; border-radius:8px; }
+.bank-explorer-page .question-stem, .bank-explorer-page .question-stem p { font-size:14px; line-height:1.8; }
+.bank-explorer-page .question-meta, .bank-explorer-page .question-source, .bank-explorer-page .question-actions, .bank-explorer-page .row-action { font-size:12px; }
+.resource-unavailable { background:white; border:1px solid var(--line); border-radius:10px; padding:28px; line-height:1.8; }
+.resource-unavailable h2 { font-size:18px; margin:0; }
+.resource-unavailable p { color:var(--muted); font-size:14px; }
+.resource-unavailable > button { margin-top:18px; }
+@media(max-width:800px) { .bank-explorer-page { padding:20px 12px; } }

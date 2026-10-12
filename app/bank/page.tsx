@@ -9,7 +9,7 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
   const requestHeaders = await headers();
   const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
   const data = await getBankData(ownerId);
-  return <QuestionBank
+  return <QuestionBank key={query.documentId ?? "all"}
     requestedDocumentId={query.documentId}
     initialQuestions={data.questions}
     initialPagination={data.pagination}

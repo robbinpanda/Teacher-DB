@@ -37,7 +37,7 @@ type QuestionRow = {
   variationReviewStatus: string | null;
   variationReviewJson: string | null;
   documentName: string;
-  mimeType: string;
+  sourceKind: string;
   subject: string | null;
   grade: string | null;
   sourceYear: number | null;
@@ -168,9 +168,9 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
         textbook: row.sourceTextbook,
         school: row.sourceSchool,
         sourceRemoved: Boolean(row.sourceRemovedAt),
-        origin: row.mimeType === "application/x-jianti-import"
+        origin: row.sourceKind === "imported"
           ? "imported"
-          : row.mimeType === "application/x-jianti-generated"
+          : row.sourceKind === "generated"
             ? "generated"
             : "original",
       },
@@ -185,7 +185,7 @@ const questionSelect = `
          q.missing_images_json AS missingImagesJson,
          q.folder_id AS folderId, q.parent_question_id AS parentQuestionId, q.parent_external_id AS parentExternalId, q.variation_kind AS variationKind,
          q.variation_review_status AS variationReviewStatus, q.variation_review_json AS variationReviewJson,
-         d.name AS documentName, d.mime_type AS mimeType, d.subject, d.grade, d.source_year AS sourceYear,
+         d.name AS documentName, d.source_kind AS sourceKind, d.subject, d.grade, d.source_year AS sourceYear,
          d.source_exam_type AS sourceExamType, d.source_region AS sourceRegion,
          d.source_textbook AS sourceTextbook, d.source_school AS sourceSchool, d.source_removed_at AS sourceRemovedAt
     FROM questions q JOIN documents d ON d.id = q.document_id`;
@@ -281,6 +281,7 @@ export async function getApprovedQuestions(ownerId: string, ids?: string[]) {
 }
 
 export type QuestionSearchOptions = {
+  sourceKind?: string;
   query?: string;
   type?: string;
   tag?: string;
@@ -310,6 +311,7 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
   if (options.type && ["single", "multiple", "fill", "answer"].includes(options.type)) {
     clauses.push("q.type = ?"); params.push(options.type);
   }
+  if (options.sourceKind && ["uploaded", "imported", "generated"].includes(options.sourceKind)) { clauses.push("d.source_kind = ?"); params.push(options.sourceKind); }
   if (options.documentId) { clauses.push("d.id = ?"); params.push(options.documentId); }
   if (options.subject) { clauses.push("d.subject = ?"); params.push(options.subject); }
   if (options.grade) { clauses.push("d.grade = ?"); params.push(options.grade); }

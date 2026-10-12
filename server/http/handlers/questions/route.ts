@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const year = Number(url.searchParams.get("year")) || undefined;
   const result = await searchApprovedQuestions(requestOwner(request), {
+    sourceKind: url.searchParams.get("sourceKind") ?? undefined,
     query: url.searchParams.get("q") ?? undefined,
     type: url.searchParams.get("type") ?? undefined,
     tag: url.searchParams.get("tag") ?? undefined,

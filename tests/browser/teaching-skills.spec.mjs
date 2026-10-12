@@ -11,6 +11,8 @@ test('Skills 首页隐藏规则，方案可搜索、编辑并恢复，创建流�
   await page.goto('/settings/skills');
   await expect(page.getByRole('button', { name: '查看与编辑' })).toBeVisible();
   await expect(page.locator('.skill-compare')).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: 'tmp/skills-1440.png', fullPage: true });
   await page.getByLabel('搜索识别方案').fill('没有的名称');
   await expect(page.getByText('没有匹配的方案，请调整搜索。')).toBeVisible();
   await page.getByLabel('搜索识别方案').fill('');
