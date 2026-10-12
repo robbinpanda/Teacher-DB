@@ -4,6 +4,7 @@ import path from 'node:path';
 
 test.use({ extraHTTPHeaders: { 'oai-authenticated-user-id': 'paper-library-browser' } });
 test('两类试卷统一管理，恢复编排不会加入其他题目，保存更新同一作品', async ({ page, request }) => {
+  test.setTimeout(90000);
   const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, 'teacher-question-bank.sqlite3'));
   const stamp = new Date().toISOString(), doc = crypto.randomUUID(), paper = crypto.randomUUID();
   db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES (?,'paper-library-browser','原卷链路测试','application/pdf','complete','数学','高三',?,?)").run(doc, stamp, stamp);
@@ -58,6 +59,12 @@ test('两类试卷统一管理，恢复编排不会加入其他题目，保存�
   await page.goto(`/papers/${paper}/preview`);
   await expect(page.getByRole('link', { name: '继续编辑' })).toBeVisible();
   await expect(page.locator('.printable-paper')).toContainText('链路题目1');
+  for (const suffix of ['', '?answers=1']) {
+    const pdf = await request.get(`/api/papers/${paper}/pdf${suffix}`);
+    expect(pdf.status(), await pdf.text().then(text => text.slice(0, 150))).toBe(200);
+    expect(pdf.headers()['content-type']).toBe('application/pdf');
+    expect((await pdf.body()).subarray(0, 4).toString()).toBe('%PDF');
+  }
   const deleted = await request.delete(`/api/papers/${paper}`); expect(deleted.ok()).toBe(true);
   expect(db.prepare('SELECT COUNT(*) FROM questions WHERE document_id=?').pluck().get(doc)).toBe(3);
   expect(errors).toEqual([]); db.close();
