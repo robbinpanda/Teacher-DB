@@ -1,4 +1,4 @@
-// Run with: node --import ./server/register.mjs --import tsx scripts/benchmark-openrouter.mjs <prepare|run> <config.json>
+// Run with: node --import ./server/register.mjs --import tsx scripts/benchmark-openrouter.mjs <prepare|run|billing> <config.json>
 // This deliberately calls the existing extraction pipeline without parser/prompt changes or queue retries.
 import fs from "node:fs";
 import path from "node:path";
@@ -6,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 
 const [mode, configPath] = process.argv.slice(2);
-if (!["prepare", "run"].includes(mode) || !configPath) throw new Error("Expected prepare|run and a config JSON path");
+if (!["prepare", "run", "billing"].includes(mode) || !configPath) throw new Error("Expected prepare|run|billing and a config JSON path");
 const config = JSON.parse(fs.readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
 const sourceRoot = path.resolve(config.sourceData);
 const outputRoot = path.resolve(config.outputData);
@@ -79,6 +79,45 @@ if (mode === "prepare") {
     method: "Same stored PDF/pages, production extraction and finalization; one pipeline attempt per model/paper; existing HTTP compatibility fallback preserved; no queue retries." });
   source.close();
   console.log(JSON.stringify({ event: "prepared", papers: papers.length, models: models.length, outputRoot }));
+  process.exit(0);
+}
+
+if (mode === "billing") {
+  const report = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+  if (!report.finishedAt) throw new Error("Wait for the benchmark to finish before reconciling billing");
+  process.env.JIANTI_DATA_DIR = outputRoot;
+  const database = new Database(path.join(outputRoot, "teacher-question-bank.sqlite3"), { readonly: true });
+  const { decryptSecret } = await import("../lib/secret-box.ts");
+  for (const trial of report.trials) {
+    const profile = database.prepare("SELECT * FROM model_profiles WHERE id = ? AND owner_id = ?").get(trial.profileId, ownerId);
+    if (!profile || new URL(profile.base_url).hostname !== "openrouter.ai") throw new Error("Expected OpenRouter profile");
+    const apiKey = await decryptSecret(profile.api_key_ciphertext, profile.api_key_iv);
+    for (const response of trial.responses ?? []) {
+      if (!response.generationId || response.billing) continue;
+      const url = new URL("https://openrouter.ai/api/v1/generation");
+      url.searchParams.set("id", response.generationId);
+      const fetched = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(30_000) });
+      if (!fetched.ok) {
+        response.billingLookupStatus = fetched.status;
+        continue;
+      }
+      const { data } = await fetched.json();
+      // Store only benchmark-relevant metadata; omit account identifiers and upstream details.
+      response.billing = { totalCostUsd: data.total_cost, model: data.model, provider: data.provider_name,
+        cancelled: data.cancelled, finishReason: data.finish_reason, nativeFinishReason: data.native_finish_reason,
+        promptTokens: data.native_tokens_prompt, completionTokens: data.native_tokens_completion,
+        cachedTokens: data.native_tokens_cached, reasoningTokens: data.native_tokens_reasoning };
+    }
+    if (trial.responses?.length && trial.responses.every(response => response.httpStatus >= 400 || typeof (response.billing?.totalCostUsd ?? response.usage?.cost) === "number")) {
+      if (!("streamCostUsd" in trial)) trial.streamCostUsd = trial.costUsd;
+      trial.costUsd = trial.responses.reduce((sum, response) => sum + (response.billing?.totalCostUsd ?? response.usage?.cost ?? 0), 0);
+    }
+    json(resultsPath, report);
+    console.log(JSON.stringify({ event: "billing", model: trial.model, paper: trial.label, costUsd: trial.costUsd }));
+  }
+  report.billingCheckedAt = new Date().toISOString();
+  json(resultsPath, report);
+  database.close();
   process.exit(0);
 }
 
