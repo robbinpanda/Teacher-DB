@@ -265,6 +265,7 @@ export async function getReviewData(documentId: string, ownerId: string) {
 }
 
 export async function getApprovedQuestions(ownerId: string, ids?: string[]) {
+  if (ids && !ids.length) return [];
   await ensureDatabase();
   const sqlite = getSqlite();
   const idClause = ids?.length ? ` AND q.id IN (${placeholders(ids.length)})` : "";
@@ -466,10 +467,13 @@ export async function getPaperData(paperId: string, ownerId: string): Promise<Sa
        FROM papers WHERE id = ? AND owner_id = ?`,
   ).get(paperId, ownerId) as { id: string; title: string; subtitle: string; settingsJson: string; createdAt: string; updatedAt: string } | undefined;
   if (!paper) return null;
-  const items = sqlite.prepare(
-    "SELECT question_id AS questionId FROM paper_items WHERE paper_id = ? ORDER BY position",
-  ).all(paperId) as Array<{ questionId: string }>;
-  const questions = await getApprovedQuestions(ownerId, items.map((item) => item.questionId));
+  // Existing references remain visible if a question later returns to review.
+  // Saving still requires approval; do not silently drop such references.
+  const rows = sqlite.prepare(
+    `${questionSelect} JOIN paper_items pi ON pi.question_id = q.id
+      WHERE pi.paper_id = ? AND d.owner_id = ? ORDER BY pi.position`,
+  ).all(paperId, ownerId) as QuestionRow[];
+  const questions = await hydrateQuestions(rows);
   return {
     id: paper.id,
     title: paper.title,

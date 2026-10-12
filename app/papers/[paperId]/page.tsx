@@ -17,7 +17,10 @@ export default async function EditPaperPage({ params }: { params: Promise<{ pape
     getPaperTemplates(ownerId),
   ]);
   if (!paper) notFound();
-  const settings = normalizePaperSettings(paper.settings, questions);
+  // Only persisted paper items belong in the restored sections. The bank is
+  // the candidate pool, never the source of the saved paper's membership.
+  const settings = normalizePaperSettings(paper.settings, paper.questions);
+  const availableQuestions = [...new Map([...questions, ...paper.questions].map((question) => [question.id, question])).values()];
   const initialIds = settings.sections.flatMap((section) => section.questionIds);
-  return <PaperBuilder questions={questions} initialIds={initialIds} templates={templates} initialPaper={{ id: paper.id, title: paper.title, subtitle: paper.subtitle, settings }} />;
+  return <PaperBuilder key={paper.id} questions={availableQuestions} initialIds={initialIds} templates={templates} initialPaper={{ id: paper.id, title: paper.title, subtitle: paper.subtitle, settings }} />;
 }
