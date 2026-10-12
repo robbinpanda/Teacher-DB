@@ -520,7 +520,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 3;
+export const DATABASE_VERSION = 4;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -551,6 +551,18 @@ function initialize() {
         lease_owner TEXT, lease_expires_at TEXT, next_attempt_at TEXT, last_error TEXT,
         updated_at TEXT NOT NULL
       ); CREATE INDEX document_preparations_claim_idx ON document_preparations(status, next_attempt_at, lease_expires_at)`),
+    },
+    {
+      version: 4,
+      name: "explicit-document-origin-and-paper-folders",
+      checksum: "document-origin-paper-folders-v1",
+      up: sqlite => sqlite.exec(`
+        ALTER TABLE documents ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'uploaded' CHECK(source_kind IN ('uploaded','imported','generated'));
+        ALTER TABLE documents ADD COLUMN paper_folder_id TEXT REFERENCES paper_folders(id) ON DELETE SET NULL;
+        UPDATE documents SET source_kind = 'imported' WHERE mime_type = 'application/x-jianti-import';
+        UPDATE documents SET source_kind = 'generated' WHERE mime_type = 'application/x-jianti-generated';
+        CREATE INDEX documents_paper_library_idx ON documents(owner_id, source_kind, paper_folder_id);
+      `),
     },
   ]);
   initialized = true;

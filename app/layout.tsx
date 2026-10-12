@@ -4,6 +4,7 @@ import "katex/dist/katex.min.css";
 import { AppShell } from "../components/AppShell";
 import { getTeacherMode } from "../lib/backend-data";
 import "./globals.css";
+import "./resource-management.css";
 import "./workbench.css";
 
 export const metadata: Metadata = {

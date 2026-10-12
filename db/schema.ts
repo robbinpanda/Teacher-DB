@@ -6,6 +6,8 @@ export const documents = sqliteTable("documents", {
   ownerId: text("owner_id").notNull().default("local-demo"),
   name: text("name").notNull(),
   mimeType: text("mime_type").notNull(),
+  sourceKind: text("source_kind").notNull().default("uploaded"),
+  paperFolderId: text("paper_folder_id").references(() => paperFolders.id, { onDelete: "set null" }),
   originalKey: text("original_key"),
   status: text("status").notNull().default("uploading"),
   pageCount: integer("page_count").notNull().default(0),

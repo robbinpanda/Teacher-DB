@@ -68,10 +68,10 @@ async function renderPdf(
   }
 }
 
-export function UploadWorkbench() {
+export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const router = useRouter();
   const { subject, stage, setSubject, setStage } = useEducationScope();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState("");
   const [submitting, setSubmitting] = useState(false);

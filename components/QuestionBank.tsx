@@ -99,6 +99,7 @@ type VariationModelProfile = { id: string; displayName: string; enabled: boolean
 const defaultSelection: ExplorerSelection = { kind: "all" };
 
 export function QuestionBank({
+  requestedDocumentId,
   initialQuestions,
   initialPagination,
   stats,
@@ -108,6 +109,7 @@ export function QuestionBank({
   facets,
   initialProfile,
 }: {
+  requestedDocumentId?: string;
   initialQuestions: QuestionWithSource[];
   initialPagination: Pagination;
   stats: BankStats;
@@ -126,7 +128,7 @@ export function QuestionBank({
   const [basketOpen, setBasketOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Record<string, true>>({});
   const [activeTag, setActiveTag] = useState("全部");
-  const [source, setSource] = useState("全部");
+  const [source, setSource] = useState(requestedDocumentId ?? "全部");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -188,8 +190,7 @@ export function QuestionBank({
         if (selection.kind === "grade" && selection.value) params.set("grade", selection.value);
         if (selection.kind === "region" && selection.value && selection.value !== "未设置地区") params.set("region", selection.value);
         if (selection.kind === "textbook" && selection.value && selection.value !== "未设置教材") params.set("textbook", selection.value);
-        params.set("subject", subject);
-        params.set("stage", stage);
+        if (!requestedDocumentId) { params.set("subject", subject); params.set("stage", stage); }
         const response = await fetch(`/api/questions?${params}`, { signal: controller.signal });
         const result = await response.json().catch(() => ({})) as { questions?: QuestionWithSource[]; pagination?: Pagination; error?: string };
         if (!response.ok || !result.questions || !result.pagination) throw new Error(result.error ?? "题库查询失败");
@@ -203,7 +204,7 @@ export function QuestionBank({
       }
     }, 220);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [activeTag, page, query, refreshKey, selection, source, stage, subject, type]);
+  }, [activeTag, page, query, refreshKey, selection, source, stage, subject, type, requestedDocumentId]);
 
   useEffect(() => {
     if (!variationTarget) return;

@@ -13,6 +13,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   const { documentId } = await context.params;
   const ownerId = requestOwner(request);
   const parsed = await readJsonPayload<{
+    name?: string;
+    paperFolderId?: string | null;
     status?: string;
     subject?: string;
     grade?: string;
@@ -25,6 +27,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   }>(request);
   if (!parsed.ok) return parsed.response;
   const payload = parsed.value;
+  if ((payload.name !== undefined && (typeof payload.name !== "string" || !payload.name.trim() || payload.name.length > 180))
+    || (payload.paperFolderId !== undefined && payload.paperFolderId !== null && typeof payload.paperFolderId !== "string")) {
+    return Response.json({ error: "试卷名称或文件夹无效" }, { status: 400 });
+  }
   const textFields = [payload.subject, payload.grade, payload.examType, payload.region, payload.textbook, payload.school, payload.error];
   if ((payload.status !== undefined && typeof payload.status !== "string")
     || textFields.some((value) => value !== undefined && value !== null && typeof value !== "string")
@@ -47,6 +53,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
       "SELECT status FROM documents WHERE id = ? AND owner_id = ?",
     ).get(documentId, ownerId) as { status: string } | undefined;
     if (!document) return { error: "文档不存在", statusCode: 404 } as const;
+    if (payload.paperFolderId && !transaction.prepare("SELECT 1 FROM paper_folders WHERE id = ? AND owner_id = ?").get(payload.paperFolderId, ownerId)) {
+      return { error: "目标文件夹不存在", statusCode: 400 } as const;
+    }
     if (payload.status && !canTransitionDocument(document.status, payload.status)) {
       return { error: `不能从 ${document.status} 直接转换为 ${payload.status}`, statusCode: 409 } as const;
     }
@@ -67,6 +76,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     const assignments = ["updated_at = ?"];
     const values: unknown[] = [now()];
     const add = (column: string, value: unknown) => { assignments.push(`${column} = ?`); values.push(value); };
+    if (payload.name !== undefined) add("name", payload.name.trim());
+    if (payload.paperFolderId !== undefined) add("paper_folder_id", payload.paperFolderId || null);
     if (payload.status) add("status", payload.status);
     if (payload.subject !== undefined) add("subject", payload.subject || null);
     if (payload.grade !== undefined) add("grade", payload.grade || null);

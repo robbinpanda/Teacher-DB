@@ -4,11 +4,13 @@ import { headers } from "next/headers";
 
 export const metadata = { title: "我的题库 · 拣题" };
 
-export default async function BankPage() {
+export default async function BankPage({ searchParams }: { searchParams: Promise<{ documentId?: string }> }) {
+  const query = await searchParams;
   const requestHeaders = await headers();
   const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
   const data = await getBankData(ownerId);
   return <QuestionBank
+    requestedDocumentId={query.documentId}
     initialQuestions={data.questions}
     initialPagination={data.pagination}
     stats={data.stats}

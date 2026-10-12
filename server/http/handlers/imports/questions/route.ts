@@ -108,9 +108,9 @@ export async function POST(request: Request) {
         const question = questionPackage.questions.find((item) => item.source.documentKey === sourceKey)!;
         sqlite.prepare(
           `INSERT INTO documents
-            (id, owner_id, name, mime_type, status, page_count, subject, grade, source_year, source_exam_type,
+            (id, owner_id, name, source_kind, mime_type, status, page_count, subject, grade, source_year, source_exam_type,
              source_region, source_textbook, source_school, source_removed_at, created_at, updated_at)
-           VALUES (?, ?, ?, 'application/x-jianti-import', 'complete', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, 'imported', 'application/x-jianti-import', 'complete', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           documentId, ownerId, question.source.documentName, question.source.subject, question.source.grade,
           question.source.year, question.source.examType, question.source.region, question.source.textbook,

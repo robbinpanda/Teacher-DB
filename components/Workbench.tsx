@@ -19,7 +19,7 @@ type QueueControlState = {
   queuedCount: number;
 };
 
-export function Workbench({ initialDocuments, approvedQuestions }: { initialDocuments: SourceDocument[]; approvedQuestions: number }) {
+export function Workbench({ initialDocuments, approvedQuestions, importOpen = false }: { importOpen?: boolean; initialDocuments: SourceDocument[]; approvedQuestions: number }) {
   const router = useRouter();
   const [documents, setDocuments] = useState(initialDocuments);
   const [activeGroup, setActiveGroup] = useState<DocumentGroup>(() => {
@@ -297,7 +297,7 @@ export function Workbench({ initialDocuments, approvedQuestions }: { initialDocu
       <div className="wb-header-actions">
         <Link className="wb-button wb-quiet" href="/bank"><FileStack size={16} />打开题库</Link>
         {nextReview && <Link className="wb-button" href={`/review/${nextReview.id}`}><ScanText size={16} />继续审核</Link>}
-        <UploadWorkbench />
+        <UploadWorkbench initiallyOpen={importOpen} />
       </div>
     </header>
     <WorkbenchOverview documents={documents} approvedQuestions={approvedQuestions} onSelect={selectGroup} />

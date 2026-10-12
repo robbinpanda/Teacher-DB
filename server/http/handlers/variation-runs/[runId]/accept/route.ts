@@ -178,9 +178,9 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
 
       transaction.prepare(
         `INSERT INTO documents
-          (id, owner_id, name, mime_type, status, page_count, subject, grade, source_year, source_exam_type,
+          (id, owner_id, name, source_kind, mime_type, status, page_count, subject, grade, source_year, source_exam_type,
            source_region, source_textbook, source_school, source_removed_at, created_at, updated_at)
-         VALUES (?, ?, ?, 'application/x-jianti-generated', 'complete', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, 'generated', 'application/x-jianti-generated', 'complete', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         documentId, ownerId, `AI 变式 · ${source.source.documentName}`.slice(0, 180), source.source.subject,
         source.source.grade, source.source.year, source.source.examType, source.source.region,

@@ -14,6 +14,12 @@ export type PaperFolderRecord = {
 
 export type PaperLibraryRecord = {
   id: string;
+  kind: "uploaded" | "assembled";
+  grade: string;
+  status: string;
+  originalUrl: string | null;
+  sourceRemoved: boolean;
+  approvedCount: number;
   folderId: string | null;
   title: string;
   subtitle: string;
@@ -43,12 +49,27 @@ export async function getPaperLibrary(ownerId: string) {
        COUNT(pi.question_id) AS questionCount
      FROM papers p LEFT JOIN paper_items pi ON pi.paper_id = p.id
      WHERE p.owner_id = ? GROUP BY p.id ORDER BY p.updated_at DESC`,
-  ).all(ownerId) as Array<Omit<PaperLibraryRecord, "subject" | "stage"> & { settingsJson: string }>;
-  const papers = rows.map(({ settingsJson, ...paper }) => {
+  ).all(ownerId) as Array<Pick<PaperLibraryRecord, "id" | "folderId" | "title" | "subtitle" | "createdAt" | "updatedAt" | "questionCount"> & { settingsJson: string }>;
+  const papers: PaperLibraryRecord[] = rows.map(({ settingsJson, ...paper }) => {
     let settings: Record<string, unknown> = {};
     try { settings = JSON.parse(settingsJson) as Record<string, unknown>; } catch { /* use empty metadata */ }
-    return { ...paper, subject: typeof settings.subject === "string" ? settings.subject : "未设置", stage: typeof settings.stage === "string" ? settings.stage : "middle" };
+    return { ...paper, kind: "assembled", grade: "", status: "saved", originalUrl: null, sourceRemoved: false, approvedCount: paper.questionCount, subject: typeof settings.subject === "string" ? settings.subject : "", stage: typeof settings.stage === "string" ? settings.stage : "" };
   });
+  const originals = sqlite.prepare(`
+    SELECT d.id, d.paper_folder_id AS folderId, d.name AS title, '' AS subtitle,
+      COALESCE(d.subject, '') AS subject, COALESCE(d.grade, '') AS grade, '' AS stage,
+      d.status, d.original_key AS originalKey, d.source_removed_at AS sourceRemovedAt,
+      d.created_at AS createdAt, d.updated_at AS updatedAt, COUNT(q.id) AS questionCount,
+      COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approvedCount
+    FROM documents d LEFT JOIN questions q ON q.document_id = d.id
+    WHERE d.owner_id = ? AND d.source_kind = 'uploaded'
+    GROUP BY d.id
+  `).all(ownerId) as Array<Omit<PaperLibraryRecord, "kind" | "originalUrl" | "sourceRemoved"> & { originalKey: string | null; sourceRemovedAt: string | null }>;
+  for (const { originalKey, sourceRemovedAt, ...document } of originals) papers.push({
+    ...document, kind: "uploaded", sourceRemoved: Boolean(sourceRemovedAt),
+    originalUrl: originalKey && !sourceRemovedAt ? `/api/files/${originalKey.split('/').map(encodeURIComponent).join('/')}` : null,
+  });
+  papers.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return { folders, papers };
 }
 
@@ -95,8 +116,9 @@ export async function deletePaperFolder(ownerId: string, folderId: string) {
     }
     const contents = transaction.prepare(
       `SELECT (SELECT COUNT(*) FROM paper_folders WHERE parent_id = ? AND owner_id = ?) +
-              (SELECT COUNT(*) FROM papers WHERE folder_id = ? AND owner_id = ?) AS count`,
-    ).get(folderId, ownerId, folderId, ownerId) as { count: number };
+              (SELECT COUNT(*) FROM papers WHERE folder_id = ? AND owner_id = ?) +
+              (SELECT COUNT(*) FROM documents WHERE paper_folder_id = ? AND owner_id = ?) AS count`,
+    ).get(folderId, ownerId, folderId, ownerId, folderId, ownerId) as { count: number };
     if (contents.count) throw new Error("文件夹不为空，请先移动或删除其中内容");
     transaction.prepare("DELETE FROM paper_folders WHERE id = ? AND owner_id = ?").run(folderId, ownerId);
   });

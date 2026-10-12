@@ -1051,3 +1051,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .document-log-link:hover { background: #e6f1eb; color: var(--green); }
 .dashboard-library .document-row-wrap:not(.selection-active) .document-row { padding-right: 72px; }
 .dashboard-library .document-row-wrap.paused:not(.selection-active) .document-row { padding-right: 102px; }
+
