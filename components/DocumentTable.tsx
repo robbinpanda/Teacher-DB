@@ -15,6 +15,23 @@ function processingLabel(doc: SourceDocument) {
   return "识别中";
 }
 
+function RecognitionProgress({ document: doc }: { document: SourceDocument }) {
+  const total = doc.recognitionQuestionTotal && doc.recognitionQuestionTotal > 0 ? doc.recognitionQuestionTotal : null;
+  const failedReviews = doc.aiReviewFailedQuestionCount ?? 0;
+  return <div className="wb-recognition-progress" title={[doc.lastError, doc.recognitionMessage, failedReviews ? `${failedReviews} 题 AI 复核失败，需重试` : ""].filter(Boolean).join("；")}>
+    {[{ label: "识别", count: doc.recognizedQuestionCount ?? 0 }, { label: "AI复核", count: doc.aiReviewedQuestionCount ?? 0 }].map(({ label, count }) => {
+      const percent = total ? Math.min(100, Math.round(count / total * 100)) : undefined;
+      return <div className="wb-mini-progress" key={label}>
+        <span><small>{label}</small><small>{count}/{total ?? "?"}</small></span>
+        <div role="progressbar" aria-label={`${doc.name} ${label}进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
+          aria-valuetext={`${count}/${total ?? "待确认"} 题${label === "AI复核" && failedReviews ? `，${failedReviews} 题复核失败` : ""}`}>
+          <i style={{ width: `${percent ?? 0}%` }} />
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
 export function DocumentTable({ documents, selectionMode, selectedIds, retryingIds, busy, onToggle, onDelete, onRetry }: {
   documents: SourceDocument[]; selectionMode: boolean; selectedIds: Set<string>; retryingIds: Set<string>; busy: boolean;
   onToggle: (id: string) => void; onDelete: (document: SourceDocument) => void; onRetry: (document: SourceDocument) => void;
@@ -39,7 +56,7 @@ export function DocumentTable({ documents, selectionMode, selectedIds, retryingI
           </div></td>
           <td><span className="wb-cell-primary">{doc.grade || "未设置年级"}</span><span className="wb-cell-secondary">{doc.subject}</span></td>
           <td>{processing && !doc.questionCount ? <span className="wb-muted">—</span> : doc.questionCount}</td>
-          <td>{processing ? <div className={`wb-processing${failed ? " failed" : ""}`} title={doc.lastError ?? doc.recognitionMessage ?? undefined}>
+          <td>{processing && (doc.jobStatus === "processing" || doc.recognitionQuestionTotal || doc.recognizedQuestionCount) ? <RecognitionProgress document={doc} /> : processing ? <div className={`wb-processing${failed ? " failed" : ""}`} title={doc.lastError ?? doc.recognitionMessage ?? undefined}>
             <span>{status}</span><small>{doc.recognitionQuestionTotal ? `已识别 ${doc.recognizedQuestionCount ?? 0}/${doc.recognitionQuestionTotal} 题` : doc.nextAttemptAt ? `${new Date(doc.nextAttemptAt).toLocaleTimeString("zh-CN")} 重试` : doc.status === "uploading" ? "原卷正在准备" : "尚未进入审核"}</small>
           </div> : <div className="wb-review-progress"><span>{doc.approvedCount}<span> / {doc.questionCount} 题</span></span><div role="progressbar" aria-label={`${doc.name} 审核进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div></div>}</td>
           <td><time dateTime={doc.createdAt} title={new Date(doc.createdAt).toLocaleString("zh-CN")}><span className="wb-cell-primary">{new Date(doc.createdAt).toLocaleDateString("zh-CN")}</span><span className="wb-cell-secondary">{new Date(doc.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span></time></td>

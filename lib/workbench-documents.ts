@@ -20,6 +20,7 @@ export function documentGroup(document: SourceDocument): Exclude<DocumentGroup, 
 export function filterDocuments(documents: SourceDocument[], group: DocumentGroup, search: string, sort: DocumentSort) {
   const query = search.trim().toLocaleLowerCase();
   return documents.filter(document => (group === "all" || documentGroup(document) === group) && document.name.toLocaleLowerCase().includes(query))
-    .sort((a, b) => sort === "name" ? a.name.localeCompare(b.name, "zh-CN", { numeric: true }) :
-      (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * (sort === "oldest" ? 1 : -1));
+    .sort((a, b) => Number(b.jobStatus === "processing") - Number(a.jobStatus === "processing")
+      || (sort === "name" ? a.name.localeCompare(b.name, "zh-CN", { numeric: true }) :
+        (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * (sort === "oldest" ? 1 : -1)));
 }

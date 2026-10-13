@@ -443,6 +443,12 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
             j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError,
             j.question_total AS recognitionQuestionTotal,
             COALESCE(json_array_length(j.completed_question_numbers_json), 0) AS recognizedQuestionCount,
+            COALESCE(SUM(CASE WHEN json_valid(q.ai_review_json) AND
+              (j.document_id IS NULL OR EXISTS (SELECT 1 FROM json_each(j.completed_question_numbers_json) n WHERE n.value = q.number))
+              THEN CASE WHEN json_extract(q.ai_review_json, '$.status') IN ('passed', 'issues') THEN 1 ELSE 0 END ELSE 0 END), 0) AS aiReviewedQuestionCount,
+            COALESCE(SUM(CASE WHEN json_valid(q.ai_review_json) AND
+              (j.document_id IS NULL OR EXISTS (SELECT 1 FROM json_each(j.completed_question_numbers_json) n WHERE n.value = q.number))
+              THEN CASE WHEN json_extract(q.ai_review_json, '$.status') = 'failed' THEN 1 ELSE 0 END ELSE 0 END), 0) AS aiReviewFailedQuestionCount,
             j.stream_phase AS recognitionPhase, j.stream_message AS recognitionMessage,
             j.profile_id AS modelProfileId,
             COALESCE(mp.display_name, (SELECT NULLIF(rm.model, 'pending') FROM extraction_runs rm WHERE rm.document_id = d.id AND rm.model <> 'pending' ORDER BY rm.created_at DESC LIMIT 1)) AS modelDisplayName,
@@ -451,7 +457,7 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
        LEFT JOIN document_jobs j ON j.document_id = d.id
        LEFT JOIN model_profiles mp ON mp.id = j.profile_id AND mp.owner_id = d.owner_id
-      WHERE d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id ORDER BY d.created_at DESC LIMIT 100`,
+      WHERE d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id ORDER BY CASE WHEN j.status = 'processing' THEN 0 ELSE 1 END, d.created_at DESC LIMIT 100`,
   ).all(ownerId) as SourceDocument[];
   return rows;
 }

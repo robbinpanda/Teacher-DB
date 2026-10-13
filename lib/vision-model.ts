@@ -9,6 +9,7 @@ import {
 import { dataDirectory, getSqlite } from "../db";
 import { extractModelTokenUsage, recordModelUsage } from "./model-usage";
 import { ModelCallTrace } from "./model-call-trace";
+import { hasModelThinking, isThinkingSettingError, thinkingDisabledMessage } from "./model-thinking";
 
 type VisionCall = {
   ownerId: string;
@@ -103,26 +104,21 @@ export async function callVisionModel(input: VisionCall) {
     });
     if (response.status === 400 && input.jsonMode) {
       const firstDetail = await response.text();
+      if (isThinkingSettingError(firstDetail)) {
+        throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false, 400);
+      }
       response = await trace.fetch(request.endpoint, {
         method: "POST",
         headers: request.headers,
         body: JSON.stringify(compatibilityBody(request.body as Record<string, unknown>)),
         signal: controller.signal,
       });
-      if (!response.ok && /invalid thinking|only type=enabled|thinking mode.*required/i.test(firstDetail)) {
-        throw new ModelCallError(
-          `模型 ${profile.displayName} 强制开启思考模式，与本项目固定 reasoning_effort=none 不兼容。`,
-          "thinking_mode_incompatible",
-          false,
-          response.status,
-        );
-      }
     }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1200);
-      if (/invalid thinking|only type=enabled|thinking mode.*required/i.test(detail)) {
+      if (isThinkingSettingError(detail)) {
         throw new ModelCallError(
-          `模型 ${profile.displayName} 强制开启思考模式，与本项目固定 reasoning_effort=none 不兼容。请改用支持无推理模式的多模态模型。`,
+          thinkingDisabledMessage(profile.displayName),
           "thinking_mode_incompatible",
           false,
           response.status,
@@ -139,7 +135,6 @@ export async function callVisionModel(input: VisionCall) {
     const result = await response.json() as unknown;
     const content = extractVisionResponseText(request.protocol, result);
     if (content) trace.output("text", content);
-    if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
     const usage = extractModelTokenUsage(request.protocol, result);
     if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens || usage.cachedOutputTokens) {
       try {
@@ -153,6 +148,8 @@ export async function callVisionModel(input: VisionCall) {
         console.error("模型 Token 用量记录失败", usageError);
       }
     }
+    if (hasModelThinking(result)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false);
+    if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
     return { content, profile, usage, traceId: trace.id };
   } catch (error) {
     failure = error;
@@ -192,8 +189,8 @@ function sseMessages(buffer: string) {
 }
 
 /**
- * Streams one whole-document model call. The timeout is idle-based: visible output or
- * provider reasoning deltas reset it, so long active calls are never killed at 90 seconds.
+ * Streams one whole-document model call. Only answer text resets the idle timeout.
+ * Providers that ignore the disabled-thinking setting are stopped immediately.
  */
 export async function callVisionModelStream(input: VisionCall, handlers: VisionStreamHandlers) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
@@ -211,6 +208,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
   resetIdleTimer();
   let trace: ModelCallTrace | undefined;
   let failure: unknown;
+  let usagePayload: unknown;
   try {
     const images = input.images?.length
       ? input.images
@@ -243,23 +241,21 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     });
     if (response.status === 400) {
       const firstDetail = await response.text();
+      if (isThinkingSettingError(firstDetail)) {
+        throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false, 400);
+      }
       response = await trace.fetch(request.endpoint, {
         method: "POST",
         headers: request.headers,
         body: JSON.stringify(compatibilityBody(request.body as Record<string, unknown>)),
         signal: controller.signal,
       });
-      if (!response.ok && /invalid thinking|only type=enabled|thinking mode.*required/i.test(firstDetail)) {
-        throw new ModelCallError(
-          `模型 ${profile.displayName} 强制开启思考模式，与本项目固定 reasoning_effort=none 不兼容。`,
-          "thinking_mode_incompatible",
-          false,
-          response.status,
-        );
-      }
     }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1200);
+      if (isThinkingSettingError(detail)) {
+        throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false, response.status);
+      }
       throw new ModelCallError(
         `模型 ${profile.displayName} 通过 ${MODEL_PROTOCOL_LABELS[request.protocol]} 返回 HTTP ${response.status}：${detail}`,
         `provider_http_${response.status}`,
@@ -274,7 +270,6 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
-    let usagePayload: unknown;
     let receivedProviderEvent = false;
     while (true) {
       const { done, value } = await reader.read();
@@ -283,7 +278,15 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
       buffer = batch.rest;
       for (const data of batch.messages) {
         const event = extractVisionStreamEvent(request.protocol, data);
-        if (event.error) throw new ModelCallError(event.error, "provider_stream_error", true);
+        if (event.usagePayload) usagePayload = event.usagePayload;
+        if (event.error) {
+          if (isThinkingSettingError(event.error)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false);
+          throw new ModelCallError(event.error, "provider_stream_error", true);
+        }
+        if (event.thinkingDelta || event.thinkingPresent || hasModelThinking(event.usagePayload)) {
+          if (event.thinkingDelta) trace.output("thinking", event.thinkingDelta);
+          throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false);
+        }
         if (event.textDelta) {
           receivedProviderEvent = true;
           resetIdleTimer();
@@ -292,13 +295,6 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
           await handlers.onActivity?.({ kind: "text", delta: event.textDelta });
           await handlers.onTextDelta(event.textDelta);
         }
-        if (event.thinkingDelta) {
-          receivedProviderEvent = true;
-          resetIdleTimer();
-          trace.output("thinking", event.thinkingDelta);
-          await handlers.onActivity?.({ kind: "thinking", delta: event.thinkingDelta });
-        }
-        if (event.usagePayload) usagePayload = event.usagePayload;
       }
       if (done) break;
     }
@@ -306,6 +302,8 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     // A few compatible gateways ignore stream=true and return one regular JSON response.
     if (!receivedProviderEvent && buffer.trim()) {
       const result = JSON.parse(buffer) as unknown;
+      usagePayload = result;
+      if (hasModelThinking(result)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false);
       const fallbackText = extractVisionResponseText(request.protocol, result);
       if (fallbackText) {
         resetIdleTimer();
@@ -314,28 +312,15 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
         await handlers.onActivity?.({ kind: "text", delta: fallbackText });
         await handlers.onTextDelta(fallbackText);
       }
-      usagePayload = result;
     }
     if (!content) throw new ModelCallError(`模型 ${profile.displayName} 没有返回可解析内容`, "empty_stream", true);
     const usage = extractModelTokenUsage(request.protocol, usagePayload);
-    if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens || usage.cachedOutputTokens) {
-      try {
-        recordModelUsage(getSqlite(), profile, usage, {
-          purpose: input.purpose ?? "other",
-          documentId: input.documentId,
-          pageNumber: input.pageNumber,
-          pageCount: input.pageCount,
-        }, new Date().toISOString());
-      } catch (usageError) {
-        console.error("模型 Token 用量记录失败", usageError);
-      }
-    }
     return { content, profile, usage, traceId: trace.id };
   } catch (error) {
     failure = error;
     if (error instanceof DOMException && error.name === "AbortError") {
       if (idleTimedOut) {
-        throw new ModelCallError("模型连续 90 秒没有输出文字或思考活动，已进入退避重试", "stream_idle_timeout", true);
+        throw new ModelCallError("模型连续 90 秒没有输出正文，已停止调用", "stream_idle_timeout", false);
       }
       throw new ModelCallError("模型流被中止", "stream_aborted", true);
     }
@@ -351,6 +336,16 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
     controller.abort();
+    // Providers can charge for failed/empty responses too; retain reported usage.
+    const usage = extractModelTokenUsage(profile.provider, usagePayload);
+    if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens || usage.cachedOutputTokens) {
+      try {
+        recordModelUsage(getSqlite(), profile, usage, {
+          purpose: input.purpose ?? "other", documentId: input.documentId,
+          pageNumber: input.pageNumber, pageCount: input.pageCount,
+        }, new Date().toISOString());
+      } catch (usageError) { console.error("模型 Token 用量记录失败", usageError); }
+    }
     trace?.finish(failure === undefined ? "complete" : "failed", failure);
   }
 }

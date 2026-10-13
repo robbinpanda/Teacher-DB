@@ -1,4 +1,5 @@
 import { isOpenCodeEndpoint, isOpenCodeService, normalizeModelService } from "./model-services.ts";
+import { disableModelThinking } from "./model-thinking.ts";
 
 export const MODEL_PROTOCOLS = [
   "openai-chat-completions",
@@ -91,10 +92,8 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
     request.headers.authorization = `Bearer ${input.apiKey}`;
     request.headers["x-opencode-session"] = sessionId;
     request.headers["user-agent"] = "Jianti-Teacher-Question-Bank/0.1.0";
-    // Console routes heterogeneous models: do not force an OpenAI-only reasoning option.
-    delete request.body.reasoning_effort;
-    delete request.body.reasoning;
   }
+  disableModelThinking(request, service, input.model);
   return request;
 }
 
@@ -198,6 +197,7 @@ function buildProtocolRequest(input: VisionRequestInput): VisionHttpRequest {
 export type VisionStreamEvent = {
   textDelta?: string;
   thinkingDelta?: string;
+  thinkingPresent?: boolean;
   done?: boolean;
   error?: string;
   usagePayload?: unknown;
@@ -242,6 +242,7 @@ export function extractVisionStreamEvent(protocolValue: string, data: string): V
 
   if (protocol === "anthropic-messages") {
     const type = String(event.type ?? "");
+    if (type === "content_block_start" && ["thinking", "redacted_thinking"].includes(String(objectValue(event.content_block)?.type))) return { thinkingPresent: true };
     if (type === "error") {
       const detail = objectValue(event.error);
       return { error: String(detail?.message ?? "Anthropic 流返回错误") };
@@ -258,6 +259,7 @@ export function extractVisionStreamEvent(protocolValue: string, data: string): V
 
   if (protocol === "openai-responses") {
     const type = String(event.type ?? "");
+    if ((type === "response.output_item.added" || type === "response.output_item.done") && objectValue(event.item)?.type === "reasoning") return { thinkingPresent: true };
     if (type === "response.output_text.delta" && typeof event.delta === "string") return { textDelta: event.delta };
     if ((type.includes("reasoning") || type.includes("thinking")) && type.endsWith(".delta")) {
       return { thinkingDelta: stringFromUnknownContent(event.delta) || String(event.delta ?? "") };
@@ -277,6 +279,7 @@ export function extractVisionStreamEvent(protocolValue: string, data: string): V
   const textDelta = stringFromUnknownContent(delta?.content);
   const thinkingDelta = stringFromUnknownContent(delta?.reasoning_content ?? delta?.reasoning ?? delta?.thinking);
   return {
+    ...(Array.isArray(delta?.reasoning_details) && delta.reasoning_details.length ? { thinkingPresent: true } : {}),
     ...(textDelta ? { textDelta } : {}),
     ...(thinkingDelta ? { thinkingDelta } : {}),
     ...(event.usage ? { usagePayload: event } : {}),

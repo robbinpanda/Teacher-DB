@@ -6,14 +6,14 @@ export const MODEL_SERVICE_LABELS: Record<ModelService, string> = {
   opencode: "OpenCode 普通付费", "opencode-go": "OpenCode Go 套餐", openrouter: "OpenRouter", custom: "自定义",
 };
 
-// Official endpoint tables checked 2026-10-13. Only offer the requested paid/subscription models.
+// Official endpoint tables checked 2026-10-13. Only offer paid/subscription models with a thinking-off mode.
 // https://opencode.ai/v2/docs/console/models/ and https://opencode.ai/v2/docs/console/go/
+// GLM-5.3 / GLM-5.3-Flash require thinking: https://docs.z.ai/guides/capabilities/thinking-mode
 type PresetModel = { id: string; label: string; protocol: ModelProtocol };
 export const OPENCODE_MODELS: readonly PresetModel[] = [
   { id: "gpt-6-luna", label: "GPT 6 Luna", protocol: "openai-responses" },
   { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", protocol: "anthropic-messages" },
   { id: "deepseek-v4.1-flash", label: "DeepSeek 4.1 Flash", protocol: "openai-chat-completions" },
-  { id: "glm-5.3-flash", label: "GLM 5.3 Flash", protocol: "openai-chat-completions" },
 ];
 // MiMo is offered only through the Go subscription preset.
 export const OPENCODE_GO_MODELS: readonly PresetModel[] = [
@@ -52,6 +52,7 @@ export function builtInModelConnection(service: ModelService, modelValue: string
   const model = modelValue.trim().replace(service === "opencode-go" ? /^opencode-go\// : service === "opencode" ? /^opencode\// : /^openrouter\//, "");
   if (!model) throw new Error("请填写模型名称");
   if (service === "openrouter") return { model, provider: "openai-chat-completions" as ModelProtocol, baseUrl: "https://openrouter.ai/api/v1" };
+  if (/^glm-5\.3(?:-|$)/i.test(model)) throw new Error("GLM-5.3 系列无法关闭思考，已从 OpenCode 可选模型中移除，请选择其他模型");
   const entry = (service === "opencode-go" ? OPENCODE_GO_MODELS : OPENCODE_MODELS).find(item => item.id === model);
   if (!entry) throw new Error(`该 ${MODEL_SERVICE_LABELS[service]} 模型尚未适配，请使用对应服务的官方模型 ID；新模型或工作区自接提供商可选择自定义模型并填写官方接口地址及协议`);
   if (service === "opencode-go") return { model, provider: entry.protocol, baseUrl: "https://opencode.ai/inference/go/v1" };

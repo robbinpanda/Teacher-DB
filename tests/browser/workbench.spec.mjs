@@ -321,3 +321,69 @@ test("同步失败保留现有数据，模型配置失败明确提示并可重�
     await expect(dialog.getByRole("button", { name: "开始导入" })).toBeEnabled();
   } finally { fixture.close(); }
 });
+
+
+test("识别试卷置顶，双进度独立刷新且桌面手机均保持原行高", async ({ page }) => {
+  const fixture = papers();
+  const { db } = fixture;
+  const active = fixture.items[0];
+  const stamp = new Date().toISOString();
+  db.prepare("UPDATE documents SET status='extracting',created_at='2020-01-01' WHERE id=?").run(active.id);
+  db.prepare("UPDATE extraction_runs SET status='running' WHERE document_id=?").run(active.id);
+  db.prepare("INSERT INTO document_jobs (document_id,owner_id,status,question_total,completed_question_numbers_json,lease_expires_at,queued_at,updated_at) VALUES (?,'workbench-browser','processing',8,?,'2099-01-01',?,?)").run(active.id, JSON.stringify(['1','2','3']), stamp, stamp);
+  for (const [number,status] of [['1','passed'],['2','pending'],['3','failed'],['4','passed']]) {
+    db.prepare("UPDATE questions SET ai_review_json=? WHERE document_id=? AND number=?").run(JSON.stringify({ status }),active.id,number);
+  }
+  try {
+    await page.goto('/');
+    await page.getByRole('tab',{name:/^全部/}).click();
+    for (const sort of ['newest','oldest','name']) {
+      await page.getByLabel('试卷排序').selectOption(sort);
+      await expect(page.locator('.document-main strong').first()).toHaveText(active.name);
+    }
+    const row=page.locator('.wb-table tbody tr',{hasText:active.name});
+    const recognition=row.getByRole('progressbar',{name:active.name+' 识别进度',exact:true});
+    const review=row.getByRole('progressbar',{name:active.name+' AI复核进度',exact:true});
+    await expect(recognition).toHaveAttribute('aria-valuetext','3/8 题');
+    await expect(review).toHaveAttribute('aria-valuetext','1/8 题，1 题复核失败');
+    // A review from a prior attempt (question 4) must not be counted yet.
+    db.prepare("UPDATE questions SET ai_review_json=? WHERE document_id=? AND number='2'").run(JSON.stringify({status:'issues'}),active.id);
+    await expect(review).toHaveAttribute('aria-valuetext','2/8 题，1 题复核失败',{timeout:8000});
+    await expect(recognition).toHaveAttribute('aria-valuetext','3/8 题');
+    db.prepare("UPDATE document_jobs SET completed_question_numbers_json=? WHERE document_id=?").run(JSON.stringify(['1','2','3','4']), active.id);
+    await expect(recognition).toHaveAttribute('aria-valuetext','4/8 题',{timeout:8000});
+    await expect(review).toHaveAttribute('aria-valuenow','38');
+    for (const width of [1440,390]) {
+      await page.setViewportSize({width,height:1000});
+      const activeHeight=(await row.boundingBox()).height;
+      const normalHeight=(await page.locator('.wb-table tbody tr',{hasText:fixture.items[1].name}).boundingBox()).height;
+      expect(activeHeight).toBeLessThanOrEqual(normalHeight+1);
+      expect(activeHeight).toBeLessThanOrEqual(72);
+      await page.screenshot({path:'tmp/workbench-dual-progress-'+width+'.png',fullPage:true});
+    }
+    db.prepare("UPDATE document_jobs SET question_total=NULL,completed_question_numbers_json='[]' WHERE document_id=?").run(active.id);
+    await expect(recognition).toHaveAttribute('aria-valuetext','0/待确认 题',{timeout:8000});
+    await expect(recognition).not.toHaveAttribute('aria-valuenow');
+  } finally { fixture.close(); }
+});
+
+
+test("超过列表上限时旧的识别任务仍会被返回并置顶", async ({ request }) => {
+  const fixture=papers();
+  const stamp=new Date().toISOString();
+  const active=fixture.items[0];
+  fixture.db.prepare("UPDATE documents SET status='extracting',created_at='2020-01-01' WHERE id=?").run(active.id);
+  fixture.db.prepare("INSERT INTO document_jobs (document_id,owner_id,status,lease_expires_at,queued_at,updated_at) VALUES (?,'workbench-browser','processing','2099-01-01',?,?)").run(active.id,stamp,stamp);
+  for(let index=0;index<100;index++) {
+    const id=crypto.randomUUID();
+    fixture.db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,page_count,created_at,updated_at) VALUES (?,'workbench-browser','较新的试卷','application/pdf','failed',0,?,?)").run(id,stamp,stamp);
+    fixture.items.push({id});
+  }
+  try {
+    const response=await request.get('/api/documents');
+    expect(response.ok()).toBe(true);
+    const result=await response.json();
+    expect(result.documents).toHaveLength(100);
+    expect(result.documents[0].id).toBe(active.id);
+  } finally {fixture.close();}
+});

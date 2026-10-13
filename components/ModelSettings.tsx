@@ -217,13 +217,16 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
   }
 
   function startEdit(profile: Profile) {
+    const service = normalizeModelService(profile.service, profile.baseUrl);
+    const unavailable = isOpenCodeService(service) && !(service === "opencode-go" ? OPENCODE_GO_MODELS : OPENCODE_MODELS).some(model => model.id === profile.model);
+    setMessage(unavailable ? `原模型 ${profile.model} 已不在可选列表中，请重新选择支持关闭思考的模型。` : "");
     setEditingId(profile.id);
     setForm({
-      service: normalizeModelService(profile.service, profile.baseUrl),
+      service,
       displayName: profile.displayName,
       provider: profile.provider,
       baseUrl: profile.baseUrl,
-      model: profile.model,
+      model: unavailable ? "" : profile.model,
       apiKey: "",
       timeoutMs: profile.timeoutMs,
       inputPricePerMillion: profile.inputPricePerMillion?.toString() ?? "",
@@ -374,7 +377,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
           </div>
 
           <form id="model-editor" className="card model-editor" onSubmit={saveProfile}>
-            <div className="model-editor-head"><div><h3>{editingProfile ? `编辑 ${editingProfile.displayName}` : "添加模型"}</h3><p>选择模型服务；修改后建议重新进行连接测试。</p></div>{editingProfile && <button className="icon-button" type="button" aria-label="取消编辑" onClick={resetEditor}><X size={16} /></button>}</div>
+            <div className="model-editor-head"><div><h3>{editingProfile ? `编辑 ${editingProfile.displayName}` : "添加模型"}</h3><p>所有模型默认关闭思考；不支持关闭的模型会报错停止。修改后建议重新进行连接测试。</p></div>{editingProfile && <button className="icon-button" type="button" aria-label="取消编辑" onClick={resetEditor}><X size={16} /></button>}</div>
             <fieldset className="model-service-picker"><legend>模型服务</legend>{MODEL_SERVICES.map(service => (
               <label key={service}><input type="radio" name="model-service" value={service} checked={form.service === service}
                 onChange={() => setForm({ ...form, service, apiKey: "", model: isOpenCodeService(service)

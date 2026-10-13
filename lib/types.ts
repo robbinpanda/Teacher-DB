@@ -104,6 +104,8 @@ export type SourceDocument = {
   retryWaitPageCount: number;
   recognitionQuestionTotal?: number | null;
   recognizedQuestionCount?: number;
+  aiReviewedQuestionCount?: number;
+  aiReviewFailedQuestionCount?: number;
   recognitionPhase?: string | null;
   recognitionMessage?: string | null;
   jobStatus?: string | null;

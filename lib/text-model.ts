@@ -6,6 +6,8 @@ import { resolveModelProfile } from "./model-profiles";
 import { buildVisionHttpRequest, extractVisionResponseText, MODEL_PROTOCOL_LABELS } from "./model-protocols";
 import { extractModelTokenUsage, recordModelUsage } from "./model-usage";
 import { ModelCallTrace } from "./model-call-trace";
+import { hasModelThinking, isThinkingSettingError, thinkingDisabledMessage } from "./model-thinking";
+import { ModelCallError } from "./vision-model";
 
 export async function callTextModel(input: {
   ownerId: string;
@@ -47,7 +49,8 @@ export async function callTextModel(input: {
       signal: controller.signal,
     });
     if (response.status === 400 && input.jsonMode) {
-      await response.text();
+      const detail = await response.text();
+      if (isThinkingSettingError(detail)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false, 400);
       const fallback = compatibilityBody(request.body);
       response = await trace.fetch(request.endpoint, {
         method: "POST",
@@ -58,12 +61,12 @@ export async function callTextModel(input: {
     }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1000);
+      if (isThinkingSettingError(detail)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false, response.status);
       throw new Error(`模型 ${profile.displayName} 通过 ${MODEL_PROTOCOL_LABELS[request.protocol]} 返回 HTTP ${response.status}：${detail}`);
     }
     const result = await response.json() as unknown;
     const content = extractVisionResponseText(request.protocol, result);
     if (content) trace.output("text", content);
-    if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
     const usage = extractModelTokenUsage(request.protocol, result);
     if (usage.inputTokens || usage.outputTokens || usage.cachedInputTokens || usage.cachedOutputTokens) {
       recordModelUsage(getSqlite(), profile, usage, {
@@ -72,6 +75,8 @@ export async function callTextModel(input: {
         pageCount: 1,
       }, new Date().toISOString());
     }
+    if (hasModelThinking(result)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false);
+    if (!content) throw new Error(`模型 ${profile.displayName} 没有返回可解析内容`);
     return { content, profile, usage, traceId: trace.id };
   } catch (error) {
     failure = error;

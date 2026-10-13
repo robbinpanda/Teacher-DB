@@ -17,7 +17,9 @@ const { saveQuestion } = await import("../server/services/question-review.ts");
 const { loadQuestionForAiReview, reviewExtractedQuestion } = await import("../server/services/question-ai-review.ts");
 const { POST: retryReview } = await import("../server/http/handlers/questions/[questionId]/ai-review/route.ts");
 const { QUESTION_REVIEW_PROMPT } = await import("../lib/question-ai-review.ts");
+const { getDocuments } = await import("../lib/question-repository.ts");
 let extractionCalls = 0, concurrent = 0, peak = 0;
+let concurrentProgress;
 const reviewRequests = [];
 let override, pause;
 const rawQuestion = number => ({ number: String(number), type: "fill", stem: `唯一题干_${number}`, options: [], answer: "2", analysis: "原卷解析",
@@ -44,7 +46,20 @@ const server = createServer(async (req, res) => {
   const records = [{ event: "meta", questionCount: 6 }, ...Array.from({ length: 6 }, (_, i) => ({ event: "question",
     question: i === 5 ? { ...rawQuestion(6), answerPages: [] } : rawQuestion(i + 1) })), { event: "done" }];
   res.writeHead(200, { "content-type": "text/event-stream" });
-  for (const record of records) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(record) + "\n" } }] })}\n\n`);
+  for (const record of records) {
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(record) + "\n" } }] })}\n\n`);
+    if (record.question?.number === "2") {
+      // Keep the extraction stream open: review must finish before later questions arrive.
+      const deadline = Date.now() + 5000;
+      do {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        concurrentProgress = (await getDocuments("local-demo")).find(doc => doc.id === "ai-review-fixture");
+      } while ((concurrentProgress.recognizedQuestionCount !== 2 || concurrentProgress.aiReviewedQuestionCount < 1) && Date.now() < deadline);
+      assert.equal(concurrentProgress.recognizedQuestionCount, 2);
+      assert.ok(concurrentProgress.aiReviewedQuestionCount >= 1, "independent review completes while extraction is still streaming");
+      assert.equal(concurrentProgress.recognitionQuestionTotal, 6);
+    }
+  }
   res.end("data: [DONE]\n\n");
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -57,6 +72,7 @@ try {
     .run(`http://127.0.0.1:${server.address().port}/v1`, secret.ciphertext, secret.iv, timestamp, timestamp);
   const id = "ai-review-fixture";
   db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,page_count,created_at,updated_at) VALUES (?,'local-demo','fixture','image/png','extracting',3,?,?)").run(id, timestamp, timestamp);
+  db.prepare("INSERT INTO document_jobs (document_id,owner_id,status,queued_at,updated_at) VALUES (?,'local-demo','queued',?,?)").run(id, timestamp, timestamp);
   for (let page = 1; page <= 3; page++) {
     const key = `${id}/page-${page}.png`;
     await putFile(key, await sharp({ create: { width: 500, height: 500, channels: 3, background: "white" } }).png().toBuffer());
@@ -68,6 +84,10 @@ try {
   assert.equal(result.status, 200, JSON.stringify(result.body));
   assert.equal((await finalizeDocument("local-demo", id)).status, 200);
   assert.equal(extractionCalls, 1); assert.equal(reviewRequests.length, 6); assert.equal(peak, 2);
+  const progress = (await getDocuments("local-demo")).find(doc => doc.id === id);
+  assert.equal(progress.recognizedQuestionCount, 6);
+  assert.equal(progress.aiReviewedQuestionCount, 4);
+  assert.equal(progress.aiReviewFailedQuestionCount, 2, "failed reviews must not inflate the completed bar");
   for (const request of reviewRequests) {
     assert.equal(request.model, "fixture-recognition-model", "review uses the recognition model, including non-MiMo models");
     assert.equal(request.messages.length, 2); assert.equal(request.messages[0].content, QUESTION_REVIEW_PROMPT);

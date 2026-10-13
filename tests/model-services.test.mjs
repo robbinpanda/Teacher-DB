@@ -12,17 +12,17 @@ function request(model, extra = {}) {
   return buildVisionHttpRequest({ ...base, ...connection, protocol: connection.provider, service, ...extra });
 }
 
-test('Ordinary offers four paid models and Go adds subscription MiMo', () => {
+test('Ordinary offers three paid models and Go adds subscription MiMo, excluding mandatory thinking', () => {
   const go = model => request(model, { service: 'opencode-go' });
   assert.equal(go('opencode-go/mimo-v2.6-flash').endpoint, 'https://opencode.ai/inference/go/v1/chat/completions');
   assert.equal(go('opencode-go/mimo-v2.6-flash').body.model, 'mimo-v2.6-flash');
   assert.equal(go('gpt-6-luna').endpoint, 'https://opencode.ai/inference/go/v1/responses');
-  assert.deepEqual(OPENCODE_MODELS.map(m => m.id), ['gpt-6-luna', 'claude-haiku-5-5', 'deepseek-v4.1-flash', 'glm-5.3-flash']);
-  assert.deepEqual(OPENCODE_GO_MODELS.map(m => m.id), ['gpt-6-luna', 'claude-haiku-5-5', 'mimo-v2.6-flash', 'deepseek-v4.1-flash', 'glm-5.3-flash']);
+  assert.deepEqual(OPENCODE_MODELS.map(m => m.id), ['gpt-6-luna', 'claude-haiku-5-5', 'deepseek-v4.1-flash']);
+  assert.deepEqual(OPENCODE_GO_MODELS.map(m => m.id), ['gpt-6-luna', 'claude-haiku-5-5', 'mimo-v2.6-flash', 'deepseek-v4.1-flash']);
   assert.equal(go('claude-haiku-5-5').endpoint, 'https://opencode.ai/inference/go/v1/messages');
   assert.equal(go('deepseek-v4.1-flash').endpoint, 'https://opencode.ai/inference/go/v1/chat/completions');
-  assert.equal(go('glm-5.3-flash').endpoint, 'https://opencode.ai/inference/go/v1/chat/completions');
-  assert.equal(request('glm-5.3-flash').endpoint, 'https://opencode.ai/inference/openai/v1/chat/completions');
+  assert.throws(() => go('glm-5.3-flash'), /无法关闭思考/);
+  assert.throws(() => request('glm-5.3-flash'), /无法关闭思考/);
   for (const { id } of OPENCODE_GO_MODELS) {
     const req = go(id);
     assert.match(req.endpoint, /^https:\/\/opencode.ai\/inference\/go\/v1\//);
@@ -41,7 +41,7 @@ test('A preset cannot accidentally send a Go request to the ordinary billing rou
   assert.throws(() => request('deepseek-v4.1-flash', { baseUrl: 'https://opencode.ai/inference/go/v1' }), /所选服务/);
   assert.throws(() => request('deepseek-v4.1-flash', { service: 'opencode-go', baseUrl: 'https://opencode.ai.evil.example/inference/go/v1' }), /官方/);
 });
-test('Ordinary model routing uses documented protocols and rejects models outside the four choices', () => {
+test('Ordinary model routing uses documented protocols and rejects models outside the three choices', () => {
   assert.equal(request('opencode/deepseek-v4.1-flash').endpoint, 'https://opencode.ai/inference/openai/v1/chat/completions');
   assert.equal(request('gpt-6-luna').endpoint, 'https://opencode.ai/inference/openai/v1/responses');
   assert.throws(() => request('mimo-v2.6-flash-free'), /尚未适配/);
