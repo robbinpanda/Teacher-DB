@@ -8,9 +8,10 @@ import { validateModelBaseUrl } from "../../../../lib/model-profiles";
 import { normalizeModelProtocol } from "../../../../lib/model-protocols";
 import { normalizeOptionalTokenPrice } from "../../../../lib/model-usage";
 import { readJsonPayload } from "../../../../lib/request-payload";
+import { builtInModelConnection, MODEL_SERVICE_LABELS, normalizeModelService } from "../../../../lib/model-services";
 
-function publicProfile<T extends { provider: string; apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
-  const safe = { ...profile, provider: normalizeModelProtocol(profile.provider) };
+function publicProfile<T extends { provider: string; service?: string | null; baseUrl: string; apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
+  const safe = { ...profile, service: normalizeModelService(profile.service, profile.baseUrl), provider: normalizeModelProtocol(profile.provider) };
   delete safe.apiKeyCiphertext;
   delete safe.apiKeyIv;
   return safe;
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const ownerId = requestOwner(request);
   const parsed = await readJsonPayload<{
-    displayName?: string; provider?: string; baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; select?: boolean;
+    service?: string; displayName?: string; provider?: string; baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; select?: boolean;
     inputPricePerMillion?: number | string | null;
     outputPricePerMillion?: number | string | null;
     cachedInputPricePerMillion?: number | string | null;
@@ -42,30 +43,36 @@ export async function POST(request: Request) {
   }>(request);
   if (!parsed.ok) return parsed.response;
   const payload = parsed.value;
-  if (typeof payload.displayName !== "string" || typeof payload.baseUrl !== "string"
+  if ((payload.displayName !== undefined && typeof payload.displayName !== "string") || (payload.baseUrl !== undefined && typeof payload.baseUrl !== "string")
+    || (payload.service !== undefined && typeof payload.service !== "string")
     || typeof payload.model !== "string" || typeof payload.apiKey !== "string"
     || (payload.provider !== undefined && typeof payload.provider !== "string")
     || (payload.timeoutMs !== undefined && (typeof payload.timeoutMs !== "number" || !Number.isFinite(payload.timeoutMs)))
     || (payload.select !== undefined && typeof payload.select !== "boolean")) {
     return Response.json({ error: "模型配置字段格式无效" }, { status: 400 });
   }
-  const displayName = payload.displayName?.trim();
-  const model = payload.model?.trim();
+  let model = payload.model?.trim();
   const apiKey = payload.apiKey?.trim();
-  if (!displayName || !model || !apiKey || !payload.baseUrl) {
-    return Response.json({ error: "名称、API Base URL、模型名称和 API Key 均为必填项" }, { status: 400 });
+  if (!model || !apiKey) {
+    return Response.json({ error: "模型名称和 API Key 均为必填项" }, { status: 400 });
   }
-  if (displayName.length > 80 || model.length > 200 || apiKey.length > 16_384 || payload.baseUrl.length > 2_048) {
+  if ((payload.displayName?.length ?? 0) > 80 || model.length > 200 || apiKey.length > 16_384 || (payload.baseUrl?.length ?? 0) > 2_048) {
     return Response.json({ error: "模型配置字段过长" }, { status: 400 });
   }
   let baseUrl: string;
-  try { baseUrl = validateModelBaseUrl(payload.baseUrl); } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "URL 无效" }, { status: 400 });
-  }
+  let service;
   let provider;
-  try { provider = normalizeModelProtocol(payload.provider ?? "openai-chat-completions"); } catch (error) {
+  try {
+    service = normalizeModelService(payload.service ?? "custom");
+    if (service === "custom") {
+      provider = normalizeModelProtocol(payload.provider ?? "openai-chat-completions");
+      baseUrl = validateModelBaseUrl(payload.baseUrl ?? "");
+    } else ({ provider, baseUrl, model } = builtInModelConnection(service, model));
+  } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "接口协议无效" }, { status: 400 });
   }
+  const displayName = payload.displayName?.trim() || (service === "custom" ? "" : `${MODEL_SERVICE_LABELS[service]} · ${model}`.slice(0, 80));
+  if (!displayName) return Response.json({ error: "自定义模型需填写显示名称" }, { status: 400 });
   let inputPricePerMillion: number | null;
   let outputPricePerMillion: number | null;
   let cachedInputPricePerMillion: number | null;
@@ -87,14 +94,14 @@ export async function POST(request: Request) {
     sqliteTransaction((transaction) => {
       transaction.prepare(
         `INSERT INTO model_profiles
-          (id, owner_id, display_name, provider, base_url, model, api_key_ciphertext, api_key_iv, api_key_mask,
+          (id, owner_id, display_name, provider, base_url, model, api_key_ciphertext, api_key_iv, api_key_mask, service,
            is_managed, is_multimodal, enabled, timeout_ms, input_price_per_million,
            output_price_per_million, cache_price_per_million, cached_output_price_per_million,
            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id, ownerId, displayName, provider, baseUrl, model, encrypted.ciphertext, encrypted.iv,
-        maskSecret(apiKey), timeoutMs, inputPricePerMillion, outputPricePerMillion,
+        maskSecret(apiKey), service, timeoutMs, inputPricePerMillion, outputPricePerMillion,
         cachedInputPricePerMillion, cachedOutputPricePerMillion, timestamp, timestamp,
       );
       if (payload.select !== false) {

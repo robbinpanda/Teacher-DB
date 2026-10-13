@@ -26,6 +26,7 @@ export async function callTextModel(input: {
   let failure: unknown;
   try {
     const request = buildVisionHttpRequest({
+      service: profile.service,
       protocol: profile.provider,
       baseUrl: profile.baseUrl,
       model: profile.model,

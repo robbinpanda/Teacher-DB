@@ -16,6 +16,11 @@ type TraceContext = {
 function safeRequestBody(body: string) {
   return JSON.parse(body, (key, value: unknown) => {
     if (/^(authorization|api[_-]?key|token|secret)$/i.test(key)) return "[redacted]";
+    if ((key === "inlineData" || key === "inline_data") && value && typeof value === "object"
+      && "data" in value && typeof value.data === "string") {
+      return { ...value, data: { omittedImage: true, length: value.data.length,
+        sha256: createHash("sha256").update(value.data).digest("hex") } };
+    }
     if (value && typeof value === "object" && "type" in value && value.type === "base64"
       && "media_type" in value && typeof value.media_type === "string" && value.media_type.startsWith("image/")
       && "data" in value && typeof value.data === "string") {
@@ -84,6 +89,11 @@ export class ModelCallTrace {
     const url = new URL(endpoint);
     this.json(`request-${number}.json`, {
       at: new Date().toISOString(), endpoint: url.origin + url.pathname,
+      // Only routing diagnostics; never persist credentials or arbitrary request headers.
+      headers: Object.fromEntries(["x-opencode-session", "user-agent"].flatMap(key => {
+        const value = new Headers(options.headers).get(key);
+        return value ? [[key, value]] : [];
+      })),
       method: options.method, body: typeof options.body === "string" ? safeRequestBody(options.body) : undefined,
     });
     const response = await fetcher(endpoint, options);

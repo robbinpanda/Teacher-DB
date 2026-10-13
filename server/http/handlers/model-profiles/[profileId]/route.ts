@@ -7,8 +7,10 @@ import { normalizeOptionalTokenPrice, repriceModelUsageHistory } from "../../../
 import { encryptSecret, maskSecret } from "../../../../../lib/secret-box";
 import { now, requestOwner } from "../../../../../lib/server";
 import { readJsonPayload } from "../../../../../lib/request-payload";
+import { builtInModelConnection, normalizeModelService } from "../../../../../lib/model-services";
 
 type UpdatePayload = {
+  service?: string;
   displayName?: string;
   provider?: string;
   baseUrl?: string;
@@ -21,8 +23,8 @@ type UpdatePayload = {
   cachedOutputPricePerMillion?: number | string | null;
 };
 
-function publicProfile<T extends { apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
-  const safe = { ...profile };
+function publicProfile<T extends { service?: string | null; baseUrl: string; apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
+  const safe = { ...profile, service: normalizeModelService(profile.service, profile.baseUrl) };
   delete safe.apiKeyCiphertext;
   delete safe.apiKeyIv;
   return safe;
@@ -51,6 +53,7 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
   if (!parsed.ok) return parsed.response;
   const payload = parsed.value;
   if ((payload.displayName !== undefined && typeof payload.displayName !== "string")
+    || (payload.service !== undefined && typeof payload.service !== "string")
     || (payload.provider !== undefined && typeof payload.provider !== "string")
     || (payload.baseUrl !== undefined && typeof payload.baseUrl !== "string")
     || (payload.model !== undefined && typeof payload.model !== "string")
@@ -97,13 +100,19 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
   let apiKeyIv = profile.apiKeyIv;
   let apiKeyMask = profile.apiKeyMask;
   let connectionChanged = false;
+  const previousService = normalizeModelService(profile.service, profile.baseUrl);
+  let service = previousService;
 
   displayName = payload.displayName?.trim() ?? profile.displayName;
   model = payload.model?.trim() ?? profile.model;
   if (!displayName || !model) return Response.json({ error: "名称和模型名称不能为空" }, { status: 400 });
   try {
-    provider = normalizeModelProtocol(payload.provider ?? profile.provider);
-    baseUrl = payload.baseUrl === undefined ? profile.baseUrl : validateModelBaseUrl(payload.baseUrl);
+    service = normalizeModelService(payload.service ?? previousService);
+    if (service === "custom") {
+      provider = normalizeModelProtocol(payload.provider ?? profile.provider);
+      baseUrl = payload.baseUrl === undefined ? profile.baseUrl : validateModelBaseUrl(payload.baseUrl);
+    } else ({ provider, baseUrl, model } = builtInModelConnection(service, model));
+    if (service !== previousService && !payload.apiKey?.trim()) throw new Error("切换模型服务时请填写新服务的 API Key");
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "模型配置无效" }, { status: 400 });
   }
@@ -116,6 +125,7 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
     apiKeyMask = maskSecret(apiKey);
   }
   connectionChanged = displayName !== profile.displayName
+    || service !== previousService
     || provider !== profile.provider
     || baseUrl !== profile.baseUrl
     || model !== profile.model
@@ -127,7 +137,7 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
     const timestamp = now();
     repricedEvents = sqliteTransaction((transaction) => {
       transaction.prepare(
-        `UPDATE model_profiles SET display_name = ?, provider = ?, base_url = ?, model = ?,
+        `UPDATE model_profiles SET display_name = ?, provider = ?, base_url = ?, model = ?, service = ?,
            timeout_ms = ?, api_key_ciphertext = ?, api_key_iv = ?, api_key_mask = ?,
            input_price_per_million = ?, output_price_per_million = ?, cache_price_per_million = ?,
            cached_output_price_per_million = ?,
@@ -136,7 +146,7 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
            last_tested_at = CASE WHEN ? THEN NULL ELSE last_tested_at END,
            updated_at = ? WHERE id = ? AND owner_id = ?`,
       ).run(
-        displayName, provider, baseUrl, model, timeoutMs, apiKeyCiphertext, apiKeyIv, apiKeyMask,
+        displayName, provider, baseUrl, model, service, timeoutMs, apiKeyCiphertext, apiKeyIv, apiKeyMask,
         inputPricePerMillion, outputPricePerMillion, cachedInputPricePerMillion, cachedOutputPricePerMillion,
         connectionChanged ? 1 : 0, connectionChanged ? 1 : 0, connectionChanged ? 1 : 0,
         timestamp, profileId, ownerId,

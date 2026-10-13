@@ -16,9 +16,12 @@ type VisionCall = {
   system: string;
   text: string;
   image?: string;
-  images?: Array<{ page: number; dataUrl: string }>;
+  images?: Array<{ page: number; dataUrl: string; label?: string }>;
   jsonMode?: boolean;
-  purpose?: "page_extraction" | "question_reextract" | "answer_import" | "connection_test" | "other";
+  maxOutputTokens?: number;
+  timeoutMs?: number;
+  onTrace?: (trace: ModelCallTrace) => void;
+  purpose?: "page_extraction" | "question_reextract" | "question_review" | "answer_import" | "connection_test" | "other";
   documentId?: string;
   pageNumber?: number;
   pageCount?: number;
@@ -65,7 +68,8 @@ function isRetryableProviderError(status: number, detail: string) {
 export async function callVisionModel(input: VisionCall) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), profile.timeoutMs);
+  const timeoutMs = Math.min(profile.timeoutMs, input.timeoutMs ?? profile.timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let trace: ModelCallTrace | undefined;
   let failure: unknown;
   try {
@@ -74,8 +78,10 @@ export async function callVisionModel(input: VisionCall) {
       : input.image
         ? [{ page: 1, dataUrl: input.image }]
         : [];
-    if (!images.length) throw new Error("模型调用缺少页面图像");
+    if (!images.length && input.purpose !== "question_review") throw new Error("模型调用缺少页面图像");
     const request = buildVisionHttpRequest({
+      service: profile.service,
+      sessionId: input.extractionRunId,
       protocol: profile.provider,
       baseUrl: profile.baseUrl,
       model: profile.model,
@@ -84,9 +90,11 @@ export async function callVisionModel(input: VisionCall) {
       text: input.text,
       images,
       jsonMode: input.jsonMode,
+      maxOutputTokens: input.maxOutputTokens,
     });
     trace = new ModelCallTrace(dataDirectory(), { ownerId: input.ownerId, profileId: profile.id,
       provider: profile.provider, model: profile.model, purpose: input.purpose ?? "other", documentId: input.documentId });
+    input.onTrace?.(trace);
     let response = await trace.fetch(request.endpoint, {
       method: "POST",
       headers: request.headers,
@@ -149,7 +157,7 @@ export async function callVisionModel(input: VisionCall) {
   } catch (error) {
     failure = error;
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ModelCallError(`模型调用超过 ${Math.round(profile.timeoutMs / 1000)} 秒，已安全中止`, "timeout", true);
+      throw new ModelCallError(`模型调用超过 ${Math.round(timeoutMs / 1000)} 秒，已安全中止`, "timeout", true);
     }
     if (error instanceof TypeError) {
       const cause = "cause" in error && error.cause instanceof Error ? `；${error.cause.message}` : "";
@@ -211,6 +219,8 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
         : [];
     if (!images.length) throw new Error("模型调用缺少页面图像");
     const request = buildVisionHttpRequest({
+      service: profile.service,
+      sessionId: input.extractionRunId,
       protocol: profile.provider,
       baseUrl: profile.baseUrl,
       model: profile.model,

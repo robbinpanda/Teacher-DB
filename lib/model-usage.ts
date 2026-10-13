@@ -45,6 +45,13 @@ function tokenNumber(value: unknown) {
 
 export function extractModelTokenUsage(protocol: ModelProtocol, value: unknown): ModelTokenUsage {
   const result = objectValue(value);
+  if (protocol === "google-generate-content") {
+    const metadata = objectValue(result?.usageMetadata);
+    const total = tokenNumber(metadata?.promptTokenCount);
+    const cached = Math.min(total, tokenNumber(metadata?.cachedContentTokenCount));
+    return { inputTokens: total - cached, cachedInputTokens: cached,
+      outputTokens: tokenNumber(metadata?.candidatesTokenCount) + tokenNumber(metadata?.thoughtsTokenCount), cachedOutputTokens: 0 };
+  }
   const usage = objectValue(result?.usage);
   if (!usage) return { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cachedOutputTokens: 0 };
 

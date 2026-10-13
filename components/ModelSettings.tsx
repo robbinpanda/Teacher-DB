@@ -7,8 +7,10 @@ import {
   KeyRound, LoaderCircle, Pencil, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi, X,
 } from "lucide-react";
 import { MODEL_PROTOCOL_LABELS, MODEL_PROTOCOLS, type ModelProtocol } from "../lib/model-protocols";
+import { MODEL_SERVICES, MODEL_SERVICE_LABELS, OPENCODE_MODELS, normalizeModelService, type ModelService } from "../lib/model-services";
 
 type Profile = {
+  service?: ModelService | null;
   id: string;
   displayName: string;
   provider: ModelProtocol;
@@ -56,6 +58,7 @@ type UsageResponse = {
 };
 
 type ModelForm = {
+  service: ModelService;
   displayName: string;
   provider: ModelProtocol;
   baseUrl: string;
@@ -69,6 +72,7 @@ type ModelForm = {
 };
 
 const emptyForm: ModelForm = {
+  service: "opencode",
   displayName: "",
   provider: "openai-chat-completions",
   baseUrl: "",
@@ -215,6 +219,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
   function startEdit(profile: Profile) {
     setEditingId(profile.id);
     setForm({
+      service: normalizeModelService(profile.service, profile.baseUrl),
       displayName: profile.displayName,
       provider: profile.provider,
       baseUrl: profile.baseUrl,
@@ -243,7 +248,9 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
       const response = await fetch(editingId ? `/api/model-profiles/${editingId}` : "/api/model-profiles", {
         method: editingId ? "PUT" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...form, ...(!editingId ? { select: false } : {}) }),
+        body: JSON.stringify({ ...form,
+          ...(form.service !== "custom" ? { baseUrl: undefined, provider: undefined } : {}),
+          ...(!editingId ? { select: false } : {}) }),
       });
       const result = await response.json() as { error?: string; repricedEvents?: number };
       if (!response.ok) throw new Error(result.error ?? "保存失败");
@@ -257,7 +264,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
   }
 
   async function removeProfile(profileId: string) {
-    if (!window.confirm("确定删除这个自定义模型吗？历史 Token 与费用记录会保留。")) return;
+    if (!window.confirm("确定删除这个模型配置吗？历史 Token 与费用记录会保留。")) return;
     setBusy(`delete:${profileId}`);
     try {
       const response = await fetch(`/api/model-profiles/${profileId}`, { method: "DELETE" });
@@ -266,13 +273,14 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
         throw new Error(result.error ?? "删除失败");
       }
       if (editingId === profileId) resetEditor();
-      setMessage("自定义模型已删除，历史用量记录仍然保留");
+      setMessage("模型配置已删除，历史用量记录仍然保留");
       await refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "删除失败"); }
     finally { setBusy(""); }
   }
 
   const editingProfile = editingId ? profiles.find((profile) => profile.id === editingId) ?? null : null;
+  const changedService = Boolean(editingProfile && form.service !== normalizeModelService(editingProfile.service, editingProfile.baseUrl));
   const usageView = view === "usage";
 
   return (
@@ -344,7 +352,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
             {profiles.map((profile) => (
               <article key={profile.id} className={`model-profile-card${editingId === profile.id ? " editing" : ""}`}>
                 <div className="model-profile-main">
-                  <div className="model-profile-copy"><div><strong>{profile.displayName}</strong></div><p>{profile.model}</p><small>{MODEL_PROTOCOL_LABELS[profile.provider]} · {profile.baseUrl}</small></div>
+                  <div className="model-profile-copy"><div><strong>{profile.displayName}</strong></div><p>{profile.model}</p><small>{MODEL_SERVICE_LABELS[normalizeModelService(profile.service, profile.baseUrl)]} · {MODEL_PROTOCOL_LABELS[profile.provider]} · {profile.baseUrl}</small></div>
                 </div>
                 <div className="model-price-line"><span>输入 {priceText(profile.inputPricePerMillion)}</span><span>缓存输入 {cachedPriceText(profile.cachedInputPricePerMillion, "输入")}</span><span>输出 {priceText(profile.outputPricePerMillion)}</span><span>缓存输出 {cachedPriceText(profile.cachedOutputPricePerMillion, "输出")}</span></div>
                 <div className="model-profile-footer">
@@ -360,14 +368,22 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
           </div>
 
           <form id="model-editor" className="card model-editor" onSubmit={saveProfile}>
-            <div className="model-editor-head"><div><h3>{editingProfile ? `编辑 ${editingProfile.displayName}` : "添加自定义模型"}</h3><p>连接信息由你提供；修改后建议重新进行连接测试。</p></div>{editingProfile && <button className="icon-button" type="button" aria-label="取消编辑" onClick={resetEditor}><X size={16} /></button>}</div>
+            <div className="model-editor-head"><div><h3>{editingProfile ? `编辑 ${editingProfile.displayName}` : "添加模型"}</h3><p>选择模型服务；修改后建议重新进行连接测试。</p></div>{editingProfile && <button className="icon-button" type="button" aria-label="取消编辑" onClick={resetEditor}><X size={16} /></button>}</div>
+            <fieldset className="model-service-picker"><legend>模型服务</legend>{MODEL_SERVICES.map(service => (
+              <label key={service}><input type="radio" name="model-service" value={service} checked={form.service === service}
+                onChange={() => setForm({ ...form, service, apiKey: "" })} />设置{MODEL_SERVICE_LABELS[service]}模型</label>
+            ))}</fieldset>
+            {form.service !== "custom" && <p className="model-service-help">{form.service === "opencode"
+              ? <>填写 OpenCode 模型 ID 和 Console 服务账号 API Key，自动选择接口。使用 <a href="https://opencode.ai/v2/docs/console/api/" target="_blank" rel="noreferrer">Console 推理服务</a>；会话标识由程序管理。</>
+              : "填写 OpenRouter 模型 ID（如 xiaomi/mimo-v2.6-flash）和 API Key，自动使用 OpenRouter 接口。"}</p>}
             <div className="model-editor-fields">
-              <label><span>显示名称</span><input required value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：我的识题模型" /></label>
-              <label><span>接口协议</span><select required value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as ModelProtocol })}>{MODEL_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{MODEL_PROTOCOL_LABELS[protocol]}</option>)}</select></label>
-              <label className="wide"><span>API Base URL</span><input required type="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
-              <label><span>Model Name</span><input required value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="vision-model-name" /></label>
+              <label><span>显示名称{form.service !== "custom" && <small>选填，默认使用模型名</small>}</span><input required={form.service === "custom"} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：我的识题模型" /></label>
+              {form.service === "custom" && <><label><span>接口协议</span><select required value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as ModelProtocol })}>{MODEL_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{MODEL_PROTOCOL_LABELS[protocol]}</option>)}</select></label>
+              <label className="wide"><span>API Base URL</span><input required type="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label></>}
+              <label><span>Model Name</span><input required list={form.service === "opencode" ? "opencode-model-ids" : undefined} value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder={form.service === "opencode" ? "如 kimi-k2.6、mimo-v2.6-flash-free" : form.service === "openrouter" ? "如 xiaomi/mimo-v2.6-flash" : "vision-model-name"} /></label>
+              <datalist id="opencode-model-ids">{OPENCODE_MODELS.map(model => <option key={model.id} value={model.id} />)}</datalist>
               <label><span>超时时间（毫秒）</span><input required type="number" min={15000} max={300000} value={form.timeoutMs} onChange={(event) => setForm({ ...form, timeoutMs: Number(event.target.value) })} /></label>
-              <label className="wide"><span>API Key {editingProfile && <small>留空则保持原密钥</small>}</span><input required={!editingProfile} type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder={editingProfile ? `当前 ${editingProfile.apiKeyMask ?? "已保存"}` : "填写服务商提供的 API Key"} /></label>
+              <label className="wide"><span>API Key {editingProfile && <small>{changedService ? "已切换服务，请填写对应密钥" : "留空则保持原密钥"}</small>}</span><input required={!editingProfile || changedService} type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder={editingProfile && !changedService ? `当前 ${editingProfile.apiKeyMask ?? "已保存"}` : "填写服务商提供的 API Key"} /></label>
             </div>
             <div className="price-editor">
               <div><strong>Token 价格</strong><span>人民币 / 1M Token · 选填</span></div>

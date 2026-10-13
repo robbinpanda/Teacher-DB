@@ -114,7 +114,7 @@ npm run local:python
 ## 首次使用
 
 1. 打开左侧「模型配置」，新增识题模型。
-2. 填写协议、API Base URL、模型名称和 API Key，并执行连接测试。
+2. 选择 OpenCode、OpenRouter 或自定义模型：前两者填写模型名称和自己的 API Key；自定义模型还需填写协议、API Base URL。保存后执行连接测试。
 3. 回到「工作台」，选择学段、学科、模型和并发数。
 4. 上传 PDF；识别完成后进入审核页逐题确认。
 5. 完成审核，题目进入题库，即可检索、生成变式或用于组卷。
@@ -126,8 +126,9 @@ npm run local:python
 - OpenAI Chat Completions
 - OpenAI Responses
 - Anthropic Messages
+- Gemini GenerateContent（含流式）
 
-项目不内置模型、API 地址或公共凭据。可连接符合上述协议并支持图片输入的服务。自定义 Base URL 必须使用 HTTPS，仅 `localhost`、`127.0.0.1` 和 `::1` 允许 HTTP。
+OpenCode 与 OpenRouter 提供官方地址预设，不提供公共凭据。OpenCode 使用 Console 服务账号 Key，自动按模型 ID 匹配协议并发送会话标识；未知模型可选择自定义模型。可连接符合上述协议并支持图片输入的服务。自定义 Base URL 必须使用 HTTPS，仅 `localhost`、`127.0.0.1` 和 `::1` 允许 HTTP。具体配置和文档依据见 [模型服务适配](docs/model-services.md)。
 
 ## 核心工作流
 

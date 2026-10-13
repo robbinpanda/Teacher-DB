@@ -520,7 +520,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 5;
+export const DATABASE_VERSION = 7;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -569,6 +569,18 @@ function initialize() {
       name: "question-extraction-issues",
       checksum: "question-extraction-issues-v1",
       up: sqlite => sqlite.exec("ALTER TABLE questions ADD COLUMN extraction_issues_json TEXT NOT NULL DEFAULT '[]'"),
+    },
+    {
+      version: 6,
+      name: "independent-question-ai-review",
+      checksum: "question-ai-review-v1",
+      up: sqlite => sqlite.exec("ALTER TABLE questions ADD COLUMN ai_review_json TEXT"),
+    },
+    {
+      version: 7,
+      name: "model-service-selection",
+      checksum: "model-service-selection-v1",
+      up: sqlite => sqlite.exec("ALTER TABLE model_profiles ADD COLUMN service TEXT CHECK(service IN ('opencode','openrouter','custom'))"),
     },
   ]);
   initialized = true;

@@ -5,6 +5,7 @@ import { appSettings, modelProfiles } from "../db/schema";
 import { decryptSecret } from "./secret-box";
 import { now } from "./server";
 import { normalizeModelProtocol } from "./model-protocols";
+import { normalizeModelService } from "./model-services";
 
 export async function ensureOwnerModelSettings(ownerId: string) {
   await ensureDatabase();
@@ -35,7 +36,7 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
     const setting = await db.query.appSettings.findFirst({ where: eq(appSettings.ownerId, ownerId) });
     profileId = setting?.selectedModelProfileId ?? undefined;
   }
-  if (!profileId) throw new ModelConfigurationError("尚未配置或选择识题模型，请先到“模型配置”填写 API Key、API Base URL 和模型名称");
+  if (!profileId) throw new ModelConfigurationError("尚未配置或选择识题模型，请先到“模型配置”选择服务并填写模型名称和 API Key");
   const profile = await db.query.modelProfiles.findFirst({
     where: and(
       eq(modelProfiles.id, profileId),
@@ -48,7 +49,7 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
     throw new ModelConfigurationError("该模型配置缺少 API Key");
   }
   const apiKey = await decryptSecret(profile.apiKeyCiphertext, profile.apiKeyIv);
-  return { ...profile, provider: normalizeModelProtocol(profile.provider), apiKey };
+  return { ...profile, service: normalizeModelService(profile.service, profile.baseUrl), provider: normalizeModelProtocol(profile.provider), apiKey };
 }
 
 export function validateModelBaseUrl(value: string) {

@@ -5,5 +5,10 @@ export function compatibilityBody(body: Record<string, unknown>) {
   delete fallback.temperature;
   delete fallback.response_format;
   delete fallback.text;
+  if (fallback.generationConfig && typeof fallback.generationConfig === "object") {
+    const config = fallback.generationConfig as Record<string, unknown>;
+    delete config.temperature;
+    delete config.responseMimeType;
+  }
   return fallback;
 }

@@ -1,7 +1,10 @@
+import { isOpenCodeEndpoint, normalizeModelService } from "./model-services.ts";
+
 export const MODEL_PROTOCOLS = [
   "openai-chat-completions",
   "openai-responses",
   "anthropic-messages",
+  "google-generate-content",
 ] as const;
 
 export type ModelProtocol = (typeof MODEL_PROTOCOLS)[number];
@@ -10,6 +13,7 @@ export const MODEL_PROTOCOL_LABELS: Record<ModelProtocol, string> = {
   "openai-chat-completions": "Chat Completions",
   "openai-responses": "OpenAI Responses",
   "anthropic-messages": "Anthropic Messages",
+  "google-generate-content": "Gemini GenerateContent",
 };
 
 export function normalizeModelProtocol(value: string): ModelProtocol {
@@ -18,8 +22,18 @@ export function normalizeModelProtocol(value: string): ModelProtocol {
   throw new Error(`不支持的模型接口协议：${value || "空值"}`);
 }
 
-export function endpointForProtocol(baseUrl: string, protocolValue: string) {
+export function endpointForProtocol(baseUrl: string, protocolValue: string, model?: string, stream = false) {
   const protocol = normalizeModelProtocol(protocolValue);
+  if (protocol === "google-generate-content") {
+    if (!model) throw new Error("Gemini 请求缺少模型名称");
+    const url = new URL(baseUrl);
+    const path = url.pathname.replace(/\/+$/, "");
+    const base = path.replace(/\/models\/[^/]+(?::(?:streamGenerateContent|generateContent))?$/, "");
+    url.pathname = `${base}/models/${encodeURIComponent(model)}:${stream ? "streamGenerateContent" : "generateContent"}`;
+    if (stream) url.searchParams.set("alt", "sse");
+    else url.searchParams.delete("alt");
+    return url.toString();
+  }
   const suffix = protocol === "openai-chat-completions"
     ? "/chat/completions"
     : protocol === "openai-responses"
@@ -31,9 +45,11 @@ export function endpointForProtocol(baseUrl: string, protocolValue: string) {
   return url.toString();
 }
 
-type VisionImage = { page: number; dataUrl: string };
+type VisionImage = { page: number; dataUrl: string; label?: string };
 
 type VisionRequestInput = {
+  service?: string | null;
+  sessionId?: string;
   protocol: string;
   baseUrl: string;
   model: string;
@@ -64,13 +80,46 @@ function anthropicImage(dataUrl: string) {
 }
 
 export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpRequest {
+  const request = buildProtocolRequest(input);
+  if (normalizeModelService(input.service, input.baseUrl) === "opencode") {
+    if (!isOpenCodeEndpoint(request.endpoint)) throw new Error("OpenCode 配置只能向官方 inference 地址发送密钥");
+    const sessionId = input.sessionId ?? crypto.randomUUID();
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(sessionId)) throw new Error("OpenCode session ID 格式无效");
+    delete request.headers["x-api-key"];
+    delete request.headers["x-goog-api-key"];
+    request.headers.authorization = `Bearer ${input.apiKey}`;
+    request.headers["x-opencode-session"] = sessionId;
+    request.headers["user-agent"] = "Jianti-Teacher-Question-Bank/0.1.0";
+    // Console routes heterogeneous models: do not force an OpenAI-only reasoning option.
+    delete request.body.reasoning_effort;
+    delete request.body.reasoning;
+  }
+  return request;
+}
+
+function buildProtocolRequest(input: VisionRequestInput): VisionHttpRequest {
   const protocol = normalizeModelProtocol(input.protocol);
-  const endpoint = endpointForProtocol(input.baseUrl, protocol);
+  const endpoint = endpointForProtocol(input.baseUrl, protocol, input.model, input.stream);
+
+  if (protocol === "google-generate-content") {
+    const parts: Array<Record<string, unknown>> = [{ text: input.text }];
+    for (const image of input.images) {
+      const parsed = anthropicImage(image.dataUrl).source;
+      parts.push({ text: image.label ?? `下面是原试卷第 ${image.page} 页：` },
+        { inlineData: { mimeType: parsed.media_type, data: parsed.data } });
+    }
+    return { protocol, endpoint,
+      headers: { "content-type": "application/json", "x-goog-api-key": input.apiKey },
+      body: { systemInstruction: { parts: [{ text: input.system }] }, contents: [{ role: "user", parts }],
+        generationConfig: { temperature: input.temperature ?? 0,
+          ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
+          ...(input.jsonMode ? { responseMimeType: "application/json" } : {}) } } };
+  }
 
   if (protocol === "anthropic-messages") {
     const content: Array<Record<string, unknown>> = [];
     for (const image of input.images) {
-      content.push({ type: "text", text: `下面是原试卷第 ${image.page} 页：` });
+      content.push({ type: "text", text: image.label ?? `下面是原试卷第 ${image.page} 页：` });
       content.push(anthropicImage(image.dataUrl));
     }
     content.push({ type: "text", text: input.text });
@@ -96,7 +145,7 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
   if (protocol === "openai-responses") {
     const content: Array<Record<string, unknown>> = [{ type: "input_text", text: input.text }];
     for (const image of input.images) {
-      content.push({ type: "input_text", text: `下面是原试卷第 ${image.page} 页：` });
+      content.push({ type: "input_text", text: image.label ?? `下面是原试卷第 ${image.page} 页：` });
       content.push({ type: "input_image", image_url: image.dataUrl, detail: "high" });
     }
     const body: Record<string, unknown> = {
@@ -119,7 +168,7 @@ export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpReq
 
   const content: Array<Record<string, unknown>> = [{ type: "text", text: input.text }];
   for (const image of input.images) {
-    content.push({ type: "text", text: `下面是原试卷第 ${image.page} 页：` });
+    content.push({ type: "text", text: image.label ?? `下面是原试卷第 ${image.page} 页：` });
     content.push({ type: "image_url", image_url: { url: image.dataUrl, detail: "high" } });
   }
   const body: Record<string, unknown> = {
@@ -177,6 +226,18 @@ export function extractVisionStreamEvent(protocolValue: string, data: string): V
   if (!event) return {};
   const providerError = objectValue(event.error);
   if (providerError) return { error: String(providerError.message ?? providerError.type ?? "模型流返回错误") };
+
+  if (protocol === "google-generate-content") {
+    const candidate = objectValue(Array.isArray(event.candidates) ? event.candidates[0] : null);
+    const content = objectValue(candidate?.content);
+    const parts = Array.isArray(content?.parts) ? content.parts.map(objectValue) : [];
+    const blocked = objectValue(event.promptFeedback)?.blockReason;
+    const finish = candidate?.finishReason;
+    if (blocked || (finish && finish !== "STOP" && finish !== "MAX_TOKENS")) return { error: `Gemini 返回 ${blocked ?? finish}` };
+    return { textDelta: parts.filter(p => !p?.thought).map(p => typeof p?.text === "string" ? p.text : "").join(""),
+      thinkingDelta: parts.filter(p => p?.thought).map(p => typeof p?.text === "string" ? p.text : "").join(""),
+      ...(event.usageMetadata ? { usagePayload: event } : {}), ...(finish ? { done: true } : {}) };
+  }
 
   if (protocol === "anthropic-messages") {
     const type = String(event.type ?? "");
@@ -239,6 +300,12 @@ export function extractVisionResponseText(protocolValue: string, value: unknown)
   const protocol = normalizeModelProtocol(protocolValue);
   const result = objectValue(value);
   if (!result) return "";
+
+  if (protocol === "google-generate-content") {
+    const event = extractVisionStreamEvent(protocol, JSON.stringify(result));
+    if (event.error) throw new Error(event.error);
+    return event.textDelta?.trim() ?? "";
+  }
 
   if (protocol === "anthropic-messages") {
     return textFromBlocks(result.content, ["text"]).trim();
