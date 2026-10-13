@@ -1,0 +1,2609 @@
+{
+  "date": "2026-10-13",
+  "promptSha256": "aef9572bf859b3a0d40f279acee8f519670ca0b77e47c9542727c40312ca8f4d",
+  "notes": "旧评分保留；review为本轮补充分类，不是重算分数。excerpt是原字段摘录；完整字段与原页仅存本地。",
+  "cases": [
+    {
+      "key": "stem-宝山11",
+      "id": "宝山11",
+      "paper": "宝山",
+      "number": 11,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        8
+      ],
+      "sourceExpected": "三条约束 x+y≥2,x≤1,y≤2",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "≥0"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（4分）已知 $O$ 是坐标原点，点 $A(-1, 1)$. 若点 $M(x, y)$ 为平面区域 $⟪U+0008⟫egin{cases} x+y \\geqslant 0 \\ x \\leqslant 1 \\ y \\leqslant 2 \\end{cases}$ 上的一个动点，则 $\\overrightarrow{OA} \\cdot \\overrightarrow{OM}$ 的取值范围是______."
+        },
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏第一条关系和常数"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "（4分）已知$O$是坐标原点，点$A（-1，1）$.若点$M（x，y）$为平面区域$\\begin{cases}x+y\\\\x≤1\\\\y≤2\\\\\\end{cases}$上的一个动点，则$\\overrightarrow{OA}•\\overrightarrow{OM}$的取值范围是＿＿＿＿＿."
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0,
+            "note": "≥1"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b1d99b7e-ef96-4a7e-b717-a50de6fbb707",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "已知 $O$ 是坐标原点，点 $A(-1,1)$．若点 $M(x,y)$ 为平面区域 $\\begin{cases}x+y\\geqslant 1\\\\x\\leqslant 1\\\\y\\leqslant 2\\end{cases}$ 上的一个动点，则 $\\overrightarrow{OA}\\cdot\\overrightarrow{OM}$ 的取值范围是______．"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "≥1"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": false,
+          "confidence": 0.93,
+          "excerpt": "（4分）已知 $O$ 是坐标原点，点 $A（-1，1）$。若点 $M（x，y）$ 为平面区域 $\\begin{cases}x+y\\geq1\\\\x\\leq1\\\\y\\leq2\\end{cases}$ 上的一个动点，则 $\\overrightarrow{OA}\\cdot\\overrightarrow{OM}$ 的取值范围是______。"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "≤1"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "已知 $O$ 是坐标原点，点 $A(-1, 1)$. 若点 $M(x, y)$ 为平面区域 $\\begin{cases} x+y \\leqslant 1 \\\\ x \\leqslant 1 \\\\ y \\leqslant 2 \\end{cases}$ 上的一个动点，则 $\\overrightarrow{OA} \\cdot \\overrightarrow{OM}$ 的取值范围是______."
+        }
+      ]
+    },
+    {
+      "key": "stem-宝山15",
+      "id": "宝山15",
+      "paper": "宝山",
+      "number": 15,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        2
+      ],
+      "sourceExpected": "原式为 -1+3-5+…+(-1)^n(2n-1)，-5 后没有额外 +5。",
+      "variants": [
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "多 +5"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "（5分）用数学归纳法证明$-1+3-5+5+⋯+（-1）^n（2n-1）=（-1）^nn$，$n∈N^*$成立．那么，“当$n=1$时，命题成立”是“对$n∈N^*$“时，命题成立”的（　　）"
+        }
+      ]
+    },
+    {
+      "key": "stem-宝山21",
+      "id": "宝山21",
+      "paper": "宝山",
+      "number": 21,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        4
+      ],
+      "sourceExpected": "第(3)问 a_n=-n/2+sin n；负号位于分数前。",
+      "variants": [
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "定义：$\\{a_n\\}$是无穷数列，若存在正整数$k$使得对任意$n∈N^*$，均有$a_{n+k}＞a_n$（$a_{n+k}＜a_n$）则称$\\{a_n\\}$是近似递增（减）数列，其中$k$叫近似递增（减）数列$\\{a_n\\}$的间隔数.\n（1）若$a_n=n+（-1）^n$，$\\{a_n\\}$是不是近似递增数列，并说明理由；\n（2）已知数列$\\{a_n\\}$的通项公式为$a_n=\\frac{1}{（-2）^{n-1}}+a$，其前$n$项的和为$S_n$，若$2$是近似递增数列$\\{S_n\\}$的间隔数，求$a$的取值范围；\n（3）已知$a_n=\\frac{n}{2}+sinn$，证明$\\{a_n\\}$是近似递减数列，并且$4$是它的最小间隔数."
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "41fae78a-e182-4b0b-a241-67e8f53f60fb",
+          "needsHumanReview": false,
+          "confidence": 0.85,
+          "excerpt": "定义：$\\{a_n\\}$ 是无穷数列，若存在正整数 $k$ 使得对任意 $n\\in\\mathbf N^*$，均有 $a_{n+k}>a_n$（$a_{n+k}<a_n$）则称 $\\{a_n\\}$ 是近似递增（减）数列，其中 $k$ 叫近似递增（减）数列 $\\{a_n\\}$ 的间隔数。\n（1）若 $a_n=n+(-1)^n$，$\\{a_n\\}$ 是不是近似递增数列，并说明理由；\n（2）已知数列 $\\{a_n\\}$ 的通项公式为 $a_n=\\dfrac{1}{(-2)^{n-1}}+a$，其前 $n$ 项的和为 $S_n$，若 $2$ 是近似递增数列 $\\{S_n\\}$ 的间隔数，求 $a$ 的取值范围；\n（3）已知 $a_n=\\dfrac n2+\\sin n$，证明 $\\{a_n\\}$ 是近似递减数列，并且 $4$ 是它的最小间隔数。"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": true,
+          "confidence": 0.61,
+          "excerpt": "定义：$\\{a_n\\}$ 是无穷数列，若存在正整数 $k$ 使得对任意 $n\\in\\mathbb{N}^*$，均有 $a_{n+k}>a_n（a_{n+k}<a_n）$ 则称 $\\{a_n\\}$ 是近似递增（减）数列，其中 $k$ 叫近似递增（减）数列 $\\{a_n\\}$ 的间隔数。\n（1）若 $a_n=n+（-1）^n$，$\\{a_n\\}$ 是否是近似递增数列，并说明理由；\n（2）已知数列 $\\{a_n\\}$ 的通项公式为 $a_n=\\frac{1}{（-2）^{n-1}}+a$，其前 $n$ 项的和为 $S_n$，若2是近似递增数列 $\\{S_n\\}$ 的间隔数，求 $a$ 的取值范围；\n（3）已知 $a_n=\\frac{n}{2}+\\sin n$，证明 $\\{a_n\\}$ 是近似递减数列，并且4是它的最小间隔数。"
+        }
+      ]
+    },
+    {
+      "key": "stem-崇明3",
+      "id": "崇明3",
+      "paper": "崇明",
+      "number": 3,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        5
+      ],
+      "sourceExpected": "分子 |√3+i|+i 的绝对值边界",
+      "variants": [
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "额外绝对值 |+i|"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.82,
+          "excerpt": "（3分）已知复数 $z$ 满足 $\\frac{|\\sqrt{3}+i|+|+i|}{z}=i$，$i$ 为虚数单位，则 $z=$______。"
+        }
+      ]
+    },
+    {
+      "key": "stem-崇明4",
+      "id": "崇明4",
+      "paper": "崇明",
+      "number": 4,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        5
+      ],
+      "sourceExpected": "2^x+1 的指数边界",
+      "variants": [
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0,
+            "note": "2^(x+1)"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "32824381-6f1e-4cb4-9e84-1582916b6e8d",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "已知函数$f(x)=2^{x+1}$，其反函数为$y=f^{-1}(x)$，则$f^{-1}(3)=$____."
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "2^(x+1)"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.7,
+          "excerpt": "（3分）已知函数 $f(x)=2^{x+1}$，其反函数为 $y=f^{-1}(x)$，则 $f^{-1}(3)=$______。"
+        }
+      ]
+    },
+    {
+      "key": "stem-崇明13",
+      "id": "崇明13",
+      "paper": "崇明",
+      "number": 13,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        10
+      ],
+      "sourceExpected": "矩阵 -1 与方程 x-y=3",
+      "variants": [
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "方程漏 -y"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "eb1c2ec4-a354-461d-8a91-67deb7523412",
+          "needsHumanReview": true,
+          "confidence": 0.7,
+          "excerpt": "若矩阵 $\\begin{pmatrix}a&-1\\\\2&b\\end{pmatrix}$ 是线性方程组 $\\begin{cases}x=3\\\\2x-y=1\\end{cases}$ 的系数矩阵，则（　　）"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "矩阵 -1 变 +1"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "若矩阵 $\\left(\\begin{array}{ll} a & 1 \\\\ 2 & b \\end{array}\\right)$ 是线性方程组 $\\left\\{\\begin{array}{l} x-y=3 \\\\ 2 x-y=1 \\end{array}\\right.$ 的系数矩阵，则（ ）"
+        }
+      ]
+    },
+    {
+      "key": "stem-崇明19",
+      "id": "崇明19",
+      "paper": "崇明",
+      "number": 19,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        3
+      ],
+      "sourceExpected": "第(2)问至多而非至少",
+      "variants": [
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "至多变至少"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.71,
+          "excerpt": "某开发商欲将一块如图所示的四边形空地 $ABCD$ 沿着边界用固定高度的板材围成一个封闭的施工区域，经测量，边界 $AB$ 与 $AD$ 的长都是2千米，$\\angle BAD=60^\\circ$，$\\angle BCD=120^\\circ$。\n（1）如果 $\\angle ADC=105^\\circ$，求 $BC$ 的长（结果精确到0.001千米）；\n（2）围成该施工区域至少需要多少千米长度的板材？（不计损耗，结果精确到0.001千米）"
+        }
+      ]
+    },
+    {
+      "key": "stem-奉贤2",
+      "id": "奉贤2",
+      "paper": "奉贤",
+      "number": 2,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        6
+      ],
+      "sourceExpected": "参数方程 x=6+2cosθ",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "6+3"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（4分）已知圆的参数方程为 $\\begin{cases} x=6+3\\\\ y=2\\sin\\theta \\end{cases}$，则此圆的半径是_______."
+        },
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "6+3"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "edb198c5-24e3-442b-8118-b33e5e71e474",
+          "needsHumanReview": true,
+          "confidence": 0.7,
+          "excerpt": "（4分）已知圆的参数方程为$\\begin{cases} x=6+3\\\\ y=2\\sin\\theta \\end{cases}$，则此圆的半径是______."
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏系数2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "fb821d19-e239-4f50-9ec8-350dcc3dc7bd",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "已知圆的参数方程为$\\begin{cases} x=6+\\cos\\theta \\\\ y=2\\sin\\theta \\end{cases}$，则此圆的半径是______。"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏系数2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": true,
+          "confidence": 0.6,
+          "excerpt": "已知圆的参数方程为 $\\begin{cases}x=6+\\cos\\theta\\\\y=2\\sin\\theta\\end{cases}$，则此圆的半径是________."
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏系数2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b814e9ec-cc03-4d64-a971-f25fc0a4b591",
+          "needsHumanReview": true,
+          "confidence": 0.97,
+          "excerpt": "（4分）已知圆的参数方程为 $\\begin{cases}x=6+\\cos\\theta\\\\y=2\\sin\\theta\\end{cases}$，则此圆的半径是______。"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "漏系数2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（4分）已知圆的参数方程为$\\begin{cases} x=6+\\cos\\theta \\\\ y=2\\sin\\theta \\end{cases}$（$\\theta$为参数），则此圆的半径是______．"
+        }
+      ]
+    },
+    {
+      "key": "stem-奉贤3",
+      "id": "奉贤3",
+      "paper": "奉贤",
+      "number": 3,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        6
+      ],
+      "sourceExpected": "2029² 的数字与指数边界",
+      "variants": [
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "202²9²"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b814e9ec-cc03-4d64-a971-f25fc0a4b591",
+          "needsHumanReview": true,
+          "confidence": 0.62,
+          "excerpt": "（4分）设 $z=2021+bi$（$i$为虚数单位），若 $z\\cdot\\overline z=202^2 9^2$，则实数$b=$______。"
+        }
+      ]
+    },
+    {
+      "key": "stem-奉贤5",
+      "id": "奉贤5",
+      "paper": "奉贤",
+      "number": 5,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        7
+      ],
+      "sourceExpected": "三条约束 x+y≥2,x≤1,y≤2",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "≤4"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（4分）已知 $O$ 是坐标原点，点 $A(-1, 1)$，若点 $M(x, y)$ 为平面区域 $\\begin{cases} x+y \\le 4\\\\ x \\le 1\\\\ y \\le 2 \\end{cases}$ 上的一个动点，则 $\\overrightarrow{OM} \\cdot \\overrightarrow{OA}$ 的取值范围为_______."
+        },
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "三条约束不完整"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "edb198c5-24e3-442b-8118-b33e5e71e474",
+          "needsHumanReview": true,
+          "confidence": 0.7,
+          "excerpt": "（4分）已知$O$是坐标原点，点$A$（$-1$，1），若点$M$（$x$，$y$）为平面区域$\\begin{cases} x+y\\\\ x\\\\ y \\end{cases}$上的一个动点，则$\\overrightarrow{OM}\\cdot \\overrightarrow{OA}$的取值范围为______."
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0,
+            "note": "≥1"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "fb821d19-e239-4f50-9ec8-350dcc3dc7bd",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "已知$O$是坐标原点，点$A(-1,1)$，若点$M(x,y)$为平面区域$\\begin{cases} x+y\\geqslant 1 \\\\ x\\leqslant 1 \\\\ y\\leqslant 2 \\end{cases}$上的一个动点，则$\\overrightarrow{OM}\\cdot\\overrightarrow{OA}$的取值范围为______。"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "≥1"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b814e9ec-cc03-4d64-a971-f25fc0a4b591",
+          "needsHumanReview": true,
+          "confidence": 0.63,
+          "excerpt": "（4分）已知$O$是坐标原点，点$A（-1，1）$，若点$M（x，y）$为平面区域$\\begin{cases}x+y\\ge1\\\\x\\le1\\\\y\\le2\\end{cases}$上的一个动点，则$\\overrightarrow{OM}\\cdot\\overrightarrow{OA}$的取值范围为______。"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "≤1"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（4分）已知$O$是坐标原点，点$A(-1,1)$，若点$M(x,y)$为平面区域$\\begin{cases} x+y\\leqslant 1 \\\\ x\\leqslant 1 \\\\ y\\leqslant 2 \\end{cases}$上的一个动点，则$\\overrightarrow{OM}\\cdot\\overrightarrow{OA}$的取值范围为______．"
+        }
+      ]
+    },
+    {
+      "key": "stem-奉贤11",
+      "id": "奉贤11",
+      "paper": "奉贤",
+      "number": 11,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        1,
+        2,
+        11
+      ],
+      "sourceExpected": "原条件 m,n∈R⁺；甲的中间式是 (m+n)/m+(m+n)/n；乙最后还有 1/[m(1-m)]。甲乙丙均为题干的一部分，不是可以任意删掉的解答注释。",
+      "variants": [
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "甲乙丙略去"
+          },
+          "review": {
+            "type": "明确省略／保真度不足",
+            "text": "实际提示词已多次要求逐字转录且不压缩解析。这里的“略”或省掉整段代数推导属于省略，不一定是数学结论错误。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": true,
+          "confidence": 0.75,
+          "excerpt": "三个同学对问题“已知 $m,n\\in\\mathbf R^+$，且 $m+n=1$，求 $\\dfrac1m+\\dfrac1n$ 的最小值”提出各自的解题思路：甲、乙、丙（略）。丙：参考上述解题思路，可求得当 $x=$________时，$y=\\dfrac{a^2}{x^2}+\\dfrac{1}{100-x^2}$（$0<x<10$，$a>0$）有最小值。"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "甲的中间表达式被改变"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b814e9ec-cc03-4d64-a971-f25fc0a4b591",
+          "needsHumanReview": true,
+          "confidence": 0.62,
+          "excerpt": "（5分）三个同学对问题“已知$m，n\\in\\mathbb R^+$，且$m+n=1$，求$\\frac1m+\\frac1n$的最小值”提出各自的解题思路：\n甲：$\\frac1m+\\frac1n=\\frac{m+n}{mn}=2+\\frac nm+\\frac mn$，可用基本不等式求解；\n乙：$\\frac1m+\\frac1n=\\frac{m+n}{mn}=\\frac1{mn}=\\frac1{m(1-m)}$，可用二次函数配方法求解；\n丙：$\\frac1m+\\frac1n=(\\frac1m+\\frac1n)(m+n)=2+\\frac nm+\\frac mn$，可用基本不等式求解；参考上述解题思路，可求得当$x=$______时，$y=\\frac{a^2}{x^2}+\\frac1{100-x^2}$（$0<x<10，a>0$）有最小值"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "正数改 R*，乙末项遗漏"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": true,
+          "confidence": 0.9,
+          "excerpt": "（5分）三个同学对问题“已知$m,n\\in\\mathbf{R}^{*}$，且$m+n=1$，求$\\frac{1}{m}+\\frac{1}{n}$的最小值”提出各自的解题思路：\n甲：$\\frac{1}{m}+\\frac{1}{n}=\\frac{m+n}{m}+\\frac{m+n}{n}=2+\\frac{n}{m}+\\frac{m}{n}$，可用基本不等式求解；\n乙：$\\frac{1}{m}+\\frac{1}{n}=\\frac{m+n}{mn}=\\frac{1}{mn}$，可用二次函数配方法求解；\n丙：$\\frac{1}{m}+\\frac{1}{n}=(\\frac{1}{m}+\\frac{1}{n})(m+n)=2+\\frac{n}{m}+\\frac{m}{n}$，可用基本不等式求解；参考上述解题思路，可求得当$x=$______时，$y=\\frac{a^{2}}{x^{2}}+\\frac{1}{100-x^{2}}$（$0<x<10$，$a>0$）有最小值______"
+        }
+      ]
+    },
+    {
+      "key": "stem-奉贤15",
+      "id": "奉贤15",
+      "paper": "奉贤",
+      "number": 15,
+      "category": "stem",
+      "label": "题干",
+      "sourcePages": [
+        3
+      ],
+      "sourceExpected": "极限分子 a^{f(n)}",
+      "variants": [
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0,
+            "note": "分子变 f(n)"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "fb821d19-e239-4f50-9ec8-350dcc3dc7bd",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "设函数$f(x)=\\log_a(1-a^x)$，其中$a>0$，且$a\\neq 1$，若$n\\in\\mathbf{N}^*$，则$\\lim\\limits_{n\\to\\infty}\\frac{f(n)}{a^n+a}=$（    ）"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": null,
+            "note": "后续未完整返回"
+          },
+          "review": {
+            "type": "未交付／后端中断影响",
+            "text": "本题记录未完整返回；不能称为本题内容已识别错误。Haiku 的后续输出受旧后端在第14题抛错影响。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": null,
+          "confidence": null,
+          "excerpt": "（本题未完整返回）"
+        }
+      ]
+    },
+    {
+      "key": "answer-宝山17",
+      "id": "宝山17",
+      "paper": "宝山",
+      "number": 17,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        12,
+        13
+      ],
+      "sourceExpected": "两问结论：6、arccos(√17/17)",
+      "variants": [
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "答案空白"
+          },
+          "review": {
+            "type": "未完成提取／已声明不确定",
+            "text": "字段确实为空，但 needsHumanReview=true；提示词允许看不清时留空。这是覆盖率缺失，不是编造答案，不能据此证明违反“不确定留空”规则。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": true,
+          "confidence": 0.62,
+          "excerpt": "（空字符串）"
+        }
+      ]
+    },
+    {
+      "key": "answer-宝山18",
+      "id": "宝山18",
+      "paper": "宝山",
+      "number": 18,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        13,
+        14
+      ],
+      "sourceExpected": "公共区间 [π/4,π/2] 与最大值 √6",
+      "variants": [
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "答案空白"
+          },
+          "review": {
+            "type": "未完成提取／已声明不确定",
+            "text": "字段确实为空，但 needsHumanReview=true；提示词允许看不清时留空。这是覆盖率缺失，不是编造答案，不能据此证明违反“不确定留空”规则。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": true,
+          "confidence": 0.6,
+          "excerpt": "（空字符串）"
+        }
+      ]
+    },
+    {
+      "key": "answer-崇明17",
+      "id": "崇明17",
+      "paper": "崇明",
+      "number": 17,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        12,
+        13
+      ],
+      "sourceExpected": "两问结论：arctan(√2/4)、2/3",
+      "variants": [
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "只有页码说明，没有答案"
+          },
+          "review": {
+            "type": "字段拆分歧义",
+            "text": "两个正确结论均已出现在 analysis；只是 answer 写成页码说明。应记答案字段未抽取，不能记整题答案丢失。提示词没有明确无独立答案栏时能否从解析末句复制结论。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.72,
+          "excerpt": "（题目对应参考答案与解析页面中相关条目：第12—13页；答案文本中未印出单独的简答结论。）"
+        }
+      ]
+    },
+    {
+      "key": "answer-崇明20",
+      "id": "崇明20",
+      "paper": "崇明",
+      "number": 20,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        16
+      ],
+      "sourceExpected": "第(1)问 AF=3√2/2",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "√10/2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "1560011e-192d-4ab0-b7ea-af10797bfba6",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "(1) $\\frac{\\sqrt{10}}{2}$; (2) 见解析; (3) 见解析"
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0,
+            "note": "3/2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "32824381-6f1e-4cb4-9e84-1582916b6e8d",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "（1）$\\frac{3}{2}$；（2）证明见解析；（3）证明见解析"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "√2/2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.61,
+          "excerpt": "（1）$|AF|=\\frac{\\sqrt2}{2}$。\n（2）点$P$在椭圆$\\Gamma$上。\n（3）$S_{\\triangle PAC}\\le\\frac{\\sqrt2}{2}$，且当且仅当$m=0$时取等号。"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "√2/2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（1）$\\frac{\\sqrt{2}}{2}$；（2）证明见解析；（3）证明见解析"
+        }
+      ]
+    },
+    {
+      "key": "answer-奉贤11",
+      "id": "奉贤11",
+      "paper": "奉贤",
+      "number": 11,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        11
+      ],
+      "sourceExpected": "所求 x 为正根 √(100a/(a+1))",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "-\\sqrt{\\frac{100a}{a+1}}"
+        }
+      ]
+    },
+    {
+      "key": "answer-奉贤12",
+      "id": "奉贤12",
+      "paper": "奉贤",
+      "number": 12,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        11
+      ],
+      "sourceExpected": "三值集合，首项 (-2+√5)/2",
+      "variants": [
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "首项变 -(2+√5)/2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": true,
+          "confidence": 0.85,
+          "excerpt": "$-\\frac{2+\\sqrt{5}}{2}$或$-\\frac{1}{2}$或$-\\frac{1}{6}$"
+        }
+      ]
+    },
+    {
+      "key": "answer-奉贤16",
+      "id": "奉贤16",
+      "paper": "奉贤",
+      "number": 16,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        15
+      ],
+      "sourceExpected": "EC=1，线面角 arcsin(√30/6)",
+      "variants": [
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": null,
+            "note": "后续未返回"
+          },
+          "review": {
+            "type": "未交付／后端中断影响",
+            "text": "本题记录未完整返回；不能称为本题内容已识别错误。Haiku 的后续输出受旧后端在第14题抛错影响。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": null,
+          "confidence": null,
+          "excerpt": "（本题未完整返回）"
+        }
+      ]
+    },
+    {
+      "key": "answer-奉贤18",
+      "id": "奉贤18",
+      "paper": "奉贤",
+      "number": 18,
+      "category": "answer",
+      "label": "答案字段",
+      "sourcePages": [
+        17
+      ],
+      "sourceExpected": "运输成本函数、定义域及 b=1/10 两侧速度",
+      "variants": [
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": null,
+            "note": "后续未返回"
+          },
+          "review": {
+            "type": "未交付／后端中断影响",
+            "text": "本题记录未完整返回；不能称为本题内容已识别错误。Haiku 的后续输出受旧后端在第14题抛错影响。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": null,
+          "confidence": null,
+          "excerpt": "（本题未完整返回）"
+        }
+      ]
+    },
+    {
+      "key": "analysis-宝山11",
+      "id": "宝山11",
+      "paper": "宝山",
+      "number": 11,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        8,
+        9
+      ],
+      "sourceExpected": "各0.5：约束不被改错；三个顶点及目标值保留",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "约束错，顶点保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "【分析】先画出满足约束条件 $⟪U+0008⟫egin{cases} x+y \\geqslant 0 \\ x \\leqslant 1 \\ y \\leqslant 2 \\end{cases}$ 的平面区域，求出平面区域的角点后，逐一代入 $\\overrightarrow{OA} \\cdot \\overrightarrow{OM}$ 分析比较后，即可得到 $\\overrightarrow{OA} \\cdot \\overrightarrow{OM}$ 的取值范围. [[image:p8-1]]\n…（中间原文省略）…\n【解答】解：满足约束条件 $⟪U+0008⟫egin{cases} x+y \\geqslant 0 \\ x \\leqslant 1 \\ y \\leqslant 2 \\end{cases}$ 的平面区域如下图所示：[[image:p8-2]][[image:p8-3]]"
+        },
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "约束缺，顶点保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "【分析】先画出满足约束条件$\\begin{cases}x+y\\\\x≤1\\\\y≤2\\\\\\end{cases}$的平面区域，求出平面区域的角点后，逐一代入$\\overrightarrow{OA}•\\overrightarrow{OM}$分析比较后，即可得到$\\overrightarrow{OA}•\\overrightarrow{OM}$的取值范围.\n…（中间原文省略）…\n【解答】解：满足约束条件$\\begin{cases}x+y\\\\x≤1\\\\y≤2\\\\\\end{cases}$的平面区域如下图所示："
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "约束错，顶点保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b1d99b7e-ef96-4a7e-b717-a50de6fbb707",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "【分析】先画出满足约束条件 $\\begin{cases}x+y\\geqslant 1\\\\x\\leqslant 1\\\\y\\leqslant 2\\end{cases}$ 的平面区域，求出平面区域的角点后，逐一代入 $\\overrightarrow{OA}\\cdot\\overrightarrow{OM}$ 分析比较后，即可得到 $\\overrightarrow{OA}\\cdot\\overrightarrow{OM}$ 的取值范围．\n…（中间原文省略）…\n【解答】解：满足约束条件 $\\begin{cases}x+y\\geqslant 1\\\\x\\leqslant 1\\\\y\\leqslant 2\\end{cases}$ 的平面区域如下图所示："
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "约束错，顶点保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": false,
+          "confidence": 0.93,
+          "excerpt": "【分析】先画出满足约束条件 $\\begin{cases}x+y\\geq1\\\\x\\leq1\\\\y\\leq2\\end{cases}$ 的平面区域，求出平面区域的角点后，逐一代入 $\\overrightarrow{OA}\\cdot\\overrightarrow{OM}$ 分析比较后，即可得到 $\\overrightarrow{OA}\\cdot\\overrightarrow{OM}$ 的取值范围。\n…（中间原文省略）…\n【解答】解：满足约束条件 $\\begin{cases}x+y\\geq1\\\\x\\leq1\\\\y\\leq2\\end{cases}$ 的平面区域如下图所示："
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "约束错，顶点保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "【分析】先画出满足约束条件 $\\begin{cases} x+y \\leqslant 1 \\\\ x \\leqslant 1 \\\\ y \\leqslant 2 \\end{cases}$ 的平面区域，求出平面区域的角点后，逐一代入 $\\overrightarrow{OA} \\cdot \\overrightarrow{OM}$ 分析比较后，即可得到 $\\overrightarrow{OA} \\cdot \\overrightarrow{OM}$ 的取值范围.\n…（中间原文省略）…\n【解答】解：满足约束条件 $\\begin{cases} x+y \\leqslant 1 \\\\ x \\leqslant 1 \\\\ y \\leqslant 2 \\end{cases}$ 的平面区域如下图所示："
+        }
+      ]
+    },
+    {
+      "key": "analysis-宝山17",
+      "id": "宝山17",
+      "paper": "宝山",
+      "number": 17,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        12,
+        13
+      ],
+      "sourceExpected": "p12：DB₁=(-1/2,√3/2,2)，DC₁=(-1/2,-√3/2,2)。DeepSeek 分别漏掉 DB₁ 第一分量、DC₁ 第二分量的负号。",
+      "variants": [
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "两个向量分别丢负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b1d99b7e-ef96-4a7e-b717-a50de6fbb707",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "$\\overrightarrow{DB_1}=(\\frac{1}{2},\\frac{\\sqrt{3}}{2},2)$，$\\overrightarrow{DC_1}=(-\\frac{1}{2},\\frac{\\sqrt{3}}{2},2)$．\n…（中间原文省略）…\n设平面 $C_1B_1D$ 的法向量为 $\\vec{n}=(x,y,z)$，\n…（中间原文省略）…\n由 $\\begin{cases}\\vec{n}\\cdot\\overrightarrow{DB_1}=-x+\\sqrt{3}y+4z=0\\\\\\vec{n}\\cdot\\overrightarrow{DC_1}=-x-\\sqrt{3}y+4z=0\\end{cases}$，取 $z=1$，得 $\\vec{n}=(4,0,1)$．"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "解析空白"
+          },
+          "review": {
+            "type": "未完成提取／已声明不确定",
+            "text": "字段确实为空，但 needsHumanReview=true；提示词允许看不清时留空。这是覆盖率缺失，不是编造答案，不能据此证明违反“不确定留空”规则。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": true,
+          "confidence": 0.62,
+          "excerpt": "（空字符串）"
+        }
+      ]
+    },
+    {
+      "key": "analysis-宝山18",
+      "id": "宝山18",
+      "paper": "宝山",
+      "number": 18,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        14
+      ],
+      "sourceExpected": "p14 印刷式：Φ-π/3=-π/6+(-1)^k kπ。只比较照录，不把原式当作已独立验证的通解公式。",
+      "variants": [
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "相位等式漏负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "b1d99b7e-ef96-4a7e-b717-a50de6fbb707",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "（2）$h(x)=\\sqrt{2}[\\sin(2x+\\phi)+\\cos 2x]$，把点 $(-\\frac{\\pi}{6},0)$ 代入化简可得 $\\sin(\\phi-\\frac{\\pi}{3})=-\\frac{1}{2}$，结合题意可得 $\\phi=\\frac{\\pi}{6}$，进而求得 $h(x)$ 的最大值．\n…（中间原文省略）…\n（2）$h(x)=\\sqrt{2}[\\sin(2x+\\phi)+\\cos 2x]$，把点 $(-\\frac{\\pi}{6},0)$ 代入得 $\\sqrt{2}[\\sin(-\\frac{\\pi}{3}+\\phi)+\\cos(-\\frac{\\pi}{3})]=0$，即 $\\sin(\\phi-\\frac{\\pi}{3})=-\\frac{1}{2}$，\n…（中间原文省略）…\n$\\therefore \\phi-\\frac{\\pi}{3}=\\frac{\\pi}{6}+(-1)^kk\\pi$，$k\\in Z$，得 $\\phi=\\frac{\\pi}{6}$，"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "解析空白"
+          },
+          "review": {
+            "type": "未完成提取／已声明不确定",
+            "text": "字段确实为空，但 needsHumanReview=true；提示词允许看不清时留空。这是覆盖率缺失，不是编造答案，不能据此证明违反“不确定留空”规则。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": true,
+          "confidence": 0.6,
+          "excerpt": "（空字符串）"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "相位等式漏 k"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（2）$h(x)=\\sqrt{2}[\\sin(2x+\\Phi)+\\cos 2x]$，把点 $(-\\frac{\\pi}{6}, 0)$ 代入化简可得 $\\sin(\\Phi-\\frac{\\pi}{3})=-\\frac{1}{2}$，结合题意可得 $\\Phi=\\frac{\\pi}{6}$，进而求得 $h(x)$ 的最大值.\n…（中间原文省略）…\n$\\sqrt{2}[\\sin(-\\frac{\\pi}{3}+\\Phi)+\\cos(-\\frac{\\pi}{3})]=0$，即 $\\sin(\\Phi-\\frac{\\pi}{3})=-\\frac{1}{2}$，\n…（中间原文省略）…\n$\\therefore \\Phi-\\frac{\\pi}{3}=-\\frac{\\pi}{6}+(-1)^k \\pi$，$k \\in \\mathbf{Z}$，得 $\\Phi=\\frac{\\pi}{6}$，"
+        }
+      ]
+    },
+    {
+      "key": "analysis-宝山21",
+      "id": "宝山21",
+      "paper": "宝山",
+      "number": 21,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        17
+      ],
+      "sourceExpected": "p17：-(n+k)/2+sin(n+k)<-n/2+sin n；a>(-1/4)×(-1/2)^n；c_n=(-1/4)×(-1/2)^n。原卷另印着 3.23>32，不把照录 32 当作新增识别错误。",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "(3)漏负号，(2)额外负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "（2）利用数列的 $S_n=⟪U+000C⟫rac{1-(-⟪U+000C⟫rac{1}{2})^n}{1+⟪U+000C⟫rac{1}{2}}+an$ 和 $S_{n+2}-S_n=a_{n+1}+a_{n+2}=-(-⟪U+000C⟫rac{1}{2})^{n+1}+2a>0$，进一步确定 $a$ 的范围.\n…（中间原文省略）…\n（3）利用由 $a_{n+k}<a_n$ 得：$⟪U+000C⟫rac{n+k}{2}+\\sin(n+k)<⟪U+000C⟫rac{n}{2}+\\sin n$，即 $k>2[\\sin(n+k)-\\sin n]$，进一步利用赋值法的应用求出结果.\n…（中间原文省略）…\n或 $S_{n+2}-S_n=a_{n+1}+a_{n+2}=-(-⟪U+000C⟫rac{1}{2})^{n+1}+2a>0$，\n…（中间原文省略）…\n即 $a>-(-⟪U+000C⟫rac{1}{4}) \times (-⟪U+000C⟫rac{1}{2})^n$ 恒成立.\n…（中间原文省略）…\n令 $c_n=(-⟪U+000C⟫rac{1}{4}) \times (-⟪U+000C⟫rac{1}{2})^n$，则 $(c_n)_{\\max}=c_1=⟪U+000C⟫rac{1}{8}$，\n…（中间原文省略）…\n（3）由 $a_{n+k}<a_n$ 得：$⟪U+000C⟫rac{n+k}{2}+\\sin(n+k)<⟪U+000C⟫rac{n}{2}+\\sin n$，"
+        },
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "(3)漏负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "（2）利用数列的$S_n=\\frac{1-（-\\frac{1}{2}）^n}{1+\\frac{1}{2}}+an$和$S_{n+2}-S_n=a_{n+1}+a_{n+2}=-（-\\frac{1}{2}）^{n+1}+2a＞0$，进一步确定$a$的范围.\n…（中间原文省略）…\n（3）利用由$a_{n+k}＜a_n$得：$\\frac{n+k}{2}+sin（n+k）＜\\frac{n}{2}+sinn$，即$k＞2[sin（n+k）-sinn]$，进一步利用赋值法的应用求出结果.\n…（中间原文省略）…\n或$S_{n+2}-S_n=a_{n+1}+a_{n+2}=-（-\\frac{1}{2}）^{n+1}+2a＞0$，\n…（中间原文省略）…\n令$c_n=（-\\frac{1}{4}）×（-\\frac{1}{2}）^n$，则$（c_n）_{max}=c_1=\\frac{1}{8}$，\n…（中间原文省略）…\n（3）由$a_{n+k}＜a_n$得：$\\frac{n+k}{2}+sin（n+k）＜\\frac{n}{2}+sinn$，"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "(3)漏负号"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "41fae78a-e182-4b0b-a241-67e8f53f60fb",
+          "needsHumanReview": false,
+          "confidence": 0.85,
+          "excerpt": "（2）利用数列的 $S_n$ 和 $S_{n+2}-S_n>0$ 进一步确定 $a$ 的范围。\n…（中间原文省略）…\n（3）利用由 $a_{n+k}<a_n$ 得 $k>2[\\sin(n+k)-\\sin n]$，进一步利用赋值法的应用求出结果。\n…（中间原文省略）…\n(2) 由题意得 $S_n=\\dfrac{1-(-\\frac12)^n}{1+\\frac12}+an=\\dfrac23[1-(-\\tfrac12)^n]+an$，或 $S_{n+2}-S_n=a_{n+1}+a_{n+2}=-(-\\tfrac12)^{n+1}+2a>0$，即 $a>(-\\tfrac14)\\times(-\\tfrac12)^n$ 恒成立。令 $c_n=(-\\tfrac14)\\times(-\\tfrac12)^n$，则 $(c_n)_{\\max}=c_1=\\dfrac18$，即 $a$ 的取值范围是 $\\left(\\dfrac18,+\\infty\\right)$。\n…（中间原文省略）…\n(3) 由 $a_{n+k}<a_n$ 得 $\\dfrac{n+k}{2}+\\sin(n+k)<\\dfrac{n}{2}+\\sin n$，即 $k>2[\\sin(n+k)-\\sin n]$ ①。由于 $\\sin n$ 和 $\\sin(n+k)$ 均取不到 $\\pm1$，所以 $k=4$ 时，上式恒成立，即数列 $\\{a_n\\}$ 是近似递减数列，4 是它的间隔数。"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "解析空白"
+          },
+          "review": {
+            "type": "未完成提取／已声明不确定",
+            "text": "字段确实为空，但 needsHumanReview=true；提示词允许看不清时留空。这是覆盖率缺失，不是编造答案，不能据此证明违反“不确定留空”规则。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": true,
+          "confidence": 0.61,
+          "excerpt": "（空字符串）"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "(3)漏负号，(2)多个负号遗漏"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "（2）利用数列的 $S_n=\\frac{1-(-\\frac{1}{2})^n}{1+\\frac{1}{2}}+an$ 和 $S_{n+2}-S_n=a_{n+1}+a_{n+2}=(-\\frac{1}{2})^{n+1}+2a>0$，进一步确定 $a$ 的范围.\n…（中间原文省略）…\n（3）利用由 $a_{n+k}<a_n$ 得：$\\frac{n+k}{2}+\\sin(n+k)<\\frac{n}{2}+\\sin n$，即 $k>2[\\sin(n+k)-\\sin n]$，进一步利用赋值法的应用求出结果.\n…（中间原文省略）…\n或 $S_{n+2}-S_n=a_{n+1}+a_{n+2}=(-\\frac{1}{2})^{n+1}+2a>0$，\n…（中间原文省略）…\n即 $a>(-\\frac{1}{4}) \\times (-\\frac{1}{2})^n$ 恒成立.\n…（中间原文省略）…\n令 $c_n=(\\frac{1}{4}) \\times (-\\frac{1}{2})^n$，则 $(c_n)_{\\max}=c_1=\\frac{1}{8}$，\n…（中间原文省略）…\n（3）由 $a_{n+k}<a_n$ 得：$\\frac{n+k}{2}+\\sin(n+k)<\\frac{n}{2}+\\sin n$，"
+        }
+      ]
+    },
+    {
+      "key": "analysis-崇明9",
+      "id": "崇明9",
+      "paper": "崇明",
+      "number": 9,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        7
+      ],
+      "sourceExpected": "p7：【分析】印着 T/2；【解答】印着 |π-φ+2(k-m)π|≤π/3。Haiku 将推导概括为一句；MiMo/Luna 把 T 写成 π；DeepSeek 将约束右侧写为 π/2。Luna 解答的 ≤ 还变成 ≥（旧该项只扣了半分，没有全面覆盖）。",
+      "variants": [
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "T 误作 π"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "c6c92344-3896-4123-ba60-eaf8918f7e2e",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "【分析】先根据左加右减得到$g(x)$的解析式，然后根据三角函数的性质可知，两个相邻的最值点的函数值的差为2．此时它们横坐标差的绝对值为$\\frac{\\pi}{2}$，据此求出$\\varphi$的值.\n【解答】解：由已知得$f(x_1)=\\sin x_1$，$g(x_2)=\\sin(x_2-\\varphi)$.\n因为$|f(x_1)-g(x_2)|=2$，所以$f(x_1)$，$g(x_2)$一个取得最大值，另一个取最小值.\n不妨设$x_1=\\frac{\\pi}{2}+2k\\pi$，$k\\in Z$，$x_2-\\varphi=-\\frac{\\pi}{2}+2m\\pi$，$m\\in Z$，\n由已知得$|x_1-x_2|=|\\pi-\\varphi+2(k-m)\\pi|\\leqslant\\frac{\\pi}{3}$，$k$，$m\\in Z$．结合$\\varphi>0$.\n当$k=m$，$\\varphi=\\frac{2\\pi}{3}$时成立.\n故答案为：$\\frac{2\\pi}{3}$.\n【点评】本题考查三角函数的图象变换规律及性质，同时考查学生的逻辑推理和计算能力．属于中档题."
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "解答 π/3 误作 π/2"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "32824381-6f1e-4cb4-9e84-1582916b6e8d",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "【分析】先根据左加右减得到$g(x)$的解析式，然后根据三角函数的性质可知，两个相邻的最值点的函数值的差为2. 此时它们横坐标差的绝对值为$\\frac{T}{2}$，据此求出$\\varphi$的值.\n【解答】解：由已知得$f(x_1)=\\sin x_1$，$g(x_2)=\\sin(x_2-\\varphi)$.\n因为$|f(x_1)-g(x_2)|=2$，所以$f(x_1)$，$g(x_2)$一个取得最大值，另一个取最小值.\n不妨设$x_1=\\frac{\\pi}{2}+2k\\pi$，$k\\in Z$，$x_2-\\varphi=-\\frac{\\pi}{2}+2m\\pi$，$m\\in Z$，\n由已知得$|x_1-x_2|=|\\pi-\\varphi+2(k-m)\\pi|\\leqslant\\frac{\\pi}{2}$，$k,m\\in Z$. 结合$\\varphi>0$.\n当$k=m$，$\\varphi=\\frac{2\\pi}{3}$时成立.\n故答案为：$\\frac{2\\pi}{3}$.\n【点评】本题考查三角函数的图象变换规律及性质，同时考查学生的逻辑推理和计算能力. 属于中档题."
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "半周期误作 π/2，极值点推导省略"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "eb1c2ec4-a354-461d-8a91-67deb7523412",
+          "needsHumanReview": false,
+          "confidence": 0.8,
+          "excerpt": "两函数一个取最大值、一个取最小值，横坐标差的绝对值最小为半周期 $\\dfrac\\pi2$ 的情形相关，由已知推得 $\\varphi$ 的最小值为 $\\dfrac{2\\pi}{3}$。\n故答案为：$\\dfrac{2\\pi}{3}$。"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "T 误作 π；不等号改动另记录"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.84,
+          "excerpt": "【分析】先根据左加右减得到 $g(x)$ 的解析式，然后根据三角函数的性质可知，两个相邻的最值点的函数值的差为2。此时它们横坐标差的绝对值为 $\\frac{\\pi}{2}$，据此求出 $\\varphi$ 的值.\n…（中间原文省略）…\n由已知得 $|x_1-x_2|=|\\pi-\\varphi+2(k-m)\\pi|\\ge\\frac{\\pi}{3}$，$k,m\\in\\mathbb{Z}$. 结合 $\\varphi>0$."
+        }
+      ]
+    },
+    {
+      "key": "analysis-崇明11",
+      "id": "崇明11",
+      "paper": "崇明",
+      "number": 11,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        8,
+        9
+      ],
+      "sourceExpected": "p8 分析末式和 p9 解答末式均是 S=(1/2)|sin(2x-π/6)-1/2|。Luna 写成 |(1/2)sin(2x-π/6)-1/2|，常数项受外层 1/2 作用不同。中间步骤原卷也有可疑系数，未把其照录认作模型新增错误。",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "解答漏绝对值"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "1560011e-192d-4ab0-b7ea-af10797bfba6",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "【分析】将点 $A$ 置于直角坐标系中的原点，则运用平面向量坐标表示得到面积 $S=\\frac{1}{2}|\\sin(2x-\\frac{\\pi}{6})-\\frac{1}{2}|$，进而可求得范围.\n…（中间原文省略）…\n$\\therefore \\triangle ABC$ 的面积 $S=\\frac{1}{2}|AB||AC|\\sin\\angle CAB=\\frac{1}{2}\\times 1 \\times |2\\cos x| \\times \\sin(x-\\frac{\\pi}{6}) = \\sqrt{3}\\sin x\\cos x - \\cos^2 x = \\frac{1}{2}[\\frac{\\sqrt{3}}{2}\\sin 2x - \\frac{1+\\cos 2x}{2}] = \\frac{1}{2}\\sin(2x-\\frac{\\pi}{6}) - \\frac{1}{2} \\leqslant \\frac{3}{4}$,"
+        },
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "分析漏绝对值，解答中间式也损坏"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "c6c92344-3896-4123-ba60-eaf8918f7e2e",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "【分析】将点$A$置于直角坐标系中的原点，则运用平面向量坐标表示得到面积$S=\\frac{1}{2}\\sin(2x-\\frac{\\pi}{6})-\\frac{1}{2}$，进而可求得其范围.\n…（中间原文省略）…\n$\\therefore\\triangle ABC$的面积$S=\\frac{1}{2}|AB||AC|\\sin\\angle CAB=\\frac{1}{2}\\times1\\times|2\\cos x|\\times|\\sin(x-\\frac{\\pi}{6})|=\\sqrt{3}\\sin x\\cos x-\\cos^2x|=\\frac{1}{2}\\frac{\\sqrt{3}}{2}\\sin2x-\\frac{1+\\cos2x}{2}=\\frac{1}{2}|\\sin(2x-\\frac{\\pi}{6})-\\frac{1}{2}|\\leqslant\\frac{3}{4}$，"
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "分析漏绝对值，解答末式保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "32824381-6f1e-4cb4-9e84-1582916b6e8d",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "【分析】将点$A$置于直角坐标系中的原点，则运用平面向量坐标表示得到面积$S=\\frac{1}{2}\\sin(2x-\\frac{\\pi}{6})-\\frac{1}{2}$，进而可求得其范围.\n…（中间原文省略）…\n$\\therefore \\triangle ABC$的面积$S=\\frac{1}{2}|AB||AC|\\sin\\angle CAB=\\frac{1}{2}×1×2|\\cos x|×|\\sin(x-\\frac{\\pi}{6})|=|\\sqrt{3}\\sin x\\cos x-\\cos^2x|=\\frac{1}{2}|\\frac{\\sqrt{3}}{2}\\sin2x-\\frac{1+\\cos2x}{2}|=\\frac{1}{2}|\\sin(2x-\\frac{\\pi}{6})-\\frac{1}{2}|\\leqslant\\frac{3}{4}$，"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "解答 1/2 移入绝对值改变常数系数"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.9,
+          "excerpt": "【分析】将点 $A$ 置于直角坐标系中的原点，则运用平面向量坐标表示得到面积 $S=\\frac{1}{2}|\\sin(2x-\\frac{\\pi}{6})-\\frac{1}{2}|$，进而可求得其范围.\n…（中间原文省略）…\n$\\therefore\\triangle ABC$ 的面积 $S=\\frac{1}{2}|AB||AC|\\sin\\angle CAB=\\frac{1}{2}\\times1\\times|2\\cos x|\\times|\\sin(x-\\frac{\\pi}{6})|=\\left|\\sqrt{3}\\sin x\\cos x-\\cos^2x\\right|=\\left|\\frac{1}{2}\\sin(2x-\\frac{\\pi}{6})-\\frac{1}{2}\\right|\\le\\frac{3}{4}$，"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "分析解答均漏绝对值"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "【分析】将点 $A$ 置于直角坐标系中的原点，则运用平面向量坐标表示得到面积 $S=\\frac{1}{2} \\sin \\left(2 x-\\frac{\\pi}{6}\\right)-\\frac{1}{2}$，进而可求得其范围.\n…（中间原文省略）…\n$\\therefore \\triangle A B C$ 的面积 $S=\\frac{1}{2}|A B||A C| \\sin \\angle C A B=\\frac{1}{2} \\times 1 \\times 2|\\cos x| \\times \\sin \\left(x-\\frac{\\pi}{6}\\right)=\\sqrt{3} \\sin x \\cos x$ $-\\cos ^{2} x=\\frac{\\sqrt{3}}{2} \\sin 2 x-\\frac{1+\\cos 2 x}{2}=\\frac{1}{2} \\sin \\left(2 x-\\frac{\\pi}{6}\\right)-\\frac{1}{2} \\leqslant \\frac{3}{4}$，"
+        }
+      ]
+    },
+    {
+      "key": "analysis-崇明20",
+      "id": "崇明20",
+      "paper": "崇明",
+      "number": 20,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        16
+      ],
+      "sourceExpected": "p16：AF=√[(1+1)²+(√2/2)²]=3√2/2；代入验证分子含 +2-x₁²。后两问原卷有直线方程、P 代入过程、韦达关系和面积不等式化简。",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "AF错，后两问推导保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "1560011e-192d-4ab0-b7ea-af10797bfba6",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "直线 $x=-1$ 与该椭圆交于点 $A, B$，点 $A$ 位于 $x$ 轴上方，可得 $A(-1, \\frac{\\sqrt{2}}{2})$，则 $|AF|=\\sqrt{(1+1)^2+(\\frac{\\sqrt{2}}{2})^2}=\\frac{\\sqrt{10}}{2}$;\n…（中间原文省略）…\n由 $(\\frac{3x_1-4}{2x_1-3})^2+2(\\frac{y_1}{2x_1-3})^2=\\frac{(3x_1-4)^2+2y_1^2}{(2x_1-3)^2}=\\frac{9x_1^2-24x_1+16+2-x_1^2}{4x_1^2-12x_1+9}=2$，"
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "AF错，后两问推导保留"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "32824381-6f1e-4cb4-9e84-1582916b6e8d",
+          "needsHumanReview": false,
+          "confidence": 0.95,
+          "excerpt": "直线$x=-1$与该椭圆交于点$A$，$B$，点$A$位于$x$轴上方，可得$A(-1,\\frac{\\sqrt{2}}{2})$，则$|AF|=\\sqrt{(1+1)^2+(\\frac{\\sqrt{2}}{2})^2}=\\frac{3}{2}$；\n…（中间原文省略）…\n由$(\\frac{3x_1-4}{2x_1-3})^2+2(\\frac{y_1}{2x_1-3})^2=\\frac{(3x_1-4)^2+2y_1^2}{(2x_1-3)^2}=\\frac{9x_1^2-24x_1+16+2-x_1^2}{4x_1^2-12x_1+9}=2$，"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "AF正确，后两问主要代数推导略去"
+          },
+          "review": {
+            "type": "明确省略／保真度不足",
+            "text": "实际提示词已多次要求逐字转录且不压缩解析。这里的“略”或省掉整段代数推导属于省略，不一定是数学结论错误。"
+          },
+          "traceId": "eb1c2ec4-a354-461d-8a91-67deb7523412",
+          "needsHumanReview": true,
+          "confidence": 0.75,
+          "excerpt": "（1）$F(1,0)$，$A(-1,\\dfrac{\\sqrt2}{2})$，$|AF|=\\sqrt{(1+1)^2+\\dfrac12}=\\dfrac{3\\sqrt2}{2}$。\n（2）设 $A(x_1,y_1)$，$B(x_1,-y_1)$，由 $AF$ 与 $BC$ 方程解得 $P\\left(\\dfrac{3x_1-4}{2x_1-3},\\dfrac{y_1}{2x_1-3}\\right)$，代入椭圆方程验证为 2，故 $P$ 在椭圆上。\n（3）设 $AP$：$x=my+1$，联立得 $(2+m^2)y^2+2my-1=0$，三角形面积化简后由基本不等式得 $S\\leqslant\\dfrac{\\sqrt2}{2}$。"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "AF未化简且与答案矛盾，后两问保留"
+          },
+          "review": {
+            "type": "等价表达／末式省略",
+            "text": "距离根式本身正确且等于 3√2/2；原页化简末式被省略。若按数学正确性应接受，若按逐字转录则缺内容；answer 中 √2/2 的错误另列，不能把这里也叫距离算错。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.61,
+          "excerpt": "直线 $x=-1$ 与该椭圆交于点 $A，B$，点 $A$ 位于 $x$ 轴上方，可得 $A（-1，\\frac{\\sqrt2}{2}）$，则 $|AF|=\\sqrt{(1+1)^2+(\\frac{\\sqrt2}{2})^2}$；\n…（中间原文省略）…\n由 $\\left(\\frac{3x_1-4}{2x_1-3}\\right)^2+2\\left(\\frac{y_1}{2x_1-3}\\right)^2=\\frac{(3x_1-4)^2+2y_1^2}{(2x_1-3)^2}=\\frac{9x_1^2-24x_1+16+2-x_1^2}{4x_1^2-12x_1+9}=2$，"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "AF错，P 验证的 -x1² 变 -2x1²"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "直线 $x=-1$ 与该椭圆交于点 $A, B$，点 $A$ 位于 $x$ 轴上方，可得 $A\\left(-1,\\frac{\\sqrt{2}}{2}\\right)$，则 $|A F|=\\sqrt{(1+1)^{2}+\\left(\\frac{\\sqrt{2}}{2}\\right)^{2}}=\\frac{\\sqrt{2}}{2}$；\n…（中间原文省略）…\n由 $\\left(\\frac{3 x_{1}-4}{2 x_{1}-3}\\right)^{2}+2\\left(\\frac{y_{1}}{2 x_{1}-3}\\right)^{2}=\\frac{\\left(3 x_{1}-4\\right)^{2}+2 y_{1}^{2}}{(2 x_{1}-3)^{2}}=\\frac{9 x_{1}^{2}-24 x_{1}+16+2-2 x_{1}^{2}}{4 x_{1}^{2}-12 x_{1}+9}=2$，"
+        }
+      ]
+    },
+    {
+      "key": "analysis-奉贤11",
+      "id": "奉贤11",
+      "paper": "奉贤",
+      "number": 11,
+      "category": "analysis",
+      "label": "解析",
+      "sourcePages": [
+        11
+      ],
+      "sourceExpected": "p11 展开括号是 a²+1+x²/(100-x²)+a²(100-x²)/x²；x²/(100-x²) 后没有额外乘 a²。所求 x 为正根；填空下划线不能视作负号。",
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "前文写负根，后文正根"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "得当 $x=-\\sqrt{\\frac{100a}{a+1}}$ 时，$y=\\frac{a^2}{x^2} + \\frac{1}{100-x^2}$ ($0<x<10, a>0$) 有最小值\n…（中间原文省略）…\n【分析】由题中所给解题思路，配凑均值不等式的形式，当且仅当两数相等时，取最值.\n…（中间原文省略）…\n【解答】解：$y=\\frac{a^2}{x^2} + \\frac{1}{100-x^2} = (\\frac{a^2}{x^2} + \\frac{1}{100-x^2}) [x^2 + (100-x^2)] \\times \\frac{1}{100} = \\frac{1}{100}[a^2+1+\\frac{x^2}{100-x^2} + \\frac{a^2(100-x^2)}{x^2}] \\ge \\frac{1}{100}[a^2+1+2\\sqrt{a^2}]$\n…（中间原文省略）…\n∴ 当且仅当 $\\frac{x^2}{100-x^2} = \\frac{a^2(100-x^2)}{x^2}$，即 $x=\\sqrt{\\frac{100a}{a+1}}$ 时，$y=\\frac{a^2}{x^2} + \\frac{1}{100-x^2}$ ($0<x<10, a>0$) 有最小值."
+        },
+        {
+          "model": "DeepSeek",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "展开项多乘 a²"
+          },
+          "review": {
+            "type": "内容与原文不符",
+            "text": "改变了可见数字、符号、条件或推导；逐字转录要求已明确。属于本轮输出缺陷，但单次样本不能证明换提示词或输入图质量后仍无法改进。"
+          },
+          "traceId": "fb821d19-e239-4f50-9ec8-350dcc3dc7bd",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "【分析】由题中所给解题思路，配凑均值不等式的形式，当且仅当两数相等时，取最值。\n【解答】解：$y=\\frac{a^2}{x^2}+\\frac{1}{100-x^2}=(\\frac{a^2}{x^2}+\\frac{1}{100-x^2})[x^2+(100-x^2)]\\times\\frac{1}{100}=\\frac{1}{100}[a^2+1+\\frac{x^2}{100-x^2}\\cdot a^2+\\frac{a^2(100-x^2)}{x^2}]\\geqslant \\frac{1}{100}[a^2+1+2\\sqrt{a^2}]$\n$\\therefore$当且仅当$\\frac{x^2}{100-x^2}=\\frac{a^2(100-x^2)}{x^2}$，即$x=\\sqrt{\\frac{100a}{a+1}}$时，$y=\\frac{a^2}{x^2}+\\frac{1}{100-x^2}$（$0<x<10$，$a>0$）有最小值。\n故答案为：$\\sqrt{\\frac{100a}{a+1}}$。\n【点评】本题考查了“乘1法”与均值不等式的应用，属于基础题。"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0.5,
+            "note": "略去展开式，仅保留等号条件"
+          },
+          "review": {
+            "type": "明确省略／保真度不足",
+            "text": "实际提示词已多次要求逐字转录且不压缩解析。这里的“略”或省掉整段代数推导属于省略，不一定是数学结论错误。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": true,
+          "confidence": 0.75,
+          "excerpt": "由 $y=\\dfrac{1}{100}\\left(\\dfrac{a^2}{x^2}+\\dfrac{1}{100-x^2}\\right)[x^2+(100-x^2)]$，由均值不等式等号成立当且仅当 $\\dfrac{x^2}{100-x^2}=\\dfrac{a^2(100-x^2)}{x^2}$，得 $x=\\sqrt{\\dfrac{100a}{a+1}}$。"
+        }
+      ]
+    },
+    {
+      "key": "images-宝山11",
+      "id": "宝山11",
+      "paper": "宝山",
+      "number": 11,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        8,
+        9
+      ],
+      "sourceExpected": "需要的语义图片组：answer:p9-1",
+      "required": [
+        [
+          "answer",
+          [
+            "p9-1"
+          ]
+        ]
+      ],
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p8-1, p8-2, p8-3"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p8-1\",\n      \"role\": \"answer\",\n      \"kind\": \"table\",\n      \"label\": \"约束条件不等式组\"\n    },\n    {\n      \"id\": \"p8-2\",\n      \"role\": \"answer\",\n      \"kind\": \"table\",\n      \"label\": \"约束条件不等式组\"\n    },\n    {\n      \"id\": \"p8-3\",\n      \"role\": \"answer\",\n      \"kind\": \"table\",\n      \"label\": \"约束条件不等式组\"\n    },\n    {\n      \"id\": \"p9-1\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"平面区域图\"\n    }\n  ],\n  \"expectedImageCount\": 4,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p8-1, p8-2, p8-3"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "41fae78a-e182-4b0b-a241-67e8f53f60fb",
+          "needsHumanReview": false,
+          "confidence": 0.85,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p8-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"约束条件方程组\"\n    },\n    {\n      \"id\": \"p8-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"平面区域图\"\n    },\n    {\n      \"id\": \"p8-3\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"平面区域解答图\"\n    },\n    {\n      \"id\": \"p9-1\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"平面区域坐标图\"\n    }\n  ],\n  \"expectedImageCount\": 4,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p8-2, p8-3"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p8-2\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"平面区域示意图（分析）\"\n    },\n    {\n      \"id\": \"p8-3\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"平面区域示意图（解答）\"\n    },\n    {\n      \"id\": \"p9-1\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"线性规划区域与向量数量积图\"\n    }\n  ],\n  \"expectedImageCount\": 3,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-宝山12",
+      "id": "宝山12",
+      "paper": "宝山",
+      "number": 12,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        9
+      ],
+      "sourceExpected": "旧图片判据：本题无需要保存的独立插图；候选为公式/矩阵。矩阵边界的歧义见下文。",
+      "required": [],
+      "variants": [
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p9-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p9-1\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"向量坐标与区域示意图\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-宝山17",
+      "id": "宝山17",
+      "paper": "宝山",
+      "number": 17,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        2,
+        12,
+        13
+      ],
+      "sourceExpected": "需要的语义图片组：question:p2-1 或 p12-1；answer:p13-1",
+      "required": [
+        [
+          "question",
+          [
+            "p2-1",
+            "p12-1"
+          ]
+        ],
+        [
+          "answer",
+          [
+            "p13-1"
+          ]
+        ]
+      ],
+      "variants": [
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "缺少组 question:p2-1/p12-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p13-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"空间直角坐标系中的三棱柱图\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "缺少组 answer:p13-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+          "needsHumanReview": true,
+          "confidence": 0.62,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p2-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"直三棱柱几何示意图\"\n    },\n    {\n      \"id\": \"p12-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"直三棱柱几何示意图\"\n    }\n  ],\n  \"expectedImageCount\": 2,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-宝山20",
+      "id": "宝山20",
+      "paper": "宝山",
+      "number": 20,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        4,
+        15,
+        16
+      ],
+      "sourceExpected": "需要的语义图片组：question:p4-1 或 p15-1",
+      "required": [
+        [
+          "question",
+          [
+            "p4-1",
+            "p15-1"
+          ]
+        ]
+      ],
+      "variants": [
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "缺少组 question:p4-1/p15-1"
+          },
+          "review": {
+            "type": "去重规则误用／已报告缺图",
+            "text": "模型在 missingImages 明说因题干图与答案页副本重复而全部不选。结果缺图，但不是无声漏图；应规定去重至少保留一份。自评0.6又高于缺图0.5上限，这是另一项规则违例，旧分数未单独计入。"
+          },
+          "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+          "needsHumanReview": true,
+          "confidence": 0.6,
+          "excerpt": "{\n  \"assets\": [],\n  \"expectedImageCount\": 1,\n  \"missingImages\": [\n    {\n      \"page\": 4,\n      \"role\": \"question\",\n      \"description\": \"第4页题干中椭圆$Γ$的坐标图（原卷题图）\",\n      \"reason\": \"候选框p4-1与题干椭圆图对应，但与答案页p15-1为同一图的重复候选，为避免同一题图重复生成多张图片，未选入assets，需教师核实\"\n    }\n  ]\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p15-2, p15-4, p15-5, p16-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "41fae78a-e182-4b0b-a241-67e8f53f60fb",
+          "needsHumanReview": false,
+          "confidence": 0.85,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p4-1\",\n      \"role\": \"question\",\n      \"kind\": \"graph\",\n      \"label\": \"椭圆示意图\"\n    },\n    {\n      \"id\": \"p15-1\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"椭圆解答图\"\n    },\n    {\n      \"id\": \"p15-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"弦长计算式\"\n    },\n    {\n      \"id\": \"p15-4\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"面积计算式\"\n    },\n    {\n      \"id\": \"p15-5\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"基本不等式式\"\n    },\n    {\n      \"id\": \"p16-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"距离条件式\"\n    }\n  ],\n  \"expectedImageCount\": 6,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p15-2, p15-4, p15-5, p16-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p4-1\",\n      \"role\": \"question\",\n      \"kind\": \"graph\",\n      \"label\": \"椭圆与直线位置关系示意图\"\n    },\n    {\n      \"id\": \"p15-1\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"椭圆标准位置示意图\"\n    },\n    {\n      \"id\": \"p15-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"弦长与距离计算式\"\n    },\n    {\n      \"id\": \"p15-4\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"面积最值推导式\"\n    },\n    {\n      \"id\": \"p15-5\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"基本不等式取等条件\"\n    },\n    {\n      \"id\": \"p16-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"向量垂直证明式\"\n    }\n  ],\n  \"expectedImageCount\": 6,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-崇明13",
+      "id": "崇明13",
+      "paper": "崇明",
+      "number": 13,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        10
+      ],
+      "sourceExpected": "旧图片判据：本题无需要保存的独立插图；候选为公式/矩阵。矩阵边界的歧义见下文。",
+      "required": [],
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p10-1, p10-2, p10-3"
+          },
+          "review": {
+            "type": "提示词冲突／图片扣分待定",
+            "text": "候选包含数学矩阵与方程组。旧规则既禁止公式截图，又用“任何依靠行列/空间位置…没有例外”定义表格并列出 matrix；矩阵截图究竟算不算错应先统一规则。纯方程组另有明确禁止，不应笼统把三个候选归为同一种错误。"
+          },
+          "traceId": "1560011e-192d-4ab0-b7ea-af10797bfba6",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p10-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"矩阵与方程组对应关系示意图\"\n    },\n    {\n      \"id\": \"p10-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"线性方程组\"\n    },\n    {\n      \"id\": \"p10-3\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"系数矩阵\"\n    }\n  ],\n  \"expectedImageCount\": 3,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p10-1, p10-2, p10-3"
+          },
+          "review": {
+            "type": "提示词冲突／图片扣分待定",
+            "text": "候选包含数学矩阵与方程组。旧规则既禁止公式截图，又用“任何依靠行列/空间位置…没有例外”定义表格并列出 matrix；矩阵截图究竟算不算错应先统一规则。纯方程组另有明确禁止，不应笼统把三个候选归为同一种错误。"
+          },
+          "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p10-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"矩阵与方程组系数矩阵\"\n    },\n    {\n      \"id\": \"p10-2\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"线性方程组\"\n    },\n    {\n      \"id\": \"p10-3\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"系数矩阵求解\"\n    }\n  ],\n  \"expectedImageCount\": 3,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-崇明20",
+      "id": "崇明20",
+      "paper": "崇明",
+      "number": 20,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        16
+      ],
+      "sourceExpected": "旧图片判据：本题无需要保存的独立插图；候选为公式/矩阵。矩阵边界的歧义见下文。",
+      "required": [],
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p16-1, p16-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "1560011e-192d-4ab0-b7ea-af10797bfba6",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p16-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"椭圆与直线相交示意图\"\n    },\n    {\n      \"id\": \"p16-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"面积公式推导过程截图\"\n    }\n  ],\n  \"expectedImageCount\": 2,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p16-1, p16-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "eb1c2ec4-a354-461d-8a91-67deb7523412",
+          "needsHumanReview": true,
+          "confidence": 0.75,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p16-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"椭圆与直线示意计算\"\n    },\n    {\n      \"id\": \"p16-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"面积计算式\"\n    }\n  ],\n  \"expectedImageCount\": 2,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p16-1, p16-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+          "needsHumanReview": true,
+          "confidence": 0.61,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p16-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"答案中的距离公式表达式图像片段\"\n    },\n    {\n      \"id\": \"p16-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"答案中的三角形面积公式表达式图像片段\"\n    }\n  ],\n  \"expectedImageCount\": 2,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p16-1, p16-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p16-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"椭圆与线段AF计算\"\n    },\n    {\n      \"id\": \"p16-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"椭圆面积不等式证明\"\n    }\n  ],\n  \"expectedImageCount\": 2,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-奉贤2",
+      "id": "奉贤2",
+      "paper": "奉贤",
+      "number": 2,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        1,
+        6
+      ],
+      "sourceExpected": "旧图片判据：本题无需要保存的独立插图；候选为公式/矩阵。矩阵边界的歧义见下文。",
+      "required": [],
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p1-1, p6-1, p6-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p1-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"题目中的参数方程框图\"\n    },\n    {\n      \"id\": \"p6-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中重写的参数方程框图\"\n    },\n    {\n      \"id\": \"p6-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中用于推导的方程组框图\"\n    }\n  ],\n  \"expectedImageCount\": 3,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p1-1, p6-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": true,
+          "confidence": 0.6,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p1-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"参数方程题干区域\"\n    },\n    {\n      \"id\": \"p6-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"参数方程解析配图\"\n    }\n  ],\n  \"expectedImageCount\": 2,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p6-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p6-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"圆的参数方程组\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-奉贤5",
+      "id": "奉贤5",
+      "paper": "奉贤",
+      "number": 5,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        1,
+        7,
+        8
+      ],
+      "sourceExpected": "需要的语义图片组：answer:p8-1",
+      "required": [
+        [
+          "answer",
+          [
+            "p8-1"
+          ]
+        ]
+      ],
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p1-2, p7-1, p7-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p1-2\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"题目中的不等式组框图\"\n    },\n    {\n      \"id\": \"p7-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中重写的约束条件框图\"\n    },\n    {\n      \"id\": \"p7-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中用于构建目标函数的方程组框图\"\n    },\n    {\n      \"id\": \"p8-1\",\n      \"role\": \"answer\",\n      \"kind\": \"graph\",\n      \"label\": \"第5题解析中的可行域示意图\"\n    }\n  ],\n  \"expectedImageCount\": 4,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p1-2, p7-1, p7-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": true,
+          "confidence": 0.6,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p1-2\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"线性规划约束区域\"\n    },\n    {\n      \"id\": \"p7-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"线性规划约束区域解析图\"\n    },\n    {\n      \"id\": \"p7-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"线性规划解析约束条件\"\n    },\n    {\n      \"id\": \"p8-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"可行域图\"\n    }\n  ],\n  \"expectedImageCount\": 4,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p7-1, p7-2"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p7-1\",\n      \"role\": \"question\",\n      \"kind\": \"figure\",\n      \"label\": \"平面区域约束条件\"\n    },\n    {\n      \"id\": \"p7-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"可行域及最优解示意图\"\n    },\n    {\n      \"id\": \"p8-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"可行域阴影区域及顶点\"\n    }\n  ],\n  \"expectedImageCount\": 3,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-奉贤9",
+      "id": "奉贤9",
+      "paper": "奉贤",
+      "number": 9,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        1,
+        9,
+        10
+      ],
+      "sourceExpected": "需要的语义图片组：question:p1-3 或 p9-1；answer:p10-1",
+      "required": [
+        [
+          "question",
+          [
+            "p1-3",
+            "p9-1"
+          ]
+        ],
+        [
+          "answer",
+          [
+            "p10-1"
+          ]
+        ]
+      ],
+      "variants": [
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "缺少组 question:p1-3/p9-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "edb198c5-24e3-442b-8118-b33e5e71e474",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p10-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"空间直角坐标系中的正方体图\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Luna",
+          "legacyRating": {
+            "value": 0,
+            "note": "缺少组 question:p1-3/p9-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "b814e9ec-cc03-4d64-a971-f25fc0a4b591",
+          "needsHumanReview": true,
+          "confidence": 0.61,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p10-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"空间直角坐标系中的正方体示意图\"\n    }\n  ],\n  \"expectedImageCount\": 2,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-奉贤11",
+      "id": "奉贤11",
+      "paper": "奉贤",
+      "number": 11,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        11
+      ],
+      "sourceExpected": "旧图片判据：本题无需要保存的独立插图；候选为公式/矩阵。矩阵边界的歧义见下文。",
+      "required": [],
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p11-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p11-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中最终答案的根式框图\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p11-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": true,
+          "confidence": 0.75,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p11-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"均值不等式解析图\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p11-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": true,
+          "confidence": 0.9,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p11-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"最小值取值点\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        }
+      ]
+    },
+    {
+      "key": "images-奉贤16",
+      "id": "奉贤16",
+      "paper": "奉贤",
+      "number": 16,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        3,
+        14,
+        15
+      ],
+      "sourceExpected": "需要的语义图片组：question:p3-3 或 p14-1；answer:p15-1",
+      "required": [
+        [
+          "question",
+          [
+            "p3-3",
+            "p14-1"
+          ]
+        ],
+        [
+          "answer",
+          [
+            "p15-1"
+          ]
+        ]
+      ],
+      "variants": [
+        {
+          "model": "MiMo",
+          "legacyRating": {
+            "value": 0,
+            "note": "缺少组 question:p3-3/p14-1"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "edb198c5-24e3-442b-8118-b33e5e71e474",
+          "needsHumanReview": false,
+          "confidence": 0.9,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p15-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"空间直角坐标系中的正四棱柱图\"\n    }\n  ],\n  \"expectedImageCount\": 1,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": null,
+            "note": "记录未完整返回"
+          },
+          "review": {
+            "type": "未交付／后端中断影响",
+            "text": "本题记录未完整返回；不能称为本题内容已识别错误。Haiku 的后续输出受旧后端在第14题抛错影响。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": null,
+          "confidence": null,
+          "excerpt": "（本题未完整返回）"
+        }
+      ]
+    },
+    {
+      "key": "images-奉贤18",
+      "id": "奉贤18",
+      "paper": "奉贤",
+      "number": 18,
+      "category": "images",
+      "label": "配图",
+      "sourcePages": [
+        17
+      ],
+      "sourceExpected": "旧图片判据：本题无需要保存的独立插图；候选为公式/矩阵。矩阵边界的歧义见下文。",
+      "required": [],
+      "variants": [
+        {
+          "model": "Qwen",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p17-1, p17-2, p17-3, p17-4, p17-5"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p17-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中关于 $v$ 的表达式框图\"\n    },\n    {\n      \"id\": \"p17-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中关于 $\\\\sqrt{\\\\frac{1000}{b}} \\\\le 100$ 的条件框图\"\n    },\n    {\n      \"id\": \"p17-3\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中关于 $\\\\sqrt{\\\\frac{1000}{b}} > 100$ 的条件框图\"\n    },\n    {\n      \"id\": \"p17-4\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中关于 $v$ 取值的结论框图\"\n    },\n    {\n      \"id\": \"p17-5\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"解析中关于 $b$ 的范围及对应速度的结论框图\"\n    }\n  ],\n  \"expectedImageCount\": 5,\n  \"missingImages\": []\n}"
+        },
+        {
+          "model": "Haiku",
+          "legacyRating": {
+            "value": null,
+            "note": "记录未完整返回"
+          },
+          "review": {
+            "type": "未交付／后端中断影响",
+            "text": "本题记录未完整返回；不能称为本题内容已识别错误。Haiku 的后续输出受旧后端在第14题抛错影响。"
+          },
+          "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+          "needsHumanReview": null,
+          "confidence": null,
+          "excerpt": "（本题未完整返回）"
+        },
+        {
+          "model": "Ling",
+          "legacyRating": {
+            "value": 0,
+            "note": "多选 p17-1, p17-2, p17-3, p17-4, p17-5"
+          },
+          "review": {
+            "type": "图片语义错漏",
+            "text": "按原卷比较所需图与返回候选的归属、用途。候选框存在不代表应选；数学式不是新增插图；题干图不能用带答案辅助线的图替代。若模型已反馈缺图，按未完成提取处理，不称为隐瞒错误。"
+          },
+          "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+          "needsHumanReview": false,
+          "confidence": 1,
+          "excerpt": "{\n  \"assets\": [\n    {\n      \"id\": \"p17-1\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"最小值取值点\"\n    },\n    {\n      \"id\": \"p17-2\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"临界值比较\"\n    },\n    {\n      \"id\": \"p17-3\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"临界值比较续\"\n    },\n    {\n      \"id\": \"p17-4\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"最小值取值点续\"\n    },\n    {\n      \"id\": \"p17-5\",\n      \"role\": \"answer\",\n      \"kind\": \"figure\",\n      \"label\": \"分类讨论区间\"\n    }\n  ],\n  \"expectedImageCount\": 5,\n  \"missingImages\": []\n}"
+        }
+      ]
+    }
+  ],
+  "sourceManifest": [
+    {
+      "model": "Haiku",
+      "paper": "宝山",
+      "traceId": "41fae78a-e182-4b0b-a241-67e8f53f60fb",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/41fae78a-e182-4b0b-a241-67e8f53f60fb/output.txt",
+          "sha256": "e2ee9d845ca243b5f7cbcfad45203cb52765ad8a41c386e1dd7c3a9c2e305dd4"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/41fae78a-e182-4b0b-a241-67e8f53f60fb/events.ndjson",
+          "sha256": "cc04a6dc22aa4fd2e2aca123f247f553edfdaffa662b63dfc1781d3a777648a0"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/41fae78a-e182-4b0b-a241-67e8f53f60fb/request-1.json",
+          "sha256": "cd41ec7fba77acb8a1b0a3830461b7043cb8f9bbddb625aecef7a2b2a7067da6"
+        }
+      ]
+    },
+    {
+      "model": "Luna",
+      "paper": "宝山",
+      "traceId": "71163256-17b5-4b11-99a9-bfaf6c163b36",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/71163256-17b5-4b11-99a9-bfaf6c163b36/output.txt",
+          "sha256": "4a0156c147ef5a9dc38a67cd9325af06072ca4938f2bce9e2877e782d1366aaf"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/71163256-17b5-4b11-99a9-bfaf6c163b36/events.ndjson",
+          "sha256": "87b2da7ada0bb934d655f09688fe61441928576c151d30b86be8184b2aa43c47"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/71163256-17b5-4b11-99a9-bfaf6c163b36/request-1.json",
+          "sha256": "11320c03ce5cae7f558370dcfc6fb4a78de90f87c3d62dc2bd99e6fcd1b19d25"
+        }
+      ]
+    },
+    {
+      "model": "MiMo",
+      "paper": "宝山",
+      "traceId": "2ad5ea11-aade-4cd7-a058-da6a77378216",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/2ad5ea11-aade-4cd7-a058-da6a77378216/output.txt",
+          "sha256": "7fc87783fcfbc2e1ed80c2d8a426f5bd1005aef2ff17e9a46fa4c619abbb62e3"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/2ad5ea11-aade-4cd7-a058-da6a77378216/events.ndjson",
+          "sha256": "aae2f8ec52d82d3c5fee65e81bca64ab8c6e84a7d32d1d04c38685cdc5946bff"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/2ad5ea11-aade-4cd7-a058-da6a77378216/request-1.json",
+          "sha256": "fca07158a599b57ed557ebdb082a843246a2d48427976c9f25c963ff6bfbf5db"
+        }
+      ]
+    },
+    {
+      "model": "Ling",
+      "paper": "宝山",
+      "traceId": "79e4dfff-ddf6-4606-a500-c1829bd52637",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/79e4dfff-ddf6-4606-a500-c1829bd52637/output.txt",
+          "sha256": "0f46e7af5ca40780ecbc637f68aae459ca70d20dc8bfb4e37dc6b58df895056c"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/79e4dfff-ddf6-4606-a500-c1829bd52637/events.ndjson",
+          "sha256": "5b402fa7383fcaabe0511eb4ddac2bea680754abcae45d4419d817c8e6776db2"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/79e4dfff-ddf6-4606-a500-c1829bd52637/request-1.json",
+          "sha256": "786342791bf8b6406feadfab3c62b0807a48ed57165081105331d75f3bc9d08e"
+        }
+      ]
+    },
+    {
+      "model": "DeepSeek",
+      "paper": "宝山",
+      "traceId": "b1d99b7e-ef96-4a7e-b717-a50de6fbb707",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/b1d99b7e-ef96-4a7e-b717-a50de6fbb707/output.txt",
+          "sha256": "670683482b49d5fe82660860f3639991b5c40e1d549f913a41df367384bd447d"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/b1d99b7e-ef96-4a7e-b717-a50de6fbb707/events.ndjson",
+          "sha256": "088eded5b150d2eea90595a99ef8e1b00401d4aade69b9e5097ce5e776889a5c"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/b1d99b7e-ef96-4a7e-b717-a50de6fbb707/request-1.json",
+          "sha256": "80c291828736121e3b532e893876ca19cebdaae46b1d71dae4f7debde5724aae"
+        }
+      ]
+    },
+    {
+      "model": "Qwen",
+      "paper": "宝山",
+      "traceId": "5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9/output.txt",
+          "sha256": "fdf4d6b1050b86f4bbdf84f6b5c617b0290081eb550087cefa2146d080c802fc"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9/events.ndjson",
+          "sha256": "bb7bbf96734fda9e2028d2d5bcdd49890805e04d4c0872ccd3ba8221bf88055a"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/5819d1ce-d70d-4dc7-b15d-c42bfcc16bb9/request-1.json",
+          "sha256": "98aee9d89df34bbd1e5d3ec6012ff4d00bdda35d5fc589f960cc298159479ee6"
+        }
+      ]
+    },
+    {
+      "model": "Haiku",
+      "paper": "崇明",
+      "traceId": "eb1c2ec4-a354-461d-8a91-67deb7523412",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/eb1c2ec4-a354-461d-8a91-67deb7523412/output.txt",
+          "sha256": "34e0d7cc43f00e838dde3bf24d9a39fccfc44c62c01fb225332af48f6c8b1b31"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/eb1c2ec4-a354-461d-8a91-67deb7523412/events.ndjson",
+          "sha256": "2d6d7477e8fe6c6ea05ddf81240eab02f272289df983c1f87ebdfaf9ac772dd8"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/eb1c2ec4-a354-461d-8a91-67deb7523412/request-1.json",
+          "sha256": "dcbcb85cdbc013019c6f5d0eb15a3f10cf8c969fbdce20e796ec63731d06f467"
+        }
+      ]
+    },
+    {
+      "model": "Luna",
+      "paper": "崇明",
+      "traceId": "8ecca318-ac7d-4c59-9439-d4811ec28c41",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/8ecca318-ac7d-4c59-9439-d4811ec28c41/output.txt",
+          "sha256": "67227b43761255f6686b339432a0a4b74d03a9f934d45e13454a237f75ed4350"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/8ecca318-ac7d-4c59-9439-d4811ec28c41/events.ndjson",
+          "sha256": "66187f5548dc4700e2017fddcc335a2120f5323b1a9e7ccaff27eafd5ccc52fd"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/8ecca318-ac7d-4c59-9439-d4811ec28c41/request-1.json",
+          "sha256": "f582ac770d4576c3a542befe67137dcb71e05afe2a4d0e197bc6fe0d58d34abd"
+        }
+      ]
+    },
+    {
+      "model": "MiMo",
+      "paper": "崇明",
+      "traceId": "c6c92344-3896-4123-ba60-eaf8918f7e2e",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/c6c92344-3896-4123-ba60-eaf8918f7e2e/output.txt",
+          "sha256": "1d29e4b7c7caa9f4957efccc12d7543492c6f8aecc2e41172232619cc16ceccc"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/c6c92344-3896-4123-ba60-eaf8918f7e2e/events.ndjson",
+          "sha256": "dcafcf01fb865051c06bb8293def3ee1d6d270ec8f003c9cfc10de1e9ff1779e"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/c6c92344-3896-4123-ba60-eaf8918f7e2e/request-1.json",
+          "sha256": "4a2105974e93a11ea94bd9079013372dc9fa5e586b7666c433f54a39e7729cca"
+        }
+      ]
+    },
+    {
+      "model": "Ling",
+      "paper": "崇明",
+      "traceId": "2f4911ae-04e4-4f51-88f2-019ef1678e65",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/2f4911ae-04e4-4f51-88f2-019ef1678e65/output.txt",
+          "sha256": "2aec1fa5d6316ea1f1a1194f5f02bec70c589e6f4182d1d1453efb448652b682"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/2f4911ae-04e4-4f51-88f2-019ef1678e65/events.ndjson",
+          "sha256": "e7dd97fe5729e946b18debf0b533d3be81a55540a08bb3772a298af7c7bc731f"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/2f4911ae-04e4-4f51-88f2-019ef1678e65/request-1.json",
+          "sha256": "29d8ca6506c946597eb6f4eac8b3bbe50a2b7589e14cdaa46f9bfdb51c16ee7a"
+        }
+      ]
+    },
+    {
+      "model": "DeepSeek",
+      "paper": "崇明",
+      "traceId": "32824381-6f1e-4cb4-9e84-1582916b6e8d",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/32824381-6f1e-4cb4-9e84-1582916b6e8d/output.txt",
+          "sha256": "c2d42cd3e3631cfb195631856b96bb485a9a9553377beec5828425e3cfb9dc51"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/32824381-6f1e-4cb4-9e84-1582916b6e8d/events.ndjson",
+          "sha256": "19827f747f31d03dc485c2ec5b5fd904cc7573c9001cce624dd8f247f3f924bf"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/32824381-6f1e-4cb4-9e84-1582916b6e8d/request-1.json",
+          "sha256": "3744c45d6248253d0c568051d4aebe1940124b354a1f6460f90452a44f2aa854"
+        }
+      ]
+    },
+    {
+      "model": "Qwen",
+      "paper": "崇明",
+      "traceId": "1560011e-192d-4ab0-b7ea-af10797bfba6",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/1560011e-192d-4ab0-b7ea-af10797bfba6/output.txt",
+          "sha256": "e4e32c5521aad9b1e44563f129d3a65e803f10cc668cbebe3c0aa994dff099f1"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/1560011e-192d-4ab0-b7ea-af10797bfba6/events.ndjson",
+          "sha256": "36fddcf9cd5bf743394c94c34a7ced77998e6dfbabf8c470b45688c9f3f7662c"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/1560011e-192d-4ab0-b7ea-af10797bfba6/request-1.json",
+          "sha256": "c805f5773a7c40fe870ce8c0afd1471ec8fd4c32da828b8f01482578affdb139"
+        }
+      ]
+    },
+    {
+      "model": "Haiku",
+      "paper": "奉贤",
+      "traceId": "e7a2d91b-f25f-457a-b364-c47d544608bb",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/e7a2d91b-f25f-457a-b364-c47d544608bb/output.txt",
+          "sha256": "82713b20c3036fa640cb14952a91d02a068671b9fe4478964b7d62ff80eb7982"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/e7a2d91b-f25f-457a-b364-c47d544608bb/events.ndjson",
+          "sha256": "bb289e5fea1e91ad29a416ff2b7f34257695407ccfe0081de9d8eaa120705fb2"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/e7a2d91b-f25f-457a-b364-c47d544608bb/request-1.json",
+          "sha256": "a3ffd88079ccc13ed1410a42d66ba8826b25f6ee09ee37953354b72c07cad8ae"
+        }
+      ]
+    },
+    {
+      "model": "Luna",
+      "paper": "奉贤",
+      "traceId": "b814e9ec-cc03-4d64-a971-f25fc0a4b591",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/b814e9ec-cc03-4d64-a971-f25fc0a4b591/output.txt",
+          "sha256": "bc09823fea6c5614e2d7bc94503109495064611ab08786821962a511c9b27f62"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/b814e9ec-cc03-4d64-a971-f25fc0a4b591/events.ndjson",
+          "sha256": "15658c53d124c0ff1a8007da22148124f97ebd3bc2d8128a9c0ef66aa4a11d2d"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/b814e9ec-cc03-4d64-a971-f25fc0a4b591/request-1.json",
+          "sha256": "839e25bfd19d957f900ea94bf9210eab542b6afd61f9e797ac0f10b3981ba8ac"
+        }
+      ]
+    },
+    {
+      "model": "MiMo",
+      "paper": "奉贤",
+      "traceId": "edb198c5-24e3-442b-8118-b33e5e71e474",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/edb198c5-24e3-442b-8118-b33e5e71e474/output.txt",
+          "sha256": "ee2f5ad998d67b7bf1ed089d2ec1639db21b5b0597a9a8723916f103c2284ccc"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/edb198c5-24e3-442b-8118-b33e5e71e474/events.ndjson",
+          "sha256": "03bb8a6c9d4482a623b3389a6080629f272a90ddd3ff934720e8d8ace1c0dfa6"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/edb198c5-24e3-442b-8118-b33e5e71e474/request-1.json",
+          "sha256": "fc3b0bd224e30a1515ed9b8e030306e3361451048cf2e0eb33fc4c5427046bdd"
+        }
+      ]
+    },
+    {
+      "model": "Ling",
+      "paper": "奉贤",
+      "traceId": "d7d476fb-e328-413c-bf66-0452305774c5",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/d7d476fb-e328-413c-bf66-0452305774c5/output.txt",
+          "sha256": "c4a5087e44d6e167920f89d1d88510dfa3ae964f62500c03a8cae4a5d8a2b164"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/d7d476fb-e328-413c-bf66-0452305774c5/events.ndjson",
+          "sha256": "50f8f6b16a5fcf8f70be86bccf0b672629322340f99ba9196f35c6b2e0f21925"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/d7d476fb-e328-413c-bf66-0452305774c5/request-1.json",
+          "sha256": "f6d70cc1673bf274004d3f8d116ac6df1274c1218af18f149209c1914089df26"
+        }
+      ]
+    },
+    {
+      "model": "DeepSeek",
+      "paper": "奉贤",
+      "traceId": "fb821d19-e239-4f50-9ec8-350dcc3dc7bd",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/fb821d19-e239-4f50-9ec8-350dcc3dc7bd/output.txt",
+          "sha256": "a7be699a68931b8c52fb007d3411b0c162f19783f7004bef4e0db412431ee7cc"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/fb821d19-e239-4f50-9ec8-350dcc3dc7bd/events.ndjson",
+          "sha256": "09516e33e3bdc15dbad284d1b6161f14b803ebc5ce101e592364f614004f534f"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/fb821d19-e239-4f50-9ec8-350dcc3dc7bd/request-1.json",
+          "sha256": "07493ac1305d137a2058a720f0323ca725e1b6f244d70385854c467845658fee"
+        }
+      ]
+    },
+    {
+      "model": "Qwen",
+      "paper": "奉贤",
+      "traceId": "d044a415-92c7-4319-8fbf-785010516721",
+      "files": [
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/d044a415-92c7-4319-8fbf-785010516721/output.txt",
+          "sha256": "7da94299640a08683c79031ad786780c9d72858252885095cb09f0a9001e04c0"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/d044a415-92c7-4319-8fbf-785010516721/events.ndjson",
+          "sha256": "63dd45c66b99b55c77eb2fd85feaac42d4eeff7398612c0e86af4a830eb47b0b"
+        },
+        {
+          "path": "tmp/openrouter-benchmark-20261012/model-traces/2026-10-12/d044a415-92c7-4319-8fbf-785010516721/request-1.json",
+          "sha256": "7546c1d387d82de3177dcf4dc70703280281b308b63f77c4cbda73f02c50050e"
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "verifiedQuestionRecords": 366,
+    "systemPromptsEqual": 18,
+    "firstRequestParametersEqual": 18
+  }
+}

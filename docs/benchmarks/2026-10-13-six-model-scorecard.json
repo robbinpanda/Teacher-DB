@@ -2288,5 +2288,18 @@
       "persisted": 20,
       "state": "passed"
     }
-  ]
+  ],
+  "followupReview": {
+    "date": "2026-10-13",
+    "details": "2026-10-13-error-details.md",
+    "scoresUnchanged": true,
+    "caveats": [
+      "Luna崇明17：正确答案在analysis，answer字段未抽取",
+      "Luna崇明20：未化简距离根式等价正确，answer另有错误",
+      "已标记人工审核的空白应记覆盖率，不当作编造",
+      "崇明13矩阵截图规则有歧义，图片扣分待定",
+      "Haiku奉贤后续未交付受旧后端中断影响",
+      "旧总分不作为最终模型排名"
+    ]
+  }
 }
