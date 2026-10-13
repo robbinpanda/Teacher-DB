@@ -756,6 +756,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .model-editor .model-service-picker input { width: 15px; height: 15px; margin: 0; padding: 0; accent-color: var(--green); }
 .model-service-help { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .model-service-help a { color: var(--green); text-decoration: underline; }
+.model-service-help code { overflow-wrap: anywhere; }
 
 @media (max-width: 1080px) {
   .usage-panel-head { display: block; }.usage-controls { margin-top: 14px; flex-wrap: wrap; }
