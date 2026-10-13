@@ -17,8 +17,12 @@ const { finalizeDocument } = await import("../server/services/document-finalize.
 const { saveQuestion } = await import("../server/services/question-review.ts");
 let output = "", calls = 0;
 const server = createServer(async (req, res) => {
-  for await (const chunk of req) void chunk;
+  let body = ""; for await (const chunk of req) body += chunk;
   calls++;
+  if (JSON.parse(body).max_tokens === 64) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: "没问题" } }] })); return;
+  }
   res.writeHead(200, { "content-type": "text/event-stream" });
   for (let i = 0; i < output.length; i += 11) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: output.slice(i, i + 11) } }] })}\n\n`);
   res.end("data: [DONE]\n\n");
@@ -29,10 +33,10 @@ try {
   const db = getSqlite(), timestamp = new Date().toISOString();
   const secret = await encryptSecret("local-fixture-only");
   db.prepare(`INSERT INTO model_profiles (id,owner_id,display_name,provider,base_url,model,api_key_ciphertext,api_key_iv,created_at,updated_at)
-    VALUES ('fixture','local-demo','fixture','openai-chat-completions',?,'fixture',?,?,?,?)`)
+    VALUES ('fixture','local-demo','fixture','openai-chat-completions',?,'xiaomi/mimo-v2.6-flash',?,?,?,?)`)
     .run(`http://127.0.0.1:${server.address().port}/v1`, secret.ciphertext, secret.iv, timestamp, timestamp);
   const page = await sharp({ create: { width: 500, height: 500, channels: 3, background: "white" } }).png().toBuffer();
-  const rawQuestion = number => ({ event: "question", question: { number: String(number), type: "fill", stem: `原卷第${number}题`, answer: "2", analysis: "解析", firstLinePage: 1, assets: [], expectedImageCount: 0, missingImages: [], unlocatedImages: false, confidence: 0.9, needsHumanReview: false, tags: [] } });
+  const rawQuestion = number => ({ event: "question", question: { number: String(number), type: "fill", stem: `原卷第${number}题`, answer: "2", analysis: "解析", firstLinePage: 1, sourcePages: [1], answerPages: [1], assets: [], expectedImageCount: 0, missingImages: [], unlocatedImages: false, needsHumanReview: false, tags: [] } });
   async function run(id, records, count = 3, seed = () => {}) {
     db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,page_count,created_at,updated_at) VALUES (?,'local-demo','fixture','image/png','extracting',1,?,?)").run(id, timestamp, timestamp);
     await putFile(`${id}/page.png`, page);

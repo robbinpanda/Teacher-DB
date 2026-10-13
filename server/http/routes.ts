@@ -41,6 +41,7 @@ export const routes = [
   { path: "/api/question-folders", methods: ["GET", "POST"], load: () => import("./handlers/question-folders/route") },
   { path: "/api/questions/[questionId]/reextract", methods: ["POST"], load: () => import("./handlers/questions/[questionId]/reextract/route") },
   { path: "/api/questions/[questionId]/review-assets", methods: ["POST"], load: () => import("./handlers/questions/[questionId]/review-assets/route") },
+  { path: "/api/questions/[questionId]/ai-review", methods: ["POST"], load: () => import("./handlers/questions/[questionId]/ai-review/route") },
   { path: "/api/questions/[questionId]", methods: ["PUT"], load: () => import("./handlers/questions/[questionId]/route") },
   { path: "/api/questions/[questionId]/variations", methods: ["POST"], load: () => import("./handlers/questions/[questionId]/variations/route") },
   { path: "/api/questions/folder", methods: ["PATCH"], load: () => import("./handlers/questions/folder/route") },

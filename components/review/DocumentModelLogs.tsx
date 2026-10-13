@@ -7,7 +7,7 @@ import type { ModelTraceContent, ModelTraceDetail, ModelTraceSummary } from "../
 
 type Tab = "overview" | "prompt" | "reply" | "advanced";
 const statuses = { complete: "成功", failed: "失败", unfinished: "未结束 / 中断" };
-const purposes: Record<string, string> = { page_extraction: "整卷识别", question_reextract: "单题识别 / 补图", answer_import: "答案匹配" };
+const purposes: Record<string, string> = { page_extraction: "整卷识别", question_reextract: "单题识别 / 补图", question_review: "逐题 AI 审核", answer_import: "答案匹配" };
 const tabs: Array<{ id: Tab; label: string }> = [{ id: "overview", label: "错误与校验" }, { id: "prompt", label: "提示词" }, { id: "reply", label: "原始回复" }, { id: "advanced", label: "原始流与更多" }];
 function time(value: string) { return new Date(value).toLocaleString("zh-CN", { hour12: false }); }
 function size(value: number) { return value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`; }

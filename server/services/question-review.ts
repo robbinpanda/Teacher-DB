@@ -11,6 +11,8 @@ import { getDocumentIntegrity, integrityError, missingPositiveNumbers } from "..
 import { isValidQuestionNumber } from "../../lib/question-number-source";
 import { asQuestionPayload, validateQuestionPayload } from "../../lib/question-payload";
 import { extractionConfidence } from "../../lib/extraction-confidence";
+import { questionReviewContentKey } from "../../lib/question-ai-review";
+import { loadQuestionForAiReview, reviewExtractedQuestion } from "./question-ai-review";
 
 
 class QuestionIntegrityError extends Error {}
@@ -114,6 +116,7 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
   }
 
   const timestamp = now();
+  let reviewAfterSave = false;
   try {
     sqliteTransaction((transaction) => {
       const currentDocument = transaction.prepare(
@@ -123,6 +126,15 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
       if (!currentDocument || currentDocument.sourceRemovedAt) {
         throw new QuestionIntegrityError("原试卷已删除或题目已不存在，不能保存本次修改");
       }
+      const before = loadQuestionForAiReview(ownerId, questionId)?.question;
+      // The client cannot author an AI verdict. Invalidate only when audited content changes.
+      if (before?.aiReview && questionReviewContentKey(before) !== questionReviewContentKey({ ...payload,
+        page: primaryRegion.page, assets: preparedAssets.map(({ asset, box }) => ({ ...asset, bbox: box })) })) {
+        const nextReview = { ...before.aiReview, mode: "saved_content_v1", categories: [], status: payload.status === "approved" ? "stale" : "pending",
+          token: crypto.randomUUID(), startedAt: new Date().toISOString(), reviewedAt: undefined, traceId: undefined, error: undefined };
+        transaction.prepare("UPDATE questions SET ai_review_json=? WHERE id=?").run(JSON.stringify(nextReview), questionId);
+        reviewAfterSave = payload.status !== "approved";
+      }
       const issues = transaction.prepare("SELECT missing_images_json AS issues, extraction_issues_json AS extractionIssues, confidence, needs_human_review AS needsHumanReview FROM questions WHERE id=?").get(questionId) as { issues: string; extractionIssues: string; confidence: number; needsHumanReview: number };
       if (issues.extractionIssues !== "[]" && payload.extractionIssuesResolved !== true) {
         if (payload.status === "approved") throw new QuestionIntegrityError("本题仍有识别异常，请对照原卷修正并标记已核对后再入库");
@@ -131,6 +143,10 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
       }
       if (payload.extractionIssuesResolved === true) transaction.prepare("UPDATE questions SET extraction_issues_json='[]' WHERE id=?").run(questionId);
       if (issues.needsHumanReview && payload.status !== "approved") {
+        payload.needsHumanReview = true;
+        payload.status = "needs_attention";
+      }
+      if (reviewAfterSave) {
         payload.needsHumanReview = true;
         payload.status = "needs_attention";
       }
@@ -230,14 +246,22 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
   const retainedCropKeys = new Set(preparedAssets.map((prepared) => prepared.cropKey));
   await Promise.allSettled(previousAssets.filter((asset) => asset.cropKey && !retainedCropKeys.has(asset.cropKey)).map((asset) => deleteFile(asset.cropKey!)));
 
+  if (reviewAfterSave) {
+    const saved = loadQuestionForAiReview(ownerId, questionId);
+    if (saved && !saved.sourceRemovedAt) await reviewExtractedQuestion({ ownerId, documentId: saved.documentId, question: saved.question });
+  }
+  const savedReview = loadQuestionForAiReview(ownerId, questionId)?.question;
+
   return result({
     question: {
       ...payload,
+      aiReview: savedReview?.aiReview ?? null,
+      status: savedReview?.status ?? payload.status,
       imageIssuesResolved: false,
       extractionIssuesResolved: false,
       extractionIssues: JSON.parse((sqlite.prepare("SELECT extraction_issues_json AS issues FROM questions WHERE id=?").get(questionId) as { issues: string }).issues),
       missingImages: JSON.parse((sqlite.prepare("SELECT missing_images_json AS issues FROM questions WHERE id=?").get(questionId) as { issues: string }).issues),
-      needsHumanReview: payload.status === "approved" ? false : payload.needsHumanReview,
+      needsHumanReview: savedReview?.needsHumanReview ?? (payload.status === "approved" ? false : payload.needsHumanReview),
       page: primaryRegion.page,
       bbox: primaryRegion.bbox,
       regions: preparedRegions.map((region) => ({ page: region.page, bbox: region.bbox })),

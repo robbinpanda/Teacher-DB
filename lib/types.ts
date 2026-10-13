@@ -36,9 +36,14 @@ export type QuestionAsset = {
 
 export type MissingQuestionImage = { page: number | null; role: "question" | "answer"; description: string; reason: string };
 
-export type ExtractionIssue = { code: string; message: string; raw?: string };
+export type ExtractionIssue = {
+  code: string; message: string; raw?: string;
+  field?: string; page?: number | null;
+  kind?: "unreadable" | "absent" | "incomplete" | "uncertain";
+};
 
 export type Question = {
+  aiReview?: QuestionAiReview | null;
   extractionIssues?: ExtractionIssue[];
   extractionIssuesResolved?: boolean;
   missingImages?: MissingQuestionImage[];
@@ -63,6 +68,25 @@ export type Question = {
   confidence: number;
   needsHumanReview: boolean;
   status: "pending" | "approved" | "needs_attention";
+};
+
+export type QuestionReviewCategory = "缺图" | "缺条件" | "缺答案" | "答案错误" | "解析错误" | "公式错误" | "配图错误" | "其他问题";
+
+export type QuestionAiReview = {
+  mode?: "saved_content_v1";
+  categories?: QuestionReviewCategory[];
+  status: "pending" | "passed" | "issues" | "failed" | "stale";
+  token: string;
+  startedAt?: string;
+  profileId?: string;
+  extractionProfileId?: string;
+  extractionModel?: string;
+  priorNeedsHumanReview?: boolean;
+  sourcePages: number[];
+  answerPages: number[];
+  reviewedAt?: string;
+  traceId?: string;
+  error?: string;
 };
 
 export type SourceDocument = {

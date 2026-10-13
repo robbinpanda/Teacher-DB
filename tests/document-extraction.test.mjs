@@ -61,10 +61,10 @@ test("整卷提示要求记录首行页并逐字转录答案", () => {
   assert.match(wholeDocumentSystemPrompt, /题内的（1）（2）等小问编号必须完整保留/);
   assert.match(wholeDocumentSystemPrompt, /频数\/频率分布表/);
   assert.match(wholeDocumentSystemPrompt, /茎叶图/);
-  assert.match(wholeDocumentSystemPrompt, /任何依靠行列、单元格、表头、分隔线或空间位置表达含义的内容，都一律截图保存为 kind=table/);
-  assert.match(wholeDocumentSystemPrompt, /无论表格多简单、是否能用 LaTeX 表达，都没有例外/);
+  assert.match(wholeDocumentSystemPrompt, /不包含数学矩阵和行列式/);
+  assert.match(wholeDocumentSystemPrompt, /无论数据表多简单、是否能用 LaTeX 表达，都必须截图/);
   assert.match(wholeDocumentSystemPrompt, /表格只能出现一次/);
-  assert.match(wholeDocumentSystemPrompt, /严禁在 stem、options、answer、analysis 中生成或保留任何 LaTeX 表格代码/);
+  assert.match(wholeDocumentSystemPrompt, /严禁在 stem、options、answer、analysis 中用 LaTeX、Markdown 表格、纯文字行列或逗号列表重建数据表/);
   assert.match(wholeDocumentSystemPrompt, /\\multicolumn/);
   assert.deepEqual(parseExtractionJson("```json\n{\"questions\":[]}\n```"), { questions: [] });
 });

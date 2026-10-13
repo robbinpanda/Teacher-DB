@@ -31,9 +31,8 @@
 .review-workspace .model-assessment { justify-content: flex-start; gap: 8px; }
 .review-workspace .model-assessment > span { min-height: 24px; border-radius: 4px; }
 .review-workspace .model-assessment > span:first-child { padding: 4px 6px; font-size: 10px; font-weight: 500; }
-.review-workspace .confidence-score { display: flex; gap: 4px; background: transparent; padding: 0; }
-.review-workspace .confidence-score small { font-size: 10px; margin: 0; }
-.review-workspace .confidence-score b { font-size: 11px; }
+.review-workspace .model-assessment { flex-wrap: wrap; }
+.review-workspace .ai-review-state { display: inline-flex; align-items: center; padding: 4px 6px; font-size: 10px; }
 .review-workspace .two-fields { grid-template-columns: 1fr 1.5fr; gap: 12px; }
 .review-workspace .edit-field { margin-top: 8px; }
 .review-workspace .edit-field > span { font-size: 12px; font-weight: 500; margin-bottom: 4px; }

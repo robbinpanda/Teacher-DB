@@ -11,7 +11,7 @@ import { getTagCatalog } from "../../../../../../lib/tag-catalog";
 import { modelNeedsHumanReview } from "../../../../../../lib/model-review";
 import { stripLeadingQuestionNumber } from "../../../../../../lib/question-text.js";
 import { readJsonPayload } from "../../../../../../lib/request-payload";
-import { extractionConfidence, EXTRACTION_CONFIDENCE_PROMPT } from "../../../../../../lib/extraction-confidence";
+import { FORMULA_AND_TABLE_PROMPT } from "../../../../../../lib/extraction-prompt-rules";
 
 
 type RequestedRegion = { page: number; bbox: BoundingBox };
@@ -106,13 +106,12 @@ export async function POST(request: Request, context: { params: Promise<{ questi
         "题号已单独保存为 " + question.number + "，stem 必须从题号后的正文开始，不得在开头重复输出“" + question.number + ".”、“" + question.number + "、”等顶层题号；但必须保留题内（1）（2）等小问编号。",
         "输出前逐项核对题干中的每个小问编号在答案和解析中是否完整出现，不得只返回第一小问。",
         "严格区分题干、选项、答案和解析；没有答案或解析时返回空字符串。数学表达式使用单个 $ 包裹的 LaTeX。",
-        "所有表格、统计表和茎叶图均由系统作为图片资产保留。严禁在 stem、options、answer、analysis 中生成 tabular、array 表格、matrix 表格、\\multicolumn、\\multirow、\\hline、\\cline 或 Markdown 表格，也不要把表格摊平成纯文字行列或逗号列表；只转录表格前后的普通文字和公式，绝不重复输出表格内容。",
+        FORMULA_AND_TABLE_PROMPT,
         "所有文字必须逐字逐符号按原文顺序转录，完整保留每个小问、步骤、条件、单位、标点和结论；严禁概括、改写、缩写、润色、合并步骤或自行总结。看不清时留空并标记 needsHumanReview，不得猜测。",
         `tags 只能从下列允许标签中逐字选择 1-3 个，禁止自造标签：${JSON.stringify(allowedTags)}`,
         "只返回严格 JSON，不要 Markdown 或解释。",
-        "必须输出布尔字段 needsHumanReview；有任何模糊、缺失或不确定就输出 true，只有确认完整且无需再次人工核查才输出 false。confidence 仅供展示，不用于决定核查状态。",
-        EXTRACTION_CONFIDENCE_PROMPT,
-        "必填字段：type（single/multiple/fill/answer）、stem、options（{key,content}数组）、answer、analysis、tags、confidence、needsHumanReview。依据本题填写，没有预设评分。",
+        "必须输出布尔字段 needsHumanReview；有任何模糊、缺失或不确定就输出 true。不要输出 confidence 或自评分数。",
+        "必填字段：type（single/multiple/fill/answer）、stem、options（{key,content}数组）、answer、analysis、tags、needsHumanReview。",
       ].join("\n"),
       text: `这是第 ${question.number} 题，原题型为 ${question.type}。请根据 ${uniqueRegions.length} 个已校正题框重新识别完整内容。`,
       images,
@@ -136,7 +135,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
         answer: String(parsed.answer ?? "").trim(),
         analysis: String(parsed.analysis ?? "").trim(),
         tags: Array.isArray(parsed.tags) ? Array.from(new Set(parsed.tags.map(String).map((tag) => tag.trim()).filter((tag) => allowedTags.includes(tag)))).slice(0, 3) : [],
-        confidence: extractionConfidence(parsed.confidence, { needsHumanReview: modelNeedsHumanReview(parsed.needsHumanReview) }),
+        confidence: 0,
         needsHumanReview: modelNeedsHumanReview(parsed.needsHumanReview),
       },
       provider: result.profile.provider,

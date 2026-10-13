@@ -41,6 +41,7 @@ import { useReviewProgress } from "./review/useReviewProgress";
 import { ReviewPending } from "./review/ReviewPending";
 import { DocumentModelLogsButton } from "./review/DocumentModelLogsButton";
 import { persistDirtyQuestionDrafts } from "../lib/review-draft-persistence";
+import { aiReviewLabel, questionReviewContentKey } from "../lib/question-ai-review";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -283,7 +284,12 @@ export function ReviewWorkspace({
 
   function patchActive(patch: Partial<Question>) {
     if (reviewBusy) return;
-    setQuestions((items) => items.map((item) => item.id === active.id ? { ...item, ...patch, analysis: patch.analysis ?? (patch.assets ? remapAnalysisImages(item.analysis, item.assets, patch.assets) : item.analysis) } : item));
+    setQuestions((items) => items.map((item) => {
+      if (item.id !== active.id) return item;
+      const next = { ...item, ...patch, analysis: patch.analysis ?? (patch.assets ? remapAnalysisImages(item.analysis, item.assets, patch.assets) : item.analysis) };
+      if (item.aiReview && questionReviewContentKey(item) !== questionReviewContentKey(next)) next.aiReview = { ...item.aiReview, status: "stale" };
+      return next;
+    }));
     markQuestionDirty(active.id);
     setSaved(false);
   }
@@ -469,6 +475,27 @@ export function ReviewWorkspace({
     } finally {
       setSaving(false);
     }
+  }
+
+  async function retryAiReview() {
+    if (saving || bulkAction) return;
+    setSaving(true); setSaveError("");
+    try {
+      const savedQuestion = dirtyQuestionIds.has(active.id) ? await persistQuestionDraft(active) : active;
+      // Saving changed content already launches its own review. Do not pay for a duplicate call.
+      if (dirtyQuestionIds.has(active.id) && savedQuestion.aiReview?.token !== active.aiReview?.token
+        && savedQuestion.aiReview?.status !== "pending" && savedQuestion.aiReview?.status !== "stale") {
+        setQuestions(items => items.map(item => item.id === active.id ? savedQuestion : item));
+        clearPersistedDraftFlags([active.id]);
+        return;
+      }
+      const response = await fetch(`/api/questions/${encodeURIComponent(active.id)}/ai-review`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "AI 审核失败");
+      setQuestions(items => items.map(item => item.id === active.id ? { ...savedQuestion, ...result } : item));
+      clearPersistedDraftFlags([active.id]);
+    } catch (error) { setSaveError(error instanceof Error ? error.message : "AI 审核失败"); }
+    finally { setSaving(false); }
   }
 
   function selectQuestion(question: QuestionWithSource, targetPage = question.page) {
@@ -701,11 +728,16 @@ export function ReviewWorkspace({
           <fieldset className="editor-fields" disabled={saving || Boolean(bulkAction)}>
           <div className="editor-head">
             <div className="editor-title"><h2>审核第 {active.number} 题</h2></div>
-            <div className="model-assessment" title={`模型标记：${active.needsHumanReview ? "需要人工核查" : "无需人工核查"}；置信度仅供参考`}>
+            <div className="model-assessment" title="AI 独立核查只判断是否发现问题，入库仍由教师确认">
               <span className={active.needsHumanReview ? "needs-review" : "clear"}>{active.needsHumanReview ? <AlertTriangle size={12} /> : <Check size={12} />}{active.status === "approved" ? "已入库" : active.needsHumanReview ? "需人工核查" : "待审核 · 无需核查"}</span>
-              <span className="confidence-score" title="模型自评，非正确率；发现问题后会降低评分"><b>{Math.round(active.confidence * 100)}%</b><small>AI 置信度</small></span>
+              <span className={`ai-review-state ${active.aiReview?.status === "passed" ? "clear" : "needs-review"}`}>{aiReviewLabel(active.aiReview)}</span>
             </div>
           </div>
+
+          {active.aiReview && active.aiReview.status !== "passed" && <section className="review-editor-section" aria-label="AI 逐题审核">
+            <p>{active.aiReview.status === "issues" ? `请核查本题保存的文字和配图${active.aiReview.categories?.length ? `：${active.aiReview.categories.join("、")}` : "，AI 发现可能存在问题"}。` : active.aiReview.error ?? aiReviewLabel(active.aiReview)}</p>
+            {active.status !== "approved" && <button type="button" className="btn btn-small" disabled={saving || !documentReadyForReview} onClick={() => void retryAiReview()}>重新 AI 审核</button>}
+          </section>}
 
           <div className="two-fields">
             <label className="edit-field"><span>题号</span><input value={active.number} onChange={(event) => patchActive({ number: event.target.value })} /></label>

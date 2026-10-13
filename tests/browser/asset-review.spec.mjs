@@ -42,7 +42,8 @@ test('模型接口保留复核证据；审核页手工删除误图后保存正�
  try{
   await page.goto(`/review/${f.documentId}`);
   await expect.poll(() => page.getByAltText('原试卷第 1 页').evaluate(img => img.naturalWidth)).toBe(600);
-  await expect(page.locator('.confidence-score')).toContainText('95%');
+  await expect(page.locator('.confidence-score')).toHaveCount(0);
+  await expect(page.getByText('尚未进行 AI 审核',{exact:true})).toBeVisible();
   const response=await page.request.post(`/api/questions/${f.questionId}/review-assets`);
   expect(response.status()).toBe(200);
   const result=await response.json();
@@ -51,7 +52,7 @@ test('模型接口保留复核证据；审核页手工删除误图后保存正�
   expect(f.db.prepare('SELECT confidence,needs_human_review FROM questions WHERE id=?').get(f.questionId)).toEqual({confidence:0.65,needs_human_review:1});
   expect(f.db.prepare('SELECT COUNT(*) AS n FROM question_assets WHERE question_id=?').get(f.questionId).n).toBe(4);
   await page.reload();
-  await expect(page.locator('.confidence-score')).toContainText('65%');
+  await expect(page.locator('.confidence-score')).toHaveCount(0);
   await page.getByText('图片修正',{exact:true}).click();
   await expect(page.getByRole('button',{name:'AI 复核本题图片'})).toHaveCount(0);
   await page.locator('.question-asset-gallery button').first().click();
@@ -62,7 +63,7 @@ test('模型接口保留复核证据；审核页手工删除误图后保存正�
   expect(saved.confidence).toBe(0.65);expect(saved.analysis).toBe('公式步骤坐标图[[image:1]]结论');
   expect(f.db.prepare('SELECT id FROM question_assets WHERE question_id=?').all(f.questionId)).toEqual([{id:f.assets[3].id}]);
   expect(JSON.stringify(f.captured)).toContain('existingAssets');
-  await page.reload();await expect(page.locator('.confidence-score')).toContainText('65%');
+  await page.reload();await expect(page.locator('.confidence-score')).toHaveCount(0);
   expect(errors).toEqual([]);
  }finally{await f.close();}
 });

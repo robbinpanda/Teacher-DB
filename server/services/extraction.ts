@@ -25,6 +25,8 @@ import { ExtractionStreamParser, type ExtractionStreamRecord } from "../../lib/s
 import type { ExtractionIssue, Question } from "../../lib/types";
 import type { ModelCallTrace } from "../../lib/model-call-trace";
 import { readSourceQuestionInventory } from "../../lib/source-question-inventory";
+import { createQuestionReview, createQuestionReviewQueue } from "../../lib/question-ai-review";
+import { reviewExtractedQuestion } from "./question-ai-review";
 
 
 const MAX_PAGE_BYTES = 20 * 1024 * 1024;
@@ -103,7 +105,7 @@ function persistStreamedQuestion(input: {
       ).run(
         questionId, documentId, question.number, question.type, question.stem,
         JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
-        JSON.stringify(question.bbox), question.status, question.needsHumanReview ? 1 : 0,
+        JSON.stringify(question.bbox), question.aiReview?.status === "pending" ? "needs_attention" : question.status, question.needsHumanReview || question.aiReview?.status === "pending" ? 1 : 0,
         question.confidence, timestamp, timestamp,
       );
     } else if (existing.status !== "approved" && !preserveExisting) {
@@ -113,13 +115,13 @@ function persistStreamedQuestion(input: {
            score = 0, updated_at = ? WHERE id = ?`,
       ).run(
         question.type, question.stem, JSON.stringify(question.options ?? []), question.answer,
-        question.analysis, question.page, JSON.stringify(question.bbox), question.status,
-        question.needsHumanReview ? 1 : 0, question.confidence, timestamp, questionId,
+        question.analysis, question.page, JSON.stringify(question.bbox), question.aiReview?.status === "pending" ? "needs_attention" : question.status,
+        question.needsHumanReview || question.aiReview?.status === "pending" ? 1 : 0, question.confidence, timestamp, questionId,
       );
     }
     if (existing?.status !== "approved" && !preserveExisting) {
-      transaction.prepare("UPDATE questions SET missing_images_json=?, extraction_issues_json=? WHERE id=?")
-        .run(JSON.stringify(question.missingImages ?? []), JSON.stringify(question.extractionIssues ?? []), questionId);
+      transaction.prepare("UPDATE questions SET missing_images_json=?, extraction_issues_json=?, ai_review_json=? WHERE id=?")
+        .run(JSON.stringify(question.missingImages ?? []), JSON.stringify(question.extractionIssues ?? []), JSON.stringify(question.aiReview ?? null), questionId);
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
       transaction.prepare("DELETE FROM question_assets WHERE question_id = ?").run(questionId);
       for (const [position, asset] of question.assets.entries()) {
@@ -310,6 +312,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     timestamp: createdAt,
   });
   let modelTrace: ModelCallTrace | undefined;
+  const reviewQueue = createQuestionReviewQueue(2);
 
   try {
     let sourceInventory = null;
@@ -370,6 +373,8 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
         pageBytes,
         skipQuestionNumbers: approvedNumbers,
       });
+      question.confidence = 0; // Legacy DB field only; no model score is requested or used.
+      question.aiReview = createQuestionReview(question, raw, sourcePages.length, profile.id, sourceInventory, profile.model);
       completedNumbers.add(question.number);
       const orderedCompleted = Array.from(completedNumbers).sort((left, right) => Number(left) - Number(right));
       try {
@@ -388,6 +393,9 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       }
       rawQuestions.set(question.number, { ...raw, _extractionIssues: question.extractionIssues ?? [] });
       streamedQuestions.set(question.number, question);
+      if (!approvedNumbers.has(question.number)) reviewQueue.add(() => reviewExtractedQuestion({
+        ownerId, documentId, question, workerId: payload.workerId,
+      }));
     };
 
     const handleRecord = async (record: ExtractionStreamRecord) => {
@@ -480,6 +488,15 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       const page = sourceInventory?.questions.find(item => item.number === String(number))?.firstLinePage ?? 1;
       await saveQuestion(unresolvedQuestion(String(number), page, "模型未返回本题的可用内容，请对照原卷补录"), { number: String(number), missing: true });
     }
+    sqliteTransaction(transaction => {
+      const timestamp = now();
+      if (payload.workerId) assertDocumentLease(transaction, documentId, payload.workerId, timestamp);
+      transaction.prepare("UPDATE document_jobs SET stream_phase='finalizing',stream_message='题目识别完成，正在逐题 AI 审核',last_stream_event_at=?,updated_at=? WHERE document_id=?")
+        .run(timestamp, timestamp, documentId);
+    });
+    const reviewResults = await reviewQueue.drain();
+    const reviewFailure = reviewResults.find(result => result.status === "rejected");
+    if (reviewFailure?.status === "rejected") throw reviewFailure.reason;
     // Persist late, question-specific diagnostics (for example a duplicate question).
     // Protocol-only warnings are retained in the run and do not invalidate good questions.
     for (const question of streamedQuestions.values()) {
@@ -506,7 +523,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     const parsedContent = {
       streamIssues,
       documentMeta,
-      questions: orderedNumbers.map((number) => rawQuestions.get(number)),
+      questions: orderedNumbers.map((number) => ({ ...rawQuestions.get(number), _aiReview: streamedQuestions.get(number)?.aiReview })),
     };
     const finishedAt = now();
     sqliteTransaction((transaction) => {
@@ -563,5 +580,8 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       retryable: error instanceof ModelCallError ? error.retryable : true,
       retryAfterMs: error instanceof ModelCallError ? error.retryAfterMs : undefined,
     }, { status: error instanceof ModelCallError && error.status === 413 ? 413 : 502 });
+  } finally {
+    // Even an interrupted extraction must settle reviews for the questions already saved.
+    await reviewQueue.drain();
   }
 }
