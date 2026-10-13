@@ -140,7 +140,7 @@ test("导入抽屉保留配置、文件暂存校验、拖放和焦点恢复", as
   expect(await dialog.evaluate(el => el.contains(document.activeElement))).toBe(true);
 });
 
-test("有效 PDF 在点击开始后使用真实上传接口保存原卷和分页，关闭抽屉仍显示任务", async ({ page, browser }) => {
+test("有效 PDF 保存原卷和分页后移交试卷管理，导入弹窗清空", async ({ page, browser }) => {
   const pdfPage = await browser.newPage();
   await pdfPage.setContent(`<h1>Workbench PDF ${crypto.randomUUID()}</h1><p>1. Solve x + 1 = 2.</p>`);
   const buffer = await pdfPage.pdf({ format: "A4" });
@@ -155,7 +155,9 @@ test("有效 PDF 在点击开始后使用真实上传接口保存原卷和分页
   expect(requests).toHaveLength(0);
   await expect(dialog.getByRole("button", { name: "开始导入" })).toBeEnabled();
   await dialog.getByRole("button", { name: "开始导入" }).click();
-  await expect(dialog.locator(".wb-upload-tasks")).toContainText("原卷和分页图已经安全保存", { timeout: 25000 });
+  await expect(dialog.getByRole("status")).toContainText("原卷已保存", { timeout: 25000 });
+  await expect(dialog.locator(".wb-upload-tasks")).toHaveCount(0);
+  await expect(dialog.locator(".wb-file-selection")).toHaveCount(0);
   const result = await (await page.request.get("/api/documents")).json();
   const uploaded = result.documents.find(document => document.name === name);
   expect(uploaded).toBeTruthy();
@@ -164,7 +166,7 @@ test("有效 PDF 在点击开始后使用真实上传接口保存原卷和分页
   expect(uploaded.jobStatus).toBeFalsy();
   expect(requests.length).toBeGreaterThanOrEqual(1);
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
-  await expect(page.getByRole("button", { name: /^导入任务/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^正在导入/ })).toHaveCount(0);
   await page.getByRole("tab", { name: /^待处理/ }).click();
   await expect(page.locator(".document-main strong", { hasText: name })).toBeVisible();
   await page.reload();
@@ -236,31 +238,65 @@ test("表格删除确认支持取消、保留题目与批量删除", async ({ pa
   } finally { fixture.close(); }
 });
 
-test("后台准备进度按间隔同步，关闭再打开抽屉不丢任务", async ({ page }) => {
-  let queueCalls = 0, complete = false;
-  const id = crypto.randomUUID();
+test("五份原卷交给后台后清空，删除试卷再打开不残留", async ({ page }) => {
+  const fixture = papers();
+  let posts = 0;
   await page.route("**/api/model-profiles", route => route.fulfill({ json: { profiles: [], selectedProfileId: "" } }));
   await page.route("**/api/documents", route => route.request().method() === "POST"
-    ? route.fulfill({ json: { id, preparationQueued: true, status: "uploading" } }) : route.continue());
-  await page.route("**/api/extraction-queue", route => {
-    queueCalls++;
-    return route.fulfill({ json: { concurrency: 2, activeCount: 0, queuedCount: 0, jobs: [], preparations: [{ documentId: id, status: complete ? "complete" : "processing", completedPages: complete ? 1 : 0, pageCount: 1 }] } });
+    ? route.fulfill({ json: { id: fixture.items[posts++].id, preparationQueued: true, status: "uploading" } }) : route.continue());
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "导入试卷", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "导入试卷" });
+    await dialog.getByLabel("选择 PDF 文件").setInputFiles(Array.from({ length: 5 }, (_, index) => ({ name: "后台准备-" + index + ".pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") })));
+    await dialog.getByRole("button", { name: "开始导入" }).click();
+    await expect.poll(() => posts).toBe(5);
+    await expect(dialog.locator(".wb-file-selection")).toHaveCount(0);
+    await expect(dialog.locator(".wb-upload-tasks")).toHaveCount(0);
+    await expect(dialog.getByRole("status")).toContainText("试卷管理");
+    await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+    await page.getByRole("tab", { name: /^全部/ }).click();
+    await page.getByRole("button", { name: "批量操作" }).click();
+    await page.getByRole("button", { name: "全选", exact: true }).click();
+    await page.getByRole("button", { name: "批量删除", exact: true }).click();
+    await page.getByRole("button", { name: /同步删除试卷和题目/ }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "试卷管理 0 份" })).toBeVisible();
+    await page.getByRole("button", { name: "导入试卷", exact: true }).click();
+    await expect(dialog.locator(".wb-upload-tasks")).toHaveCount(0);
+    await expect(dialog.locator(".wb-file-selection")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "开始导入" })).toBeDisabled();
+  } finally { fixture.close(); }
+});
+
+test("上传期间关闭重开保留当前任务，失败可见，新批次不累计旧任务", async ({ page }) => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let received = false;
+  await page.route("**/api/model-profiles", route => route.fulfill({ json: { profiles: [], selectedProfileId: "" } }));
+  await page.route("**/api/documents", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    received = true;
+    await gate;
+    return route.fulfill({ status: 400, json: { error: "测试上传失败" } });
   });
   await page.goto("/");
   await page.getByRole("button", { name: "导入试卷", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导入试卷" });
-  await dialog.getByLabel("选择 PDF 文件").setInputFiles({ name: "后台准备.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
+  await dialog.getByLabel("选择 PDF 文件").setInputFiles({ name: "第一批.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
   await dialog.getByRole("button", { name: "开始导入" }).click();
-  await expect(dialog.locator(".wb-upload-tasks")).toContainText("后台正在准备页面");
-  const callsAfterStart = queueCalls;
-  // A task update must not restart its effect and immediately poll in a tight loop.
-  await page.waitForTimeout(1200);
-  expect(queueCalls - callsAfterStart).toBeLessThanOrEqual(2);
-  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("button", { name: /^导入任务/ }).click();
-  await expect(dialog.locator(".wb-upload-tasks")).toContainText("后台准备.pdf");
-  complete = true;
-  await expect(dialog.locator(".wb-upload-tasks")).toContainText("原卷分页已保存", { timeout: 8000 });
+  await expect.poll(() => received).toBe(true);
+  await expect(dialog.locator(".wb-file-selection")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /^正在导入/ }).click();
+  await expect(dialog.locator(".wb-upload-tasks")).toContainText("第一批.pdf");
+  release();
+  await expect(dialog.locator(".wb-upload-tasks")).toContainText("测试上传失败");
+  await dialog.getByLabel("选择 PDF 文件").setInputFiles({ name: "第二批.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
+  await dialog.getByRole("button", { name: "开始导入" }).click();
+  await expect(dialog.locator(".wb-upload-tasks article")).toHaveCount(1);
+  await expect(dialog.locator(".wb-upload-tasks")).toContainText("第二批.pdf");
+  await expect(dialog.locator(".wb-upload-tasks")).not.toContainText("第一批.pdf");
 });
 
 test("同步失败保留现有数据，模型配置失败明确提示并可重开恢复", async ({ page }) => {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, FileText, LoaderCircle, Plus, UploadCloud, X } from "lucide-react";
+import { AlertCircle, FileText, LoaderCircle, Plus, UploadCloud, X } from "lucide-react";
 import { educationStages, gradesByStage, subjects, type EducationStage } from "../lib/education-taxonomy";
 import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
@@ -11,18 +11,16 @@ import { fetchUploadJson } from "../lib/upload-request";
 import { uploadResponseSchema } from "../lib/api-contracts";
 import { WorkbenchDialog } from "./WorkbenchDialog";
 
-type Stage = "idle" | "rendering" | "preparing" | "uploading" | "queued" | "extracting" | "retry_wait" | "paused" | "waiting_model" | "done" | "error";
+type Stage = "idle" | "rendering" | "uploading" | "error";
 type RenderedPage = { blob: Blob; width: number; height: number };
 type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; documentId?: string; renderer?: string; modelDisplayName?: string };
 type QueueSnapshot = {
-  preparations?: Array<{ documentId: string; status: string; completedPages: number; pageCount: number; lastError?: string }>;
   concurrency?: number;
   activeCount?: number;
   queuedCount?: number;
   paused?: boolean;
   pauseReason?: string | null;
   pausedCount?: number;
-  jobs?: Array<{ documentId: string; status: string; totalPages: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; streamPhase?: string; streamMessage?: string; nextAttemptAt?: string; lastError?: string; modelDisplayName?: string; modelName?: string }>;
   error?: string;
 };
 type WorkbenchModelProfile = {
@@ -76,12 +74,12 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   const [fileError, setFileError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [taskSyncError, setTaskSyncError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const concurrencyRef = useRef(DEFAULT_UPLOAD_CONCURRENCY);
   const concurrencyDraftDirtyRef = useRef(false);
   const batchControllerRef = useRef<{ setConcurrency: (value: unknown) => void } | null>(null);
   const [tasks, setTasks] = useState<UploadTask[]>([]);
+  const [importNotice, setImportNotice] = useState("");
   const [concurrencyDraft, setConcurrencyDraft] = useState(String(DEFAULT_UPLOAD_CONCURRENCY));
   const [appliedConcurrency, setAppliedConcurrency] = useState(DEFAULT_UPLOAD_CONCURRENCY);
   const [concurrencySaving, setConcurrencySaving] = useState(false);
@@ -110,8 +108,6 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
     sourceTextbook: teachingProfile.textbook,
     sourceSchool: "",
   };
-  const working = tasks.some((task) => ["rendering", "preparing", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage));
-  const hasPendingTasks = tasks.some(task => task.documentId && !["done", "error", "waiting_model"].includes(task.stage));
   const uploadDisabled = batchActive || modelLoading || modelSaving;
 
   function syncQueueSettings(result: QueueSnapshot, syncDraft = false) {
@@ -175,49 +171,10 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
     return () => { cancelled = true; };
   }, [open]);
 
-  useEffect(() => {
-    if (!hasPendingTasks) return;
-    let cancelled = false;
-    const poll = async () => {
-      const response = await fetch("/api/extraction-queue", { cache: "no-store" }).catch(() => undefined);
-      if (cancelled) return;
-      if (!response?.ok) throw new Error("无法同步导入进度");
-      const result = await response.json().catch(() => null) as QueueSnapshot | null;
-      if (!result || cancelled) return;
-      syncQueueSettings(result);
-      setTasks((items) => items.map((task) => {
-        const job = result.jobs?.find((candidate) => candidate.documentId === task.documentId);
-        const preparation = result.preparations?.find(candidate => candidate.documentId === task.documentId);
-        if (task.stage === "preparing" && preparation && !job) {
-          if (preparation.status === "failed") return { ...task, stage: "error", message: preparation.lastError ?? "后台分页失败，请在审核页重试。" };
-          if (preparation.status === "complete") return { ...task, stage: "waiting_model", completedPages: preparation.completedPages, pageCount: preparation.pageCount, message: "原卷分页已保存，请配置识题模型后在审核页开始识别。" };
-          return { ...task, completedPages: preparation.completedPages, pageCount: preparation.pageCount, message: `后台正在准备页面（${preparation.completedPages}/${preparation.pageCount || "待确认"}），关闭页面后仍会继续。` };
-        }
-        if (!job || ["rendering", "uploading"].includes(task.stage)) return task;
-        const modelDisplayName = job.modelDisplayName ?? job.modelName ?? task.modelDisplayName;
-        const questionTotal = job.questionTotal ?? null;
-        const completedQuestionCount = job.completedQuestionCount ?? 0;
-        const questionProgress = questionTotal ? `${completedQuestionCount}/${questionTotal} 题` : "正在统计题目总数";
-        if (job.status === "complete") return { ...task, modelDisplayName, stage: "done", completedPages: job.totalPages, questionTotal, completedQuestionCount, message: `整卷 ${questionProgress} 已完成，已进入待审核区。` };
-        if (job.status === "failed") return { ...task, modelDisplayName, stage: "error", message: job.lastError ?? "识别失败，可进入审核页重新入队。" };
-        if (job.status === "retry_wait") return {
-          ...task, modelDisplayName, stage: "retry_wait", completedPages: job.completedPages, questionTotal, completedQuestionCount,
-          message: `已保存 ${questionProgress}；退避中${job.nextAttemptAt ? `，${new Date(job.nextAttemptAt).toLocaleTimeString()} 自动继续` : ""}。`,
-        };
-        if (job.status === "paused") return {
-          ...task, modelDisplayName, stage: "paused", completedPages: job.completedPages, questionTotal, completedQuestionCount,
-          message: `已保存 ${questionProgress}；识别已暂停，可在工作台“待处理”中点击“全部开始”继续。`,
-        };
-        return { ...task, modelDisplayName, stage: job.status === "processing" ? "extracting" : "queued", completedPages: job.completedPages, questionTotal, completedQuestionCount, message: job.streamMessage ?? `可靠队列中：${questionProgress}。` };
-      }));
-    };
-    let timer: number;
-    const next = async () => {
-      try { await poll(); setTaskSyncError(""); } catch { setTaskSyncError("暂时无法同步导入进度，正在自动重试。"); } finally { if (!cancelled) timer = window.setTimeout(next, 3000); }
-    };
-    void next();
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [hasPendingTasks]);
+  function handOffTask(taskId: string) {
+    setTasks(items => items.filter(item => item.id !== taskId));
+    setImportNotice("原卷已保存，后续分页、识别和审核进度请在试卷管理中查看。");
+  }
 
   function patchTask(taskId: string, patch: Partial<UploadTask>) {
     setTasks((items) => items.map((item) => item.id === taskId ? { ...item, ...patch } : item));
@@ -303,11 +260,11 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
       patchTask(taskId, { documentId: currentDocumentId });
       router.refresh();
       if (provisionalResult.status === "complete") {
-        patchTask(taskId, { stage: "done", message: "相同原卷已经处理完成，可直接进入题库或审核。" });
+        handOffTask(taskId);
         return;
       }
       if (provisionalResult.preparationQueued) {
-        patchTask(taskId, { stage: "preparing", renderer: "后台 PDF", message: "原卷已安全保存，后台正在准备页面；关闭网页后仍会继续。" });
+        handOffTask(taskId);
         return;
       }
       const name = file.name.toLowerCase();
@@ -340,14 +297,14 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
           method: "PATCH", headers: { "content-type": "application/json" },
           body: JSON.stringify({ status: "awaiting_model", error: message }),
         });
-        patchTask(taskId, { stage: "waiting_model", message });
+        handOffTask(taskId);
         router.refresh();
         return;
       }
       await fetchUploadJson(`/api/documents/${currentDocumentId}/queue`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ retry: true, profileId }),
       });
-      patchTask(taskId, { stage: "queued", completedPages: 0, message: "已加入可靠识别队列；关闭页面后服务端仍会继续。" });
+      handOffTask(taskId);
       router.refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "处理失败，请稍后再试";
@@ -370,10 +327,11 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
     const batchProfileId = selectedProfileId || undefined;
     const batchProfile = modelProfiles.find((profile) => profile.id === batchProfileId);
     const queued = files.slice(0, 100).map((file) => ({ id: crypto.randomUUID(), file }));
-    setTasks((items) => [...queued.map((item) => ({
+    setImportNotice("");
+    setTasks(queued.map((item) => ({
       id: item.id, fileName: item.file.name, stage: "idle" as Stage, message: "等待处理…", pageCount: 0, completedPages: 0,
       modelDisplayName: batchProfile?.displayName,
-    })), ...items]);
+    })));
     const controller = createDynamicConcurrencyController(
       queued,
       concurrencyRef.current,
@@ -417,14 +375,16 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
     } finally { setSubmitting(false); }
   }
 
-  function openDrawer() { setModelLoading(true); setModelFeedback(""); setOpen(true); }
+  function openDrawer() {
+    if (!batchActive && !submitting) { setTasks([]); setImportNotice(""); }
+    setModelLoading(true); setModelFeedback(""); setOpen(true);
+  }
   const selectedModel = modelProfiles.find(profile => profile.id === selectedProfileId);
   const unconfiguredModel = !modelLoading && !modelError && !selectedModel?.apiKeyMask;
-  const pendingTasks = tasks.filter(task => !["done", "error", "waiting_model"].includes(task.stage)).length;
   const uploadInBrowser = batchActive || submitting;
 
   return <>
-    {tasks.length > 0 && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}>{working && <LoaderCircle size={14} className="spin" />}导入任务{pendingTasks ? ` · ${pendingTasks}` : ""}</button>}
+    {uploadInBrowser && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}><LoaderCircle size={14} className="spin" />正在导入 · {tasks.length}</button>}
     <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
     <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" onClose={() => setOpen(false)}>
       <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>批量上传 PDF，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
@@ -466,17 +426,17 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
           {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
           {selectedFiles.length > 0 && <div className="wb-file-selection"><div><strong>已选 {selectedFiles.length} 份</strong><button className="wb-text-button" type="button" disabled={uploadInBrowser} onClick={() => setSelectedFiles([])}>清空</button></div><ul>{selectedFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><FileText size={16} /><span title={file.name}>{file.name}<small>{file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(file.size / 1024))} KB`}</small></span><button type="button" className="wb-icon-button" aria-label={`移除 ${file.name}`} disabled={uploadInBrowser} onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}><X size={15} /></button></li>)}</ul></div>}
         </div>
+        {importNotice && <p className="wb-field-hint" role="status">{importNotice}</p>}
         {tasks.length > 0 && <section className="wb-upload-tasks" aria-label="导入任务"><h3>导入任务 <span>{tasks.length}</span></h3>
           {uploadInBrowser && <p className="wb-field-hint">可关闭导入窗口查看列表；原卷上传完成前，请保持此页面打开。</p>}
-          {taskSyncError && <p className="wb-field-error" role="status">{taskSyncError}</p>}
           <div aria-live="polite">{tasks.map(task => <article key={task.id} className={task.stage === "error" ? "error" : ""}>
-            {task.stage === "done" ? <CheckCircle2 size={16} /> : task.stage === "error" ? <AlertCircle size={16} /> : ["idle", "rendering", "preparing", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage) ? <LoaderCircle size={16} className="spin" /> : <FileText size={16} />}
-            <div><strong title={task.fileName}>{task.fileName}</strong><p>{task.message}</p>{task.documentId && <Link href={`/review/${task.documentId}`}>{task.stage === "done" ? "前往审核" : "查看试卷"}</Link>}</div>
+            {task.stage === "error" ? <AlertCircle size={16} /> : <LoaderCircle size={16} className="spin" />}
+            <div><strong title={task.fileName}>{task.fileName}</strong><p>{task.message}</p>{task.documentId && <Link href={`/review/${task.documentId}`}>查看试卷</Link>}</div>
           </article>)}</div>
         </section>}
         </section>
       </div>
-      <footer className="wb-dialog-footer"><span>{selectedFiles.length ? `已选 ${selectedFiles.length} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "任务进度自动保存" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedFiles.length || uploadDisabled || submitting || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
+      <footer className="wb-dialog-footer"><span>{selectedFiles.length ? `已选 ${selectedFiles.length} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "部分文件导入失败，请查看提示" : importNotice ? "后续进度请在试卷管理中查看" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length || importNotice ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedFiles.length || uploadDisabled || submitting || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
     </WorkbenchDialog>
   </>;
 }
