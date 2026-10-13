@@ -27,6 +27,7 @@ import type { ModelCallTrace } from "../../lib/model-call-trace";
 import { readSourceQuestionInventory } from "../../lib/source-question-inventory";
 import { createQuestionReview, createQuestionReviewQueue } from "../../lib/question-ai-review";
 import { reviewExtractedQuestion } from "./question-ai-review";
+import { automaticAiReviewEnabled } from "../../lib/ai-review-settings";
 
 
 const MAX_PAGE_BYTES = 20 * 1024 * 1024;
@@ -313,9 +314,11 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
   });
   let modelTrace: ModelCallTrace | undefined;
   const reviewQueue = createQuestionReviewQueue(2);
+  const aiReviewEnabled = automaticAiReviewEnabled(ownerId);
 
   try {
     let sourceInventory = null;
+    sqlite.prepare("UPDATE document_jobs SET ai_review_enabled = ? WHERE document_id = ?").run(aiReviewEnabled ? 1 : 0, documentId);
     let inventoryError: string | undefined;
     if (ownedDocument.mimeType === "application/pdf" && ownedDocument.originalKey) {
       try { sourceInventory = await readSourceQuestionInventory(await getFile(ownedDocument.originalKey), sourcePages.length); }
@@ -374,7 +377,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
         skipQuestionNumbers: approvedNumbers,
       });
       question.confidence = 0; // Legacy DB field only; no model score is requested or used.
-      question.aiReview = createQuestionReview(question, raw, sourcePages.length, profile.id, sourceInventory, profile.model);
+      question.aiReview = aiReviewEnabled ? createQuestionReview(question, raw, sourcePages.length, profile.id, sourceInventory, profile.model) : null;
       completedNumbers.add(question.number);
       const orderedCompleted = Array.from(completedNumbers).sort((left, right) => Number(left) - Number(right));
       try {
@@ -393,7 +396,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       }
       rawQuestions.set(question.number, { ...raw, _extractionIssues: question.extractionIssues ?? [] });
       streamedQuestions.set(question.number, question);
-      if (!approvedNumbers.has(question.number)) reviewQueue.add(() => reviewExtractedQuestion({
+      if (aiReviewEnabled && !approvedNumbers.has(question.number)) reviewQueue.add(() => reviewExtractedQuestion({
         ownerId, documentId, question, workerId: payload.workerId,
       }));
     };
@@ -491,8 +494,8 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     sqliteTransaction(transaction => {
       const timestamp = now();
       if (payload.workerId) assertDocumentLease(transaction, documentId, payload.workerId, timestamp);
-      transaction.prepare("UPDATE document_jobs SET stream_phase='finalizing',stream_message='题目识别完成，正在逐题 AI 审核',last_stream_event_at=?,updated_at=? WHERE document_id=?")
-        .run(timestamp, timestamp, documentId);
+      transaction.prepare("UPDATE document_jobs SET stream_phase='finalizing',stream_message=?,last_stream_event_at=?,updated_at=? WHERE document_id=?")
+        .run(aiReviewEnabled ? "题目识别完成，正在逐题 AI 审核" : "题目识别完成，正在保存结果", timestamp, timestamp, documentId);
     });
     const reviewResults = await reviewQueue.drain();
     const reviewFailure = reviewResults.find(result => result.status === "rejected");

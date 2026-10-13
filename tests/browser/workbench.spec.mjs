@@ -330,7 +330,7 @@ test("识别试卷置顶，双进度独立刷新且桌面手机均保持原行�
   const stamp = new Date().toISOString();
   db.prepare("UPDATE documents SET status='extracting',created_at='2020-01-01' WHERE id=?").run(active.id);
   db.prepare("UPDATE extraction_runs SET status='running' WHERE document_id=?").run(active.id);
-  db.prepare("INSERT INTO document_jobs (document_id,owner_id,status,question_total,completed_question_numbers_json,lease_expires_at,queued_at,updated_at) VALUES (?,'workbench-browser','processing',8,?,'2099-01-01',?,?)").run(active.id, JSON.stringify(['1','2','3']), stamp, stamp);
+  db.prepare("INSERT INTO document_jobs (document_id,owner_id,status,ai_review_enabled,question_total,completed_question_numbers_json,lease_expires_at,queued_at,updated_at) VALUES (?,'workbench-browser','processing',1,8,?,'2099-01-01',?,?)").run(active.id, JSON.stringify(['1','2','3']), stamp, stamp);
   for (const [number,status] of [['1','passed'],['2','pending'],['3','failed'],['4','passed']]) {
     db.prepare("UPDATE questions SET ai_review_json=? WHERE document_id=? AND number=?").run(JSON.stringify({ status }),active.id,number);
   }

@@ -19,7 +19,7 @@ function RecognitionProgress({ document: doc }: { document: SourceDocument }) {
   const total = doc.recognitionQuestionTotal && doc.recognitionQuestionTotal > 0 ? doc.recognitionQuestionTotal : null;
   const failedReviews = doc.aiReviewFailedQuestionCount ?? 0;
   return <div className="wb-recognition-progress" title={[doc.lastError, doc.recognitionMessage, failedReviews ? `${failedReviews} 题 AI 复核失败，需重试` : ""].filter(Boolean).join("；")}>
-    {[{ label: "识别", count: doc.recognizedQuestionCount ?? 0 }, { label: "AI复核", count: doc.aiReviewedQuestionCount ?? 0 }].map(({ label, count }) => {
+    {[{ label: "识别", count: doc.recognizedQuestionCount ?? 0 }, ...(doc.aiReviewEnabled ? [{ label: "AI复核", count: doc.aiReviewedQuestionCount ?? 0 }] : [])].map(({ label, count }) => {
       const percent = total ? Math.min(100, Math.round(count / total * 100)) : undefined;
       return <div className="wb-mini-progress" key={label}>
         <span><small>{label}</small><small>{count}/{total ?? "?"}</small></span>
@@ -29,6 +29,7 @@ function RecognitionProgress({ document: doc }: { document: SourceDocument }) {
         </div>
       </div>;
     })}
+    {!doc.aiReviewEnabled && <small>AI 复核已关闭</small>}
   </div>;
 }
 

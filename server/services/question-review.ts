@@ -13,6 +13,7 @@ import { asQuestionPayload, validateQuestionPayload } from "../../lib/question-p
 import { extractionConfidence } from "../../lib/extraction-confidence";
 import { questionReviewContentKey } from "../../lib/question-ai-review";
 import { loadQuestionForAiReview, reviewExtractedQuestion } from "./question-ai-review";
+import { automaticAiReviewEnabled } from "../../lib/ai-review-settings";
 
 
 class QuestionIntegrityError extends Error {}
@@ -130,10 +131,10 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
       // The client cannot author an AI verdict. Invalidate only when audited content changes.
       if (before?.aiReview && questionReviewContentKey(before) !== questionReviewContentKey({ ...payload,
         page: primaryRegion.page, assets: preparedAssets.map(({ asset, box }) => ({ ...asset, bbox: box })) })) {
-        const nextReview = { ...before.aiReview, mode: "saved_content_v1", categories: [], status: payload.status === "approved" ? "stale" : "pending",
+        reviewAfterSave = payload.status !== "approved" && automaticAiReviewEnabled(ownerId);
+        const nextReview = { ...before.aiReview, mode: "saved_content_v1", categories: [], status: reviewAfterSave ? "pending" : "stale",
           token: crypto.randomUUID(), startedAt: new Date().toISOString(), reviewedAt: undefined, traceId: undefined, error: undefined };
         transaction.prepare("UPDATE questions SET ai_review_json=? WHERE id=?").run(JSON.stringify(nextReview), questionId);
-        reviewAfterSave = payload.status !== "approved";
       }
       const issues = transaction.prepare("SELECT missing_images_json AS issues, extraction_issues_json AS extractionIssues, confidence, needs_human_review AS needsHumanReview FROM questions WHERE id=?").get(questionId) as { issues: string; extractionIssues: string; confidence: number; needsHumanReview: number };
       if (issues.extractionIssues !== "[]" && payload.extractionIssuesResolved !== true) {

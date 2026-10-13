@@ -1,4 +1,5 @@
 import "server-only";
+import { automaticAiReviewEnabled } from "./ai-review-settings";
 
 import type Database from "better-sqlite3";
 import { getSqlite, sqliteTransaction } from "../db";
@@ -276,6 +277,7 @@ export async function getExtractionQueueSettings(ownerId: string) {
   ).get(now(), ownerId) as { activeCount: number | null; queuedCount: number | null; pausedCount: number | null };
   return {
     concurrency: normalizeUploadConcurrency(settings?.concurrency, DEFAULT_UPLOAD_CONCURRENCY),
+    automaticAiReviewEnabled: automaticAiReviewEnabled(ownerId),
     paused: Boolean(settings?.paused),
     pauseReason: settings?.pauseReason ?? null,
     pausedAt: settings?.pausedAt ?? null,

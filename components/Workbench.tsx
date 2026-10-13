@@ -10,6 +10,7 @@ import { DocumentTable } from "./DocumentTable";
 import { WorkbenchOverview } from "./WorkbenchOverview";
 import { WorkbenchDialog } from "./WorkbenchDialog";
 import { UploadWorkbench } from "./UploadWorkbench";
+import { AutomaticAiReviewToggle } from "./AutomaticAiReviewToggle";
 
 type QueueControlState = {
   paused: boolean;
@@ -295,6 +296,7 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
     <header className="wb-header">
       <div><h1>工作台</h1><p>管理试卷、审核题目并沉淀至题库</p></div>
       <div className="wb-header-actions">
+        <AutomaticAiReviewToggle />
         <Link className="wb-button wb-quiet" href="/bank"><FileStack size={16} />打开题库</Link>
         {nextReview && <Link className="wb-button" href={`/review/${nextReview.id}`}><ScanText size={16} />继续审核</Link>}
         <UploadWorkbench initiallyOpen={importOpen} />

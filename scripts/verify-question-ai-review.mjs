@@ -18,6 +18,8 @@ const { loadQuestionForAiReview, reviewExtractedQuestion } = await import("../se
 const { POST: retryReview } = await import("../server/http/handlers/questions/[questionId]/ai-review/route.ts");
 const { QUESTION_REVIEW_PROMPT } = await import("../lib/question-ai-review.ts");
 const { getDocuments } = await import("../lib/question-repository.ts");
+const { automaticAiReviewEnabled, setAutomaticAiReviewEnabled } = await import("../lib/ai-review-settings.ts");
+let checkConcurrentProgress = false;
 let extractionCalls = 0, concurrent = 0, peak = 0;
 let concurrentProgress;
 const reviewRequests = [];
@@ -48,7 +50,7 @@ const server = createServer(async (req, res) => {
   res.writeHead(200, { "content-type": "text/event-stream" });
   for (const record of records) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(record) + "\n" } }] })}\n\n`);
-    if (record.question?.number === "2") {
+    if (checkConcurrentProgress && record.question?.number === "2") {
       // Keep the extraction stream open: review must finish before later questions arrive.
       const deadline = Date.now() + 5000;
       do {
@@ -80,12 +82,26 @@ try {
     db.prepare("INSERT INTO extraction_runs (id,document_id,page_id,page_number,provider,model,status,idempotency_key,created_at) VALUES (?,?,?,?,'pending','pending','queued',?,?)")
       .run(`run-${page}`, id, `p-${page}`, page, `${id}:page:${page}:extract-v4`, timestamp);
   }
+  assert.equal(automaticAiReviewEnabled("local-demo"), false, "existing/new owners default to off");
+  const withoutReview = await extractDocument("local-demo", { documentId: id, profileId: "fixture" });
+  assert.equal(withoutReview.status, 200, JSON.stringify(withoutReview.body));
+  assert.equal(reviewRequests.length, 0, "default-off makes no secondary model calls");
+  assert.ok(withoutReview.body.questions.every(q => q.aiReview == null && !q.needsHumanReview));
+  assert.equal((await getDocuments("local-demo")).find(doc => doc.id === id).aiReviewEnabled, false);
+  db.prepare("DELETE FROM questions WHERE document_id=?").run(id);
+  db.prepare("UPDATE extraction_runs SET status='queued' WHERE document_id=?").run(id);
+  db.prepare("UPDATE document_jobs SET completed_question_numbers_json='[]',question_total=NULL WHERE document_id=?").run(id);
+  extractionCalls = 0;
+  await setAutomaticAiReviewEnabled("local-demo", true);
+  assert.equal(automaticAiReviewEnabled("other-owner"), false, "settings are owner-scoped");
+  checkConcurrentProgress = true;
   const result = await extractDocument("local-demo", { documentId: id, profileId: "fixture" });
   assert.equal(result.status, 200, JSON.stringify(result.body));
   assert.equal((await finalizeDocument("local-demo", id)).status, 200);
   assert.equal(extractionCalls, 1); assert.equal(reviewRequests.length, 6); assert.equal(peak, 2);
   const progress = (await getDocuments("local-demo")).find(doc => doc.id === id);
   assert.equal(progress.recognizedQuestionCount, 6);
+  assert.equal(progress.aiReviewEnabled, true);
   assert.equal(progress.aiReviewedQuestionCount, 4);
   assert.equal(progress.aiReviewFailedQuestionCount, 2, "failed reviews must not inflate the completed bar");
   for (const request of reviewRequests) {
@@ -191,7 +207,17 @@ try {
   release(); await running; pause = undefined;
   const retained = loadQuestionForAiReview("local-demo", current.id).question;
   assert.equal(retained.stem, "教师新内容"); assert.equal(retained.aiReview.status, "stale");
-  console.log("PASS: per-question isolated reviews, max concurrency=2, tiny output budget, failure isolation, persisted verdicts, tenant checks, retries, content invalidation, stale-result protection, idempotency and usage accounting");
+  await setAutomaticAiReviewEnabled("local-demo", false);
+  const beforeOffSave = reviewRequests.length;
+  const offQuestion = loadQuestionForAiReview("local-demo", questions[0].id).question;
+  const offSave = await saveQuestion("local-demo", offQuestion.id, { ...offQuestion, stem: "关闭复核后的编辑" });
+  assert.equal(offSave.status, 200, JSON.stringify(offSave.body));
+  assert.equal(reviewRequests.length, beforeOffSave, "editing with toggle off does not call a reviewer");
+  assert.equal(offSave.body.question.aiReview.status, "stale", "disabled review never remains pending");
+  const manualReview = await retryReview(new Request("http://local", { method: "POST" }), context(offQuestion));
+  assert.equal(manualReview.status, 200);
+  assert.equal(reviewRequests.length, beforeOffSave + 1, "explicit single-question review remains available");
+  console.log("PASS: default-off extraction and edits, opt-in parallel reviews, owner isolation, explicit manual review, failure isolation, stale-result protection and usage accounting");
 } finally {
   await new Promise(resolve => server.close(resolve));
   getSqlite().close();

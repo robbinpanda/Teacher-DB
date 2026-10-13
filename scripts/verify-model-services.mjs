@@ -112,22 +112,22 @@ try {
   assert.ok(!logged.includes('x-opencode-session'));
   // Reconstruct a populated v7 fixture. Preserve all profile fields while widening the CHECK constraint.
   const db = getSqlite();
-  db.exec("UPDATE model_profiles SET service='custom' WHERE service='opencode-go'; ALTER TABLE model_profiles ADD COLUMN service_old TEXT CHECK(service_old IN ('opencode','openrouter','custom')); UPDATE model_profiles SET service_old=service; ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE model_profiles RENAME COLUMN service_old TO service; DELETE FROM schema_migrations WHERE version=8;");
+  db.exec("UPDATE model_profiles SET service='custom' WHERE service='opencode-go'; ALTER TABLE model_profiles ADD COLUMN service_old TEXT CHECK(service_old IN ('opencode','openrouter','custom')); UPDATE model_profiles SET service_old=service; ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE model_profiles RENAME COLUMN service_old TO service; ALTER TABLE app_settings DROP COLUMN automatic_ai_review_enabled; ALTER TABLE document_jobs DROP COLUMN ai_review_enabled; DELETE FROM schema_migrations WHERE version>=8;");
   const beforeV8 = db.prepare('SELECT * FROM model_profiles ORDER BY id').all();
   execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
     "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
-  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 8);
+  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 9);
   assert.deepEqual(db.prepare('SELECT * FROM model_profiles ORDER BY id').all(), beforeV8);
   db.prepare("UPDATE model_profiles SET service='opencode-go' WHERE id=?").run(profile.id);
   assert.throws(() => db.prepare("UPDATE model_profiles SET service='invalid' WHERE id=?").run(profile.id), /CHECK/);
   // A v6 database must also migrate through both versions.
 
   const beforeMigration = db.prepare('SELECT id,api_key_ciphertext,base_url,provider FROM model_profiles ORDER BY id').all();
-  db.exec('ALTER TABLE model_profiles DROP COLUMN service; DELETE FROM schema_migrations WHERE version>=7;');
+  db.exec('ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE app_settings DROP COLUMN automatic_ai_review_enabled; ALTER TABLE document_jobs DROP COLUMN ai_review_enabled; DELETE FROM schema_migrations WHERE version>=7;');
   execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
     "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
   assert.ok(db.prepare('PRAGMA table_info(model_profiles)').all().some(c => c.name === 'service'));
-  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 8);
+  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 9);
   assert.deepEqual(db.prepare('SELECT id,api_key_ciphertext,base_url,provider FROM model_profiles ORDER BY id').all(), beforeMigration);
   console.log(JSON.stringify({ passed: true, mockRequests: requests.length, dataDirectory: process.env.JIANTI_DATA_DIR }));
 } finally { globalThis.fetch = nativeFetch; }

@@ -2,6 +2,7 @@ import { getExtractionQueueSettings, kickExtractionQueue, listDocumentJobs, setE
 import { MAX_UPLOAD_CONCURRENCY } from "../../../../lib/upload-concurrency";
 import { requestOwner } from "../../../../lib/server";
 import { listDocumentPreparations } from "../../../services/document-preparation";
+import { setAutomaticAiReviewEnabled } from "../../../../lib/ai-review-settings";
 
 
 export async function GET(request: Request) {
@@ -12,7 +13,12 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const payload = await request.json().catch(() => ({})) as { action?: unknown; concurrency?: unknown };
+  const payload = await request.json().catch(() => ({})) as { action?: unknown; concurrency?: unknown; automaticAiReviewEnabled?: unknown };
+  if ("automaticAiReviewEnabled" in payload) {
+    if (typeof payload.automaticAiReviewEnabled !== "boolean") return Response.json({ error: "独立 AI 复核开关必须为布尔值" }, { status: 400 });
+    await setAutomaticAiReviewEnabled(requestOwner(request), payload.automaticAiReviewEnabled);
+    return Response.json(await getExtractionQueueSettings(requestOwner(request)));
+  }
   if (payload.action === "pause" || payload.action === "resume") {
     const settings = await setExtractionQueuePaused(requestOwner(request), payload.action === "pause");
     if (payload.action === "resume") void kickExtractionQueue();

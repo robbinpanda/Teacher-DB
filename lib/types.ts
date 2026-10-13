@@ -105,6 +105,7 @@ export type SourceDocument = {
   recognitionQuestionTotal?: number | null;
   recognizedQuestionCount?: number;
   aiReviewedQuestionCount?: number;
+  aiReviewEnabled?: boolean;
   aiReviewFailedQuestionCount?: number;
   recognitionPhase?: string | null;
   recognitionMessage?: string | null;

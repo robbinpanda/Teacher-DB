@@ -520,7 +520,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 8;
+export const DATABASE_VERSION = 9;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -591,6 +591,18 @@ function initialize() {
         UPDATE model_profiles SET service_next = service;
         ALTER TABLE model_profiles DROP COLUMN service;
         ALTER TABLE model_profiles RENAME COLUMN service_next TO service;
+      `),
+    },
+    {
+      version: 9,
+      name: "optional-automatic-ai-review",
+      checksum: "optional-automatic-ai-review-v1",
+      up: sqlite => sqlite.exec(`
+        ALTER TABLE app_settings ADD COLUMN automatic_ai_review_enabled INTEGER NOT NULL DEFAULT 0 CHECK(automatic_ai_review_enabled IN (0,1));
+        ALTER TABLE document_jobs ADD COLUMN ai_review_enabled INTEGER NOT NULL DEFAULT 0 CHECK(ai_review_enabled IN (0,1));
+        UPDATE document_jobs SET ai_review_enabled = 1 WHERE EXISTS (
+          SELECT 1 FROM questions q WHERE q.document_id = document_jobs.document_id AND q.ai_review_json IS NOT NULL AND q.ai_review_json <> 'null'
+        );
       `),
     },
   ]);

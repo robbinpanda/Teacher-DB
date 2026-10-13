@@ -446,6 +446,7 @@ export const appSettings = sqliteTable("app_settings", {
   teacherMode: text("teacher_mode").notNull().default("personal"),
   selectedModelProfileId: text("selected_model_profile_id"),
   extractionConcurrency: integer("extraction_concurrency").notNull().default(2),
+  automaticAiReviewEnabled: integer("automatic_ai_review_enabled", { mode: "boolean" }).notNull().default(false),
   extractionPaused: integer("extraction_paused", { mode: "boolean" }).notNull().default(false),
   extractionPauseReason: text("extraction_pause_reason"),
   extractionPausedAt: text("extraction_paused_at"),
@@ -457,6 +458,7 @@ export const appSettings = sqliteTable("app_settings", {
 });
 
 export const documentJobs = sqliteTable("document_jobs", {
+  aiReviewEnabled: integer("ai_review_enabled", { mode: "boolean" }).notNull().default(false),
   documentId: text("document_id").primaryKey().references(() => documents.id, { onDelete: "cascade" }),
   ownerId: text("owner_id").notNull().default("local-demo"),
   profileId: text("profile_id"),

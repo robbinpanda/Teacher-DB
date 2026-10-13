@@ -443,6 +443,7 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
             j.next_attempt_at AS nextAttemptAt, j.last_error AS lastError,
             j.question_total AS recognitionQuestionTotal,
             COALESCE(json_array_length(j.completed_question_numbers_json), 0) AS recognizedQuestionCount,
+            j.ai_review_enabled AS aiReviewEnabled,
             COALESCE(SUM(CASE WHEN json_valid(q.ai_review_json) AND
               (j.document_id IS NULL OR EXISTS (SELECT 1 FROM json_each(j.completed_question_numbers_json) n WHERE n.value = q.number))
               THEN CASE WHEN json_extract(q.ai_review_json, '$.status') IN ('passed', 'issues') THEN 1 ELSE 0 END ELSE 0 END), 0) AS aiReviewedQuestionCount,
@@ -459,7 +460,7 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
        LEFT JOIN model_profiles mp ON mp.id = j.profile_id AND mp.owner_id = d.owner_id
       WHERE d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id ORDER BY CASE WHEN j.status = 'processing' THEN 0 ELSE 1 END, d.created_at DESC LIMIT 100`,
   ).all(ownerId) as SourceDocument[];
-  return rows;
+  return rows.map(row => ({ ...row, aiReviewEnabled: Boolean(row.aiReviewEnabled) }));
 }
 
 export type SavedPaper = {
