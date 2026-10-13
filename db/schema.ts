@@ -91,6 +91,7 @@ export const questions = sqliteTable("questions", {
   bboxJson: text("bbox_json").notNull(),
   status: text("status").notNull().default("pending"),
   needsHumanReview: integer("needs_human_review", { mode: "boolean" }),
+  extractionIssuesJson: text("extraction_issues_json").notNull().default("[]"),
   missingImagesJson: text("missing_images_json").notNull().default("[]"),
   confidence: real("confidence").notNull().default(0),
   score: integer("score").notNull().default(0),

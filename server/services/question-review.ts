@@ -123,7 +123,13 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
       if (!currentDocument || currentDocument.sourceRemovedAt) {
         throw new QuestionIntegrityError("原试卷已删除或题目已不存在，不能保存本次修改");
       }
-      const issues = transaction.prepare("SELECT missing_images_json AS issues, confidence, needs_human_review AS needsHumanReview FROM questions WHERE id=?").get(questionId) as { issues: string; confidence: number; needsHumanReview: number };
+      const issues = transaction.prepare("SELECT missing_images_json AS issues, extraction_issues_json AS extractionIssues, confidence, needs_human_review AS needsHumanReview FROM questions WHERE id=?").get(questionId) as { issues: string; extractionIssues: string; confidence: number; needsHumanReview: number };
+      if (issues.extractionIssues !== "[]" && payload.extractionIssuesResolved !== true) {
+        if (payload.status === "approved") throw new QuestionIntegrityError("本题仍有识别异常，请对照原卷修正并标记已核对后再入库");
+        payload.needsHumanReview = true;
+        payload.status = "needs_attention";
+      }
+      if (payload.extractionIssuesResolved === true) transaction.prepare("UPDATE questions SET extraction_issues_json='[]' WHERE id=?").run(questionId);
       if (issues.needsHumanReview && payload.status !== "approved") {
         payload.needsHumanReview = true;
         payload.status = "needs_attention";
@@ -228,6 +234,8 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
     question: {
       ...payload,
       imageIssuesResolved: false,
+      extractionIssuesResolved: false,
+      extractionIssues: JSON.parse((sqlite.prepare("SELECT extraction_issues_json AS issues FROM questions WHERE id=?").get(questionId) as { issues: string }).issues),
       missingImages: JSON.parse((sqlite.prepare("SELECT missing_images_json AS issues FROM questions WHERE id=?").get(questionId) as { issues: string }).issues),
       needsHumanReview: payload.status === "approved" ? false : payload.needsHumanReview,
       page: primaryRegion.page,

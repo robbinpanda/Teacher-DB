@@ -55,7 +55,9 @@ export function parseCandidateSelection(content: string, candidates: PageAssetCa
   if ((unlocatedImages && !missingImages.length) || value.expectedImageCount > assets.length + missingImages.length) {
     missingImages.push({ page: null, role: "question", description: "模型发现图片未完整匹配", reason: "请对照原页检查漏图或不完整的裁剪框" });
   }
-  if (value.expectedImageCount < assets.length) throw new Error("原页图片数量与匹配结果矛盾，请重试");
+  if (value.expectedImageCount < assets.length) {
+    missingImages.push({ page: null, role: "question", description: `图片数量待核对：声明 ${value.expectedImageCount} 张，实际匹配 ${assets.length} 张`, reason: "已保留全部匹配图片，请对照原卷确认数量和归属" });
+  }
   const removedAssets: RemovedQuestionAsset[] = [];
   if (reviewInput) {
     const removedIds = new Set<string>();

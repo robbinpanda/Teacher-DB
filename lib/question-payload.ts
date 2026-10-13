@@ -20,6 +20,7 @@ function isBoundingBox(value: unknown): value is BoundingBox {
 }
 
 export function validateQuestionPayload(value: Record<string, unknown>): string | null {
+  if (value.extractionIssuesResolved !== undefined && typeof value.extractionIssuesResolved !== "boolean") return "识别异常处理状态无效";
   if (value.imageIssuesResolved !== undefined && typeof value.imageIssuesResolved !== "boolean") return "缺图处理状态无效";
   if (!isBoundedString(value.number, 20, false)) return "题号格式无效";
   if (typeof value.type !== "string" || !questionTypes.has(value.type)) return "题型无效";

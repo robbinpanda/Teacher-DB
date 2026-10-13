@@ -520,7 +520,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 4;
+export const DATABASE_VERSION = 5;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -563,6 +563,12 @@ function initialize() {
         UPDATE documents SET source_kind = 'generated' WHERE mime_type = 'application/x-jianti-generated';
         CREATE INDEX documents_paper_library_idx ON documents(owner_id, source_kind, paper_folder_id);
       `),
+    },
+    {
+      version: 5,
+      name: "question-extraction-issues",
+      checksum: "question-extraction-issues-v1",
+      up: sqlite => sqlite.exec("ALTER TABLE questions ADD COLUMN extraction_issues_json TEXT NOT NULL DEFAULT '[]'"),
     },
   ]);
   initialized = true;

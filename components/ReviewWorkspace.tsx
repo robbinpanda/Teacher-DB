@@ -766,6 +766,16 @@ export function ReviewWorkspace({
           </div>
 
           </section>
+          {!!active.extractionIssues?.length && <section className="review-editor-section" aria-label="本题识别异常">
+            <div role="alert"><strong>第 {active.number} 题识别异常 · 待人工核对</strong>
+              <p>其他题目可以继续审核。本题修正并确认后才能入库。</p>
+              {active.extractionIssues.map((issue, index) => <div key={index}>
+                <p>{issue.message}</p>
+                {issue.raw && <details><summary>查看本题原始返回</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 240, overflow: "auto" }}>{issue.raw}</pre></details>}
+              </div>)}
+            </div>
+            <button type="button" className="btn btn-small" onClick={() => patchActive({ extractionIssues: [], extractionIssuesResolved: true })}>已对照原卷修正并核对（保存后生效）</button>
+          </section>}
           <ReviewEditorSection id="review-image-corrections" title="图片修正" hint={active.missingImages?.length ? `${active.missingImages.length} 处待修正` : "手工调整"} open={correctionsOpen} onToggle={setCorrectionsOpen}>
 
             {!!active.missingImages?.length && <div role="alert">

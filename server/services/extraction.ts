@@ -7,7 +7,6 @@ import { getDb, getSqlite, sqliteTransaction } from "../../db";
 import { ensureDatabase } from "../../db/bootstrap";
 import { documents, extractionRuns } from "../../db/schema";
 import {
-  normalizeStreamedQuestion,
   wholeDocumentSystemPrompt,
   type WholeDocumentExtraction,
 } from "../../lib/document-extraction";
@@ -15,22 +14,22 @@ import { activateExtractionRun } from "../../lib/extraction-run";
 import { stageFromGrade } from "../../lib/education-taxonomy";
 import { deleteFile, getFile, putFile } from "../../lib/file-storage";
 import { detectAssetCandidates, annotateAssetCandidates } from "../../lib/asset-candidates";
-import { parseCandidateSelection, type PageAssetCandidate } from "../../lib/asset-review";
-import { mapCandidateImageMarkers } from "../../lib/analysis-images";
+import { type PageAssetCandidate } from "../../lib/asset-review";
+import { normalizeIsolatedQuestion, unresolvedQuestion } from "../../lib/question-extraction";
 import { assertDocumentLease, LostDocumentLeaseError } from "../../lib/job-lease";
 import { resolveModelProfile } from "../../lib/model-profiles";
 import { now } from "../../lib/server";
 import { getTagCatalog } from "../../lib/tag-catalog";
 import { callVisionModelStream, ModelCallError } from "../../lib/vision-model";
 import { ExtractionStreamParser, type ExtractionStreamRecord } from "../../lib/streaming-extraction";
-import type { Question } from "../../lib/types";
+import type { ExtractionIssue, Question } from "../../lib/types";
 import type { ModelCallTrace } from "../../lib/model-call-trace";
-import { readSourceQuestionInventory, validateExtractionQuestionNumbers } from "../../lib/source-question-inventory";
+import { readSourceQuestionInventory } from "../../lib/source-question-inventory";
 
 
 const MAX_PAGE_BYTES = 20 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 120 * 1024 * 1024;
-const PIPELINE_VERSION = "whole-document-candidates-v3";
+const PIPELINE_VERSION = "whole-document-candidates-v4";
 
 type SourcePage = {
   id: string;
@@ -72,10 +71,6 @@ async function prepareAssetCrops(input: {
   return createdKeys;
 }
 
-function placeholders(count: number) {
-  return Array.from({ length: count }, () => "?").join(",");
-}
-
 function persistStreamedQuestion(input: {
   documentId: string;
   workerId?: string;
@@ -91,6 +86,14 @@ function persistStreamedQuestion(input: {
       "SELECT id, status FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
     ).get(documentId, question.number) as { id: string; status: string } | undefined;
     const questionId = existing?.id ?? question.id;
+    question.id = questionId;
+    const preserveExisting = existing && question.extractionIssues?.some(issue => issue.code === "unreadable_question");
+    if (preserveExisting) {
+      if (existing.status !== "approved") transaction.prepare(
+        "UPDATE questions SET extraction_issues_json=?, status='needs_attention', needs_human_review=1, confidence=MIN(confidence,0.5), updated_at=? WHERE id=?",
+      ).run(JSON.stringify(question.extractionIssues), timestamp, existing.id);
+    }
+
     if (!existing) {
       transaction.prepare(
         `INSERT INTO questions
@@ -103,7 +106,7 @@ function persistStreamedQuestion(input: {
         JSON.stringify(question.bbox), question.status, question.needsHumanReview ? 1 : 0,
         question.confidence, timestamp, timestamp,
       );
-    } else if (existing.status !== "approved") {
+    } else if (existing.status !== "approved" && !preserveExisting) {
       transaction.prepare(
         `UPDATE questions SET type = ?, stem = ?, options_json = ?, answer = ?, analysis = ?,
            page_number = ?, bbox_json = ?, status = ?, needs_human_review = ?, confidence = ?,
@@ -114,9 +117,9 @@ function persistStreamedQuestion(input: {
         question.needsHumanReview ? 1 : 0, question.confidence, timestamp, questionId,
       );
     }
-    if (existing?.status !== "approved") {
-      transaction.prepare("UPDATE questions SET missing_images_json=? WHERE id=?")
-        .run(JSON.stringify(question.missingImages ?? []), questionId);
+    if (existing?.status !== "approved" && !preserveExisting) {
+      transaction.prepare("UPDATE questions SET missing_images_json=?, extraction_issues_json=? WHERE id=?")
+        .run(JSON.stringify(question.missingImages ?? []), JSON.stringify(question.extractionIssues ?? []), questionId);
       transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
       transaction.prepare("DELETE FROM question_assets WHERE question_id = ?").run(questionId);
       for (const [position, asset] of question.assets.entries()) {
@@ -193,72 +196,9 @@ function persistWholeDocumentResult(input: {
   profile: { id: string; provider: string; model: string };
   finishedAt: string;
 }) {
-  const { documentId, workerId, parsedContent, normalized, sourcePages, profile, finishedAt } = input;
+  const { documentId, workerId, parsedContent, normalized, profile, finishedAt } = input;
   sqliteTransaction((transaction) => {
     if (workerId) assertDocumentLease(transaction, documentId, workerId, finishedAt);
-    const numbers = normalized.questions.map((question) => question.number);
-    transaction.prepare(
-      `DELETE FROM questions WHERE document_id = ? AND status <> 'approved'
-         AND number NOT IN (${placeholders(numbers.length)})`,
-    ).run(documentId, ...numbers);
-
-    for (const question of normalized.questions) {
-      const existing = transaction.prepare(
-        "SELECT id, status FROM questions WHERE document_id = ? AND number = ? LIMIT 1",
-      ).get(documentId, question.number) as { id: string; status: string } | undefined;
-      const questionId = existing?.id ?? question.id;
-      if (!existing) {
-        transaction.prepare(
-          `INSERT INTO questions
-            (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json,
-             status, needs_human_review, confidence, score, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-        ).run(
-          questionId, documentId, question.number, question.type, question.stem,
-          JSON.stringify(question.options ?? []), question.answer, question.analysis, question.page,
-          JSON.stringify(question.bbox), question.status, question.needsHumanReview ? 1 : 0,
-          question.confidence, finishedAt, finishedAt,
-        );
-      } else if (existing.status !== "approved") {
-        transaction.prepare(
-          `UPDATE questions SET type = ?, stem = ?, options_json = ?, answer = ?, analysis = ?,
-             page_number = ?, bbox_json = ?, status = ?, needs_human_review = ?, confidence = ?,
-             score = 0, updated_at = ? WHERE id = ?`,
-        ).run(
-          question.type, question.stem, JSON.stringify(question.options ?? []), question.answer,
-          question.analysis, question.page, JSON.stringify(question.bbox), question.status,
-          question.needsHumanReview ? 1 : 0, question.confidence, finishedAt, questionId,
-        );
-      }
-      if (existing?.status === "approved") continue;
-      transaction.prepare("UPDATE questions SET missing_images_json=? WHERE id=?")
-        .run(JSON.stringify(question.missingImages ?? []), questionId);
-
-      // AI 不再写题目范围；question_regions 只保存教师手动框选结果。
-      transaction.prepare("DELETE FROM question_regions WHERE question_id = ?").run(questionId);
-      transaction.prepare("DELETE FROM question_assets WHERE question_id = ?").run(questionId);
-      for (const [position, asset] of question.assets.entries()) {
-        const page = sourcePages.find((candidate) => candidate.pageNumber === asset.page);
-        transaction.prepare(
-          `INSERT INTO question_assets
-            (id, question_id, page_id, kind, role, label, source_key, crop_key, bbox_json, position, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(
-          asset.id, questionId, page?.id ?? null, asset.kind, asset.role, asset.label,
-          asset.sourceKey ?? page?.storageKey ?? null, asset.cropKey ?? null,
-          JSON.stringify(asset.bbox), position, finishedAt,
-        );
-      }
-      transaction.prepare("DELETE FROM question_tags WHERE question_id = ?").run(questionId);
-      for (const name of question.tags) {
-        transaction.prepare("INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?, ?, ?)")
-          .run(crypto.randomUUID(), name, finishedAt);
-        transaction.prepare(
-          "INSERT OR IGNORE INTO question_tags (question_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
-        ).run(questionId, name);
-      }
-    }
-
     const rawJson = JSON.stringify({
       ...(parsedContent as Record<string, unknown>),
       _pipeline: { version: PIPELINE_VERSION, ...normalized.diagnostics },
@@ -416,33 +356,13 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     let receivedDone = false;
     let lastActivityWrite = 0;
 
-    const handleRecord = async (record: ExtractionStreamRecord) => {
-      modelTrace?.event("extraction-event", record);
-      if (record.event === "meta") {
-        if (questionTotal !== null) throw new Error("模型重复输出 meta 事件");
-        modelDeclaredTotal = record.questionCount;
-        questionTotal = sourceInventory?.questionCount ?? record.questionCount;
-        documentMeta = record.documentMeta ?? {};
-        updateStreamMeta({ documentId, workerId: payload.workerId, questionTotal, modelDeclaredTotal, documentMeta, timestamp: now() });
+    const streamIssues: ExtractionIssue[] = [];
+    const saveQuestion = async (question: Question, raw: Record<string, unknown>) => {
+      if (completedNumbers.has(question.number)) {
+        const first = streamedQuestions.get(question.number)!;
+        first.extractionIssues = [...(first.extractionIssues ?? []), { code: "duplicate_question", message: "模型重复输出本题，保留首次结果，请核对", raw: JSON.stringify(raw) }];
         return;
       }
-      if (record.event === "done") {
-        if (receivedDone) throw new Error("模型重复输出 done 事件");
-        receivedDone = true;
-        return;
-      }
-      if (receivedDone) throw new Error("模型在 done 事件后仍输出题目");
-      if (questionTotal === null) throw new Error("模型必须先输出题目总数，再输出各题");
-      const selection = parseCandidateSelection(JSON.stringify(record.question), candidates, sourcePages.map((page) => page.pageNumber));
-      const question = normalizeStreamedQuestion({ ...record.question, analysis: mapCandidateImageMarkers(String(record.question.analysis ?? ""), selection.answerCandidateIds), assets: selection.assets, missingImages: selection.missingImages, confidence: selection.confidence, needsHumanReview: selection.needsHumanReview }, {
-        pageCount: sourcePages.length,
-        allowedTags,
-      });
-      question.missingImages = selection.missingImages;
-      if (Number(question.number) > questionTotal) {
-        throw new Error(`模型输出第 ${question.number} 题，超过已声明的 ${questionTotal} 题`);
-      }
-      if (completedNumbers.has(question.number)) throw new Error(`模型重复输出第 ${question.number} 题`);
       const createdCropKeys = await prepareAssetCrops({
         documentId,
         questions: [question],
@@ -466,8 +386,45 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
         await Promise.allSettled(createdCropKeys.map((key) => deleteFile(key)));
         throw error;
       }
-      rawQuestions.set(question.number, record.question);
+      rawQuestions.set(question.number, { ...raw, _extractionIssues: question.extractionIssues ?? [] });
       streamedQuestions.set(question.number, question);
+    };
+
+    const handleRecord = async (record: ExtractionStreamRecord) => {
+      modelTrace?.event("extraction-event", record);
+      if (record.event === "meta") {
+        if (questionTotal !== null) {
+          streamIssues.push({ code: "duplicate_meta", message: "模型重复输出 meta，保留首次题数", raw: JSON.stringify(record) });
+          return;
+        }
+        modelDeclaredTotal = record.questionCount;
+        questionTotal = sourceInventory?.questionCount ?? record.questionCount;
+        documentMeta = record.documentMeta ?? {};
+        updateStreamMeta({ documentId, workerId: payload.workerId, questionTotal, modelDeclaredTotal, documentMeta, timestamp: now() });
+        return;
+      }
+      if (record.event === "done") {
+        if (receivedDone) streamIssues.push({ code: "duplicate_done", message: "模型重复输出结束事件" });
+        receivedDone = true;
+        return;
+      }
+      const number = record.event === "question" ? String(record.question.number ?? "").trim() : record.number;
+      // Unknown identities are retained at run level; never attach them to a guessed question.
+      if (!number || !/^[1-9]\d{0,2}$/.test(number)) {
+        streamIssues.push({ code: "unassigned_event", message: record.event === "issue" ? record.message : "题号非法，未猜测归属", raw: record.event === "issue" ? record.raw : JSON.stringify(record) });
+        return;
+      }
+      if (record.event === "issue") {
+        const page = sourceInventory?.questions.find(item => item.number === number)?.firstLinePage ?? 1;
+        await saveQuestion(unresolvedQuestion(number, page, record.message, record.raw), { number, raw: record.raw });
+        return;
+      }
+      const issues: ExtractionIssue[] = [];
+      if (record.warning) issues.push({ code: "repaired_json", message: record.warning, raw: record.raw });
+      if (receivedDone) issues.push({ code: "after_done", message: "本题在结束事件后返回，请核对是否重复或多出" });
+      if (questionTotal !== null && Number(number) > questionTotal) issues.push({ code: "unexpected_number", message: `题号超过预期的 ${questionTotal} 题，请对照原卷确认` });
+      const question = normalizeIsolatedQuestion(record.question, { candidates, pageCount: sourcePages.length, allowedTags, issues });
+      await saveQuestion(question, record.question);
     };
 
     const teachingSkill = await snapshotTeachingSkill(ownerId, ownedDocument.subject || "数学", ownedDocument.grade || "", documentId, activeRun.id);
@@ -515,20 +472,39 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       },
     });
     for (const record of parser.finish()) await handleRecord(record);
-    if (questionTotal === null) throw new Error("模型流结束时仍未输出题目总数");
-    if (!receivedDone) throw new Error("模型流未输出 done 事件");
+    if (!completedNumbers.size && !sourceInventory && questionTotal === null) throw new Error("模型未返回任何可定位的题目，请检查原始返回");
+    questionTotal ??= sourceInventory?.questionCount ?? Math.max(...Array.from(completedNumbers, Number));
+    if (!receivedDone) streamIssues.push({ code: "missing_done", message: "模型未输出结束事件，请核对题目完整性" });
+    const missingNumbers = Array.from({ length: questionTotal }, (_, index) => index + 1).filter(number => !completedNumbers.has(String(number)));
+    for (const number of missingNumbers) {
+      const page = sourceInventory?.questions.find(item => item.number === String(number))?.firstLinePage ?? 1;
+      await saveQuestion(unresolvedQuestion(String(number), page, "模型未返回本题的可用内容，请对照原卷补录"), { number: String(number), missing: true });
+    }
+    // Persist late, question-specific diagnostics (for example a duplicate question).
+    // Protocol-only warnings are retained in the run and do not invalidate good questions.
+    for (const question of streamedQuestions.values()) {
+      if (!question.extractionIssues?.length) continue;
+      question.needsHumanReview = true; question.status = "needs_attention";
+      question.confidence = Math.min(question.confidence, 0.65);
+      sqliteTransaction(transaction => {
+        if (payload.workerId) assertDocumentLease(transaction, documentId, payload.workerId, now());
+        transaction.prepare("UPDATE questions SET extraction_issues_json=?, needs_human_review=1, status='needs_attention', confidence=MIN(confidence,0.65) WHERE document_id=? AND number=? AND status<>'approved'")
+          .run(JSON.stringify(question.extractionIssues), documentId, question.number);
+      });
+      rawQuestions.set(question.number, { ...rawQuestions.get(question.number), _extractionIssues: question.extractionIssues });
+    }
     const orderedNumbers = Array.from(completedNumbers).sort((left, right) => Number(left) - Number(right));
-    validateExtractionQuestionNumbers(questionTotal, orderedNumbers);
     const normalized: WholeDocumentExtraction = {
       questions: orderedNumbers.map((number) => streamedQuestions.get(number)!),
       documentMeta,
       diagnostics: {
         acceptedQuestionNumbers: orderedNumbers,
         discardedQuestionNumbers: [],
-        missingQuestionNumbers: [],
+        missingQuestionNumbers: missingNumbers,
       },
     };
     const parsedContent = {
+      streamIssues,
       documentMeta,
       questions: orderedNumbers.map((number) => rawQuestions.get(number)),
     };

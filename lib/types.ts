@@ -36,7 +36,11 @@ export type QuestionAsset = {
 
 export type MissingQuestionImage = { page: number | null; role: "question" | "answer"; description: string; reason: string };
 
+export type ExtractionIssue = { code: string; message: string; raw?: string };
+
 export type Question = {
+  extractionIssues?: ExtractionIssue[];
+  extractionIssuesResolved?: boolean;
   missingImages?: MissingQuestionImage[];
   imageIssuesResolved?: boolean;
   id: string;
