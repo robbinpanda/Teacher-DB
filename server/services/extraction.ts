@@ -93,8 +93,8 @@ function persistStreamedQuestion(input: {
     const preserveExisting = existing && question.extractionIssues?.some(issue => issue.code === "unreadable_question");
     if (preserveExisting) {
       if (existing.status !== "approved") transaction.prepare(
-        "UPDATE questions SET extraction_issues_json=?, status='needs_attention', needs_human_review=1, confidence=MIN(confidence,0.5), updated_at=? WHERE id=?",
-      ).run(JSON.stringify(question.extractionIssues), timestamp, existing.id);
+        "UPDATE questions SET extraction_issues_json=?, status=?, needs_human_review=?, confidence=MIN(confidence,0.5), updated_at=? WHERE id=?",
+      ).run(JSON.stringify(question.extractionIssues), question.status, question.needsHumanReview ? 1 : 0, timestamp, existing.id);
     }
 
     if (!existing) {
@@ -378,6 +378,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       });
       question.confidence = 0; // Legacy DB field only; no model score is requested or used.
       question.aiReview = aiReviewEnabled ? createQuestionReview(question, raw, sourcePages.length, profile.id, sourceInventory, profile.model) : null;
+      if (!aiReviewEnabled) { question.needsHumanReview = false; question.status = "pending"; }
       completedNumbers.add(question.number);
       const orderedCompleted = Array.from(completedNumbers).sort((left, right) => Number(left) - Number(right));
       try {
@@ -504,12 +505,12 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     // Protocol-only warnings are retained in the run and do not invalidate good questions.
     for (const question of streamedQuestions.values()) {
       if (!question.extractionIssues?.length) continue;
-      question.needsHumanReview = true; question.status = "needs_attention";
+      question.needsHumanReview = aiReviewEnabled; question.status = aiReviewEnabled ? "needs_attention" : "pending";
       question.confidence = Math.min(question.confidence, 0.65);
       sqliteTransaction(transaction => {
         if (payload.workerId) assertDocumentLease(transaction, documentId, payload.workerId, now());
-        transaction.prepare("UPDATE questions SET extraction_issues_json=?, needs_human_review=1, status='needs_attention', confidence=MIN(confidence,0.65) WHERE document_id=? AND number=? AND status<>'approved'")
-          .run(JSON.stringify(question.extractionIssues), documentId, question.number);
+        transaction.prepare("UPDATE questions SET extraction_issues_json=?, needs_human_review=?, status=?, confidence=MIN(confidence,0.65) WHERE document_id=? AND number=? AND status<>'approved'")
+          .run(JSON.stringify(question.extractionIssues), aiReviewEnabled ? 1 : 0, aiReviewEnabled ? "needs_attention" : "pending", documentId, question.number);
       });
       rawQuestions.set(question.number, { ...rawQuestions.get(question.number), _extractionIssues: question.extractionIssues });
     }

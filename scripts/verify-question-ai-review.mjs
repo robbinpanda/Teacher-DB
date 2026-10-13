@@ -24,9 +24,10 @@ let extractionCalls = 0, concurrent = 0, peak = 0;
 let concurrentProgress;
 const reviewRequests = [];
 let override, pause;
+let recognitionWarns = true;
 const rawQuestion = number => ({ number: String(number), type: "fill", stem: `唯一题干_${number}`, options: [], answer: "2", analysis: "原卷解析",
   sourcePages: [1], answerPages: [3], firstLinePage: 1, assets: [], uniqueImageCount: 0, selectedImageCount: 0,
-  answerSource: "answer", uncertainties: [], missingImages: [], unlocatedImages: false, needsHumanReview: false, tags: [] });
+  answerSource: "answer", uncertainties: [], missingImages: [], unlocatedImages: false, needsHumanReview: recognitionWarns, tags: [] });
 const server = createServer(async (req, res) => {
   let body = ""; for await (const chunk of req) body += chunk;
   const request = JSON.parse(body);
@@ -87,11 +88,14 @@ try {
   assert.equal(withoutReview.status, 200, JSON.stringify(withoutReview.body));
   assert.equal(reviewRequests.length, 0, "default-off makes no secondary model calls");
   assert.ok(withoutReview.body.questions.every(q => q.aiReview == null && !q.needsHumanReview));
+  assert.equal((await finalizeDocument("local-demo", id)).status, 200);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM questions WHERE needs_human_review<>0 OR status<>'pending'").get().n, 0);
   assert.equal((await getDocuments("local-demo")).find(doc => doc.id === id).aiReviewEnabled, false);
   db.prepare("DELETE FROM questions WHERE document_id=?").run(id);
   db.prepare("UPDATE extraction_runs SET status='queued' WHERE document_id=?").run(id);
   db.prepare("UPDATE document_jobs SET completed_question_numbers_json='[]',question_total=NULL WHERE document_id=?").run(id);
   extractionCalls = 0;
+  recognitionWarns = false;
   await setAutomaticAiReviewEnabled("local-demo", true);
   assert.equal(automaticAiReviewEnabled("other-owner"), false, "settings are owner-scoped");
   checkConcurrentProgress = true;
@@ -208,6 +212,13 @@ try {
   const retained = loadQuestionForAiReview("local-demo", current.id).question;
   assert.equal(retained.stem, "教师新内容"); assert.equal(retained.aiReview.status, "stale");
   await setAutomaticAiReviewEnabled("local-demo", false);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM questions WHERE document_id=? AND (needs_human_review<>0 OR status<>'pending')").get(id).n, 0, "disabling releases existing review flags");
+  const warned = loadQuestionForAiReview("local-demo", questions[2].id).question;
+  const warnedSave = await saveQuestion("local-demo", warned.id, { ...warned, needsHumanReview: true, status: "needs_attention" });
+  assert.equal(warnedSave.status, 200);
+  assert.equal(warnedSave.body.question.needsHumanReview, false);
+  assert.equal(warnedSave.body.question.status, "pending");
+  assert.ok(warnedSave.body.question.extractionIssues.length, "diagnostic evidence remains without blocking bank entry");
   const beforeOffSave = reviewRequests.length;
   const offQuestion = loadQuestionForAiReview("local-demo", questions[0].id).question;
   const offSave = await saveQuestion("local-demo", offQuestion.id, { ...offQuestion, stem: "关闭复核后的编辑" });

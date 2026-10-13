@@ -2,6 +2,7 @@ import { sqliteTransaction } from "../../../../../../../db";
 import { ensureDatabase } from "../../../../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../../../../lib/server";
 import { getDocumentIntegrity, integrityError } from "../../../../../../../lib/document-integrity";
+import { automaticAiReviewEnabled } from "../../../../../../../lib/ai-review-settings";
 
 
 export async function POST(request: Request, context: { params: Promise<{ documentId: string }> }) {
@@ -27,9 +28,9 @@ export async function POST(request: Request, context: { params: Promise<{ docume
     }
     const result = payload.action === "approve_without_review"
       ? transaction.prepare(
-          `UPDATE questions SET status = 'approved', updated_at = ?
-            WHERE document_id = ? AND needs_human_review = 0 AND status = 'pending'`,
-        ).run(timestamp, documentId)
+          `UPDATE questions SET status = 'approved', needs_human_review = 0, updated_at = ?
+            WHERE document_id = ? AND status <> 'approved' AND (? = 1 OR (needs_human_review = 0 AND status = 'pending'))`,
+        ).run(timestamp, documentId, automaticAiReviewEnabled(ownerId) ? 0 : 1)
       : transaction.prepare(
           `UPDATE questions SET status = 'pending', updated_at = ?
             WHERE document_id = ? AND status = 'approved'`,
@@ -50,12 +51,15 @@ export async function POST(request: Request, context: { params: Promise<{ docume
               SUM(CASE WHEN status <> 'approved' AND (needs_human_review IS NULL OR needs_human_review <> 0) THEN 1 ELSE 0 END) AS reviewRequired
          FROM questions WHERE document_id = ?`,
     ).get(documentId) as { total: number; approved: number | null; reviewRequired: number | null };
-    return { changed: result.changes, counts } as const;
+    const approvedIds = transaction.prepare("SELECT id FROM questions WHERE document_id=? AND status='approved'")
+      .pluck().all(documentId) as string[];
+    return { changed: result.changes, counts, approvedIds } as const;
   });
   if ("error" in outcome) return Response.json({ error: outcome.error }, { status: outcome.statusCode });
   return Response.json({
     action: payload.action,
     changed: outcome.changed,
+    approvedIds: outcome.approvedIds,
     total: outcome.counts.total,
     approved: outcome.counts.approved ?? 0,
     reviewRequired: outcome.counts.reviewRequired ?? 0,

@@ -5,6 +5,7 @@ import { now } from "../../lib/server";
 import { getDocumentIntegrity, integrityError } from "../../lib/document-integrity";
 import { assertDocumentLease, LostDocumentLeaseError } from "../../lib/job-lease";
 import { finalizeDocumentState, unresolvedAnswerUpdateNumbers } from "../../lib/document-finalization";
+import { automaticAiReviewEnabled, clearDocumentReviewRequirements } from "../../lib/ai-review-settings";
 
 
 type AnswerUpdate = { number?: unknown; answer?: unknown; analysis?: unknown; confidence?: unknown; needsHumanReview?: unknown };
@@ -19,8 +20,8 @@ export async function finalizeDocument(ownerId: string, documentId: string, work
   const document = sqlite.prepare("SELECT id FROM documents WHERE id = ? AND owner_id = ?").get(documentId, ownerId);
   if (!document) return result({ error: "文档不存在" }, { status: 404 });
   const activeJob = sqlite.prepare(
-    "SELECT status, lease_owner AS leaseOwner FROM document_jobs WHERE document_id = ?",
-  ).get(documentId) as { status: string; leaseOwner: string | null } | undefined;
+    "SELECT status, lease_owner AS leaseOwner, ai_review_enabled AS aiReviewEnabled FROM document_jobs WHERE document_id = ?",
+  ).get(documentId) as { status: string; leaseOwner: string | null; aiReviewEnabled: number } | undefined;
   if (activeJob?.status === "processing" && !workerId) {
     return result({ error: "识别任务仍在运行，只有持有当前租约的 worker 可以收尾", code: "worker_required" }, { status: 409 });
   }
@@ -84,6 +85,10 @@ export async function finalizeDocument(ownerId: string, documentId: string, work
     // Replaying raw model JSON here can overwrite a repaired question with stale or
     // historically misnumbered content, so finalization is deliberately state-only.
     finalizeDocumentState(transaction, { documentId, terminalError, timestamp });
+    if (!terminalError && (activeJob?.aiReviewEnabled === 0 || !automaticAiReviewEnabled(ownerId))) {
+      clearDocumentReviewRequirements(transaction, documentId, timestamp);
+      transaction.prepare("UPDATE document_jobs SET stream_message='整卷识别完成，可一键全部入库' WHERE document_id=?").run(documentId);
+    }
     });
   } catch (error) {
     if (error instanceof LostDocumentLeaseError) return result({ error: error.message, code: error.code }, { status: 409 });

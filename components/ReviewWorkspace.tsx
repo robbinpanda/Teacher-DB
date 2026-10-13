@@ -546,14 +546,15 @@ export function ReviewWorkspace({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const result = await response.json().catch(() => ({})) as { error?: string; changed?: number; reviewRequired?: number };
+      const result = await response.json().catch(() => ({})) as { error?: string; changed?: number; reviewRequired?: number; approvedIds?: string[] };
       if (!response.ok) throw new Error(result.error ?? (response.status === 404
         ? "批量操作接口未找到（HTTP 404），请重启题库服务后重试"
         : `批量操作失败（HTTP ${response.status}），请稍后重试或查看服务日志`));
       if (action === "approve_without_review") {
-        setQuestions((items) => items.map((item) => !item.needsHumanReview && item.status === "pending" ? { ...item, status: "approved" } : item));
+        const approvedIds = new Set(result.approvedIds ?? []);
+        setQuestions((items) => items.map((item) => approvedIds.has(item.id) ? { ...item, status: "approved", needsHumanReview: false } : item));
         setShowUnapprovedSummary(true);
-        setBulkNotice(`已入库 ${result.changed ?? 0} 道模型明确判定无需核查的题目${result.reviewRequired ? `；另有 ${result.reviewRequired} 道需要人工核查` : ""}`);
+        setBulkNotice(`已入库 ${result.changed ?? 0} 道题目${result.reviewRequired ? `；另有 ${result.reviewRequired} 道需要人工核查` : ""}`);
       } else {
         setQuestions((items) => items.map((item) => item.status === "approved" ? { ...item, status: "pending" } : item));
         setShowUnapprovedSummary(false);

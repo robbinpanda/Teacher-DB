@@ -11,6 +11,7 @@ import {
 import { deleteFile } from "../../../../../lib/file-storage";
 import { getDocumentIntegrity, integrityError } from "../../../../../lib/document-integrity";
 import { now, requestOwner } from "../../../../../lib/server";
+import { automaticAiReviewEnabled } from "../../../../../lib/ai-review-settings";
 
 
 export async function POST(request: Request) {
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
       const outcome = sqliteTransaction((transaction) => {
         const input = {
           ownerId,
+          skipHumanReview: !automaticAiReviewEnabled(ownerId),
           timestamp,
           reviewReadinessError: (documentId: string) => {
             const integrity = getDocumentIntegrity(transaction, documentId)!;

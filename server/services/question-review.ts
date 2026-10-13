@@ -128,22 +128,27 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
         throw new QuestionIntegrityError("原试卷已删除或题目已不存在，不能保存本次修改");
       }
       const before = loadQuestionForAiReview(ownerId, questionId)?.question;
+      const reviewEnabled = automaticAiReviewEnabled(ownerId);
+      if (!reviewEnabled) {
+        payload.needsHumanReview = false;
+        if (payload.status !== "approved") payload.status = "pending";
+      }
       // The client cannot author an AI verdict. Invalidate only when audited content changes.
       if (before?.aiReview && questionReviewContentKey(before) !== questionReviewContentKey({ ...payload,
         page: primaryRegion.page, assets: preparedAssets.map(({ asset, box }) => ({ ...asset, bbox: box })) })) {
-        reviewAfterSave = payload.status !== "approved" && automaticAiReviewEnabled(ownerId);
+        reviewAfterSave = payload.status !== "approved" && reviewEnabled;
         const nextReview = { ...before.aiReview, mode: "saved_content_v1", categories: [], status: reviewAfterSave ? "pending" : "stale",
           token: crypto.randomUUID(), startedAt: new Date().toISOString(), reviewedAt: undefined, traceId: undefined, error: undefined };
         transaction.prepare("UPDATE questions SET ai_review_json=? WHERE id=?").run(JSON.stringify(nextReview), questionId);
       }
       const issues = transaction.prepare("SELECT missing_images_json AS issues, extraction_issues_json AS extractionIssues, confidence, needs_human_review AS needsHumanReview FROM questions WHERE id=?").get(questionId) as { issues: string; extractionIssues: string; confidence: number; needsHumanReview: number };
-      if (issues.extractionIssues !== "[]" && payload.extractionIssuesResolved !== true) {
+      if (reviewEnabled && issues.extractionIssues !== "[]" && payload.extractionIssuesResolved !== true) {
         if (payload.status === "approved") throw new QuestionIntegrityError("本题仍有识别异常，请对照原卷修正并标记已核对后再入库");
         payload.needsHumanReview = true;
         payload.status = "needs_attention";
       }
       if (payload.extractionIssuesResolved === true) transaction.prepare("UPDATE questions SET extraction_issues_json='[]' WHERE id=?").run(questionId);
-      if (issues.needsHumanReview && payload.status !== "approved") {
+      if (reviewEnabled && issues.needsHumanReview && payload.status !== "approved") {
         payload.needsHumanReview = true;
         payload.status = "needs_attention";
       }
@@ -154,7 +159,7 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
       // A stale open editor must not restore a score already lowered by an AI defect report.
       payload.confidence = extractionConfidence(issues.needsHumanReview ? Math.min(payload.confidence, issues.confidence) : payload.confidence,
         { needsHumanReview: payload.needsHumanReview, missingImages: issues.issues !== "[]" && payload.imageIssuesResolved !== true });
-      if (issues.issues !== "[]" && payload.imageIssuesResolved !== true) {
+      if (reviewEnabled && issues.issues !== "[]" && payload.imageIssuesResolved !== true) {
         if (payload.status === "approved") throw new QuestionIntegrityError("本题仍有缺图反馈，请补图或确认无需图片后标记已处理，再审核通过");
         payload.needsHumanReview = true;
         payload.status = "needs_attention";

@@ -50,6 +50,7 @@ test("列表外层一键入库，无需勾选；全部可入库后自动切换�
 test("一键入库保留需复核题目，完整性异常单独提示且不阻止其他试卷", async ({ page }) => {
   const ready = fixture(), mixed = fixture({ review: true }), incomplete = fixture({ incomplete: true });
   try {
+    await page.request.patch("/api/extraction-queue", { data: { automaticAiReviewEnabled: true } });
     await page.goto("/");
     await page.getByRole("tab", { name: /待审核/ }).click();
     await page.getByRole("button", { name: "一键全部入库", exact: true }).click();
@@ -62,5 +63,39 @@ test("一键入库保留需复核题目，完整性异常单独提示且不阻�
     expect(incomplete.db.prepare("SELECT status FROM questions WHERE document_id = ?").pluck().get(incomplete.id)).toBe("pending");
     await page.getByRole("tab", { name: /已入库/ }).click();
     await expect(page.locator('.document-main strong', { hasText: ready.name })).toBeVisible();
-  } finally { ready.close(); mixed.close(); incomplete.close(); }
+  } finally {
+    ready.close(); mixed.close(); incomplete.close();
+    await page.request.patch("/api/extraction-queue", { data: { automaticAiReviewEnabled: false } });
+  }
+});
+
+test("外层全选与取消全选，关闭复核可批量入库旧的需核查题目", async ({ page }) => {
+  const mixed = fixture({ review: true }), other = fixture({ owner: "other-teacher", review: true });
+  try {
+    await page.goto("/");
+    await page.getByRole("tab", { name: /待审核/ }).click();
+    await expect(page.locator('.document-selector')).toHaveCount(0);
+    await page.getByRole("button", { name: "全选", exact: true }).click();
+    await expect(page.locator('.document-selector input:checked')).toHaveCount(1);
+    await page.getByRole("button", { name: "取消全选", exact: true }).click();
+    await expect(page.locator('.document-selector input:checked')).toHaveCount(0);
+    await page.getByRole("button", { name: "全选", exact: true }).click();
+    await page.getByRole("button", { name: "完成并自动入库", exact: true }).click();
+    await expect(page.locator('.document-bulk-notice')).toContainText("2 道");
+    expect(mixed.db.prepare("SELECT status FROM questions WHERE document_id=?").pluck().all(mixed.id)).toEqual(["approved", "approved"]);
+    expect(other.db.prepare("SELECT needs_human_review FROM questions WHERE document_id=? ORDER BY number").pluck().all(other.id)).toEqual([0, 1]);
+  } finally { mixed.close(); other.close(); }
+});
+
+test("关闭复核时单卷批量入库返回所有入库题目，未完成试卷仍受完整性保护", async ({ page }) => {
+  const mixed = fixture({ review: true }), incomplete = fixture({ incomplete: true });
+  try {
+    const response = await page.request.post(`/api/documents/${mixed.id}/questions/bulk`, { data: { action: "approve_without_review" } });
+    expect(response.status()).toBe(200);
+    const result = await response.json();
+    expect(result.changed).toBe(2);
+    expect(new Set(result.approvedIds)).toEqual(new Set(mixed.questionIds));
+    const blocked = await page.request.post(`/api/documents/${incomplete.id}/questions/bulk`, { data: { action: "approve_without_review" } });
+    expect(blocked.status()).toBe(409);
+  } finally { mixed.close(); incomplete.close(); }
 });

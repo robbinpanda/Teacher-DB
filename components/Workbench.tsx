@@ -13,6 +13,7 @@ import { UploadWorkbench } from "./UploadWorkbench";
 import { AutomaticAiReviewToggle } from "./AutomaticAiReviewToggle";
 
 type QueueControlState = {
+  automaticAiReviewEnabled: boolean;
   paused: boolean;
   pauseReason: string | null;
   pausedCount: number;
@@ -45,7 +46,7 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
   const [batchWarning, setBatchWarning] = useState("");
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
-  const [queueState, setQueueState] = useState<QueueControlState>({ paused: false, pauseReason: null, pausedCount: 0, activeCount: 0, queuedCount: 0 });
+  const [queueState, setQueueState] = useState<QueueControlState>({ automaticAiReviewEnabled: false, paused: false, pauseReason: null, pausedCount: 0, activeCount: 0, queuedCount: 0 });
   const [queueBusy, setQueueBusy] = useState(false);
 
   useEffect(() => {
@@ -65,6 +66,7 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
         if (!cancelled && version === listVersionRef.current) {
           setDocuments(result.documents);
           setQueueState({
+            automaticAiReviewEnabled: queue.automaticAiReviewEnabled === true,
             paused: Boolean(queue.paused),
             pauseReason: queue.pauseReason ?? null,
             pausedCount: Number(queue.pausedCount ?? 0),
@@ -172,7 +174,7 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
   }
 
   async function approveDocuments(allPending = false) {
-    const documentIds = Array.from(selectedIds);
+    const documentIds = documents.filter(document => selectedIds.has(document.id) && documentGroup(document) === "pending_review").map(document => document.id);
     if (approvingRef.current || (!allPending && !documentIds.length)) return;
     approvingRef.current = true;
     listVersionRef.current += 1;
@@ -312,20 +314,21 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
         <div className="wb-tools">
           <label className="wb-search"><Search size={15} /><input type="search" aria-label="搜索试卷名称" placeholder="搜索试卷名称" value={search} disabled={busy} onChange={event => { setSearch(event.target.value); setSelectedIds(new Set()); }} /></label>
           <select className="wb-sort" aria-label="试卷排序" value={sort} onChange={event => setSort(event.target.value as DocumentSort)}><option value="newest">上传时间：最新</option><option value="oldest">上传时间：最早</option><option value="name">试卷名称</option></select>
+          {activeDocuments.length > 0 && <button className="wb-button" type="button" disabled={busy} onClick={() => { setSelectionMode(true); setSelectedIds(allActiveSelected ? new Set() : new Set(activeDocuments.map(document => document.id))); setBatchNotice(""); }}>{allActiveSelected ? "取消全选" : "全选"}</button>}
           {!selectionMode && activeDocuments.length > 0 && <button className="wb-button" type="button" disabled={busy} onClick={() => { setSelectionMode(true); setBatchNotice(""); }}><ListChecks size={15} />批量操作</button>}
         </div>
       </div>
       <section id="document-status-panel" role="tabpanel" aria-labelledby={`document-tab-${activeGroup}`}>
         {(selectionMode || (activeGroup === "pending_review" && !search.trim() && activeDocuments.length > 0) || (activeGroup === "preprocessing" && activeDocuments.length > 0)) && <div className="wb-bulkbar">
           {selectionMode ? <>
-            <button className="wb-text-button" type="button" disabled={busy} onClick={() => setSelectedIds(allActiveSelected ? new Set() : new Set(activeDocuments.map(document => document.id)))}>{allActiveSelected ? "取消全选" : "全选"}</button><span>已选 {selectedIds.size} 份</span>
+            <span>已选 {selectedIds.size} 份</span>
             <div className="wb-bulk-actions">
-              {selectedDocuments.length > 0 && selectedDocuments.every(document => documentGroup(document) === "pending_review") && <button className="wb-button" type="button" disabled={busy} onClick={() => void approveDocuments()}><Check size={14} />{batchAction === "approve" ? "入库中…" : "完成并自动入库"}</button>}
+              {selectedDocuments.some(document => documentGroup(document) === "pending_review") && <button className="wb-button" type="button" disabled={busy} onClick={() => void approveDocuments()}><Check size={14} />{batchAction === "approve" ? "入库中…" : "完成并自动入库"}</button>}
               <button className="wb-button wb-danger-text" type="button" disabled={!selectedIds.size || busy} onClick={() => { setBatchDeleteOpen(true); setError(""); }}>批量删除</button>
               <button className="wb-text-button" type="button" disabled={busy} onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}>取消</button>
             </div>
           </> : <>
-            <span>{activeGroup === "pending_review" ? "仅自动入库无需人工核查的题目" : queueState.paused ? "识别队列已暂停" : "后台识别队列"}</span>
+            <span>{activeGroup === "pending_review" ? queueState.automaticAiReviewEnabled ? "仅自动入库无需人工核查的题目" : "AI 复核已关闭，全部题目可一键入库" : queueState.paused ? "识别队列已暂停" : "后台识别队列"}</span>
             {activeGroup === "pending_review" && <button className="wb-button" type="button" disabled={busy} onClick={() => void approveDocuments(true)}>{batchAction === "approve_all" ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />}{batchAction === "approve_all" ? "全部入库中…" : "一键全部入库"}</button>}
             {activeGroup === "preprocessing" && <button className="wb-button" type="button" disabled={queueBusy} onClick={() => void controlQueue(queueState.paused ? "resume" : "pause")}>{queueBusy ? <LoaderCircle size={14} className="spin" /> : queueState.paused ? <Play size={14} /> : <Pause size={14} />}{queueState.paused ? "全部开始" : "全部暂停"}</button>}
           </>}

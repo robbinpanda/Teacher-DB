@@ -39,6 +39,7 @@ export function approveDocumentsWithoutReview(
   input: {
     ownerId: string;
     documentIds: string[];
+    skipHumanReview?: boolean;
     timestamp: string;
     reviewReadinessError: (documentId: string) => string | null;
   },
@@ -54,9 +55,9 @@ export function approveDocumentsWithoutReview(
   let changed = 0;
   const documents = selected.map((document) => {
     changed += sqlite.prepare(
-      `UPDATE questions SET status = 'approved', updated_at = ?
-        WHERE document_id = ? AND needs_human_review = 0 AND status = 'pending'`,
-    ).run(input.timestamp, document.id).changes;
+      `UPDATE questions SET status = 'approved', needs_human_review = 0, updated_at = ?
+        WHERE document_id = ? AND status <> 'approved' AND (? = 1 OR (needs_human_review = 0 AND status = 'pending'))`,
+    ).run(input.timestamp, document.id, input.skipHumanReview ? 1 : 0).changes;
     const counts = sqlite.prepare(
       `SELECT COUNT(*) AS total,
               COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END), 0) AS approved,
@@ -75,6 +76,7 @@ export function approveAllDocumentsWithoutReview(
   sqlite: Database.Database,
   input: {
     ownerId: string;
+    skipHumanReview?: boolean;
     timestamp: string;
     reviewReadinessError: (documentId: string) => string | null;
   },

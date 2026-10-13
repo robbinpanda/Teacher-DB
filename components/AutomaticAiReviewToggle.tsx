@@ -34,7 +34,7 @@ export function AutomaticAiReviewToggle() {
 
   return <div className="wb-ai-review-setting">
     <button type="button" role="switch" aria-label="独立 AI 复核" aria-checked={enabled} disabled={busy}
-      className="wb-button" title="默认关闭；保存后用于之后开始的识别及编辑后的自动复核，不改变正在识别的试卷。"
+      className="wb-button" title="默认关闭；关闭后已识别题目无需逐题审核，可一键全部入库。开启后新识别及编辑的题目会自动复核。"
       onClick={() => void toggle()}>
       <span className="wb-toggle-track" aria-hidden="true"><i /></span>独立 AI 复核：{enabled ? "开启" : "关闭"}
     </button>
