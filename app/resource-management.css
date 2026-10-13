@@ -285,3 +285,85 @@
   .bank-explorer-page .search-box { flex-basis:100%; max-width:none; }
   .bank-explorer-page .select-box { flex:1 1 130px; }
 }
+/* Question discovery: knowledge navigation, layered filters and a separate durable basket. */
+.bank-explorer-page .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+.bank-explorer-page { padding-bottom:110px; }
+.bank-explorer-page .bank-explorer.with-knowledge { display:grid; grid-template-columns:210px minmax(0,1fr); overflow:visible; }
+.bank-explorer-page .bank-browse-pane { min-width:0; border-right:1px solid var(--resource-border); background:#fafcfb; border-radius:12px 0 0 12px; }
+.bank-explorer-page .knowledge-navigator { padding:18px 14px; }
+.bank-explorer-page .knowledge-navigator header { display:flex; align-items:center; gap:8px; font-size:14px; }
+.bank-explorer-page .knowledge-navigator header span { margin-left:auto; font-size:11px; color:var(--muted); }
+.bank-explorer-page .knowledge-search { display:flex; align-items:center; gap:6px; margin:14px 0 10px; padding:0 8px; height:34px; background:white; border:1px solid var(--resource-border); border-radius:6px; color:var(--muted); }
+.bank-explorer-page .knowledge-search input { width:100%; min-width:0; border:0; outline:0; background:transparent; font-size:12px; }
+.bank-explorer-page .knowledge-search button { display:flex; border:0; padding:0; background:none; cursor:pointer; }
+.bank-explorer-page .knowledge-navigator :is(nav > button,.knowledge-all) { display:block; width:100%; border:0; background:transparent; border-radius:6px; padding:9px 10px; text-align:left; font-size:13px; line-height:1.5; color:#586e62; cursor:pointer; overflow-wrap:anywhere; }
+.bank-explorer-page .knowledge-navigator button[aria-pressed="true"] { color:var(--green-dark); background:#e8f1ec; font-weight:600; }
+.bank-explorer-page .knowledge-navigator nav { max-height:580px; overflow:auto; margin:4px 0 12px; }
+.bank-explorer-page .knowledge-navigator :is(small,p) { color:var(--muted); font-size:11px; line-height:1.7; }
+.bank-explorer-page .bank-browse-pane .bank-folder-pane { width:auto; min-width:0; min-height:0; padding:16px 12px; border:0; border-top:1px solid var(--resource-border); background:transparent; }
+.bank-explorer-page .bank-toolbar.explorer-toolbar { display:block; padding:16px 20px 12px; border-radius:0 12px 0 0; z-index:8; }
+.bank-explorer-page .bank-search-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+.bank-explorer-page .bank-search-row .search-box { flex:1; min-width:160px; max-width:520px; height:38px; }
+.bank-explorer-page .bank-search-row .clear-filter { margin-left:auto; white-space:nowrap; font-size:12px; }
+.bank-explorer-page .bank-search-row .clear-filter:disabled { opacity:.4; cursor:default; }
+.bank-explorer-page .bank-scope-controls { display:flex; align-items:center; gap:6px; }
+.bank-explorer-page .bank-scope-controls select { border:1px solid var(--resource-border); border-radius:6px; padding:4px 8px; background:white; }
+.bank-explorer-page .bank-filter-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; min-height:40px; font-size:13px; }
+.bank-explorer-page .bank-filter-row > span { color:var(--muted); width:30px; flex:0 0 30px; font-size:12px; }
+.bank-explorer-page .bank-type-options { display:flex; flex-wrap:wrap; gap:6px; }
+.bank-explorer-page .bank-type-options button { border:0; padding:6px 12px; border-radius:5px; background:none; color:#5a6f64; font-size:13px; cursor:pointer; }
+.bank-explorer-page .bank-type-options button[aria-pressed="true"] { background:#e8f1ec; color:var(--green-dark); font-weight:600; }
+.bank-explorer-page .bank-source-row > label select { background:white; border:1px solid var(--resource-border); border-radius:6px; padding:4px 8px; max-width:270px; }
+.bank-explorer-page .bank-source-picker { min-width:0; }
+.bank-explorer-page .bank-more-filters summary { display:flex; gap:6px; align-items:center; border:0; color:var(--green); }
+.bank-explorer-page .bank-more-filters > div { width:300px; max-height:65vh; overflow:auto; }
+.bank-explorer-page .bank-applied-filters { margin:10px 0 0; align-items:center; gap:6px; padding-top:10px; border-top:1px solid #edf1ee; font-size:12px; }
+.bank-explorer-page .bank-applied-filters > span { color:var(--muted); margin-right:4px; }
+.bank-explorer-page .bank-applied-filters button { display:inline-flex; align-items:center; gap:6px; border:1px solid #dce7e0; border-radius:5px; padding:4px 7px; background:#f5f9f6; color:#4f6f5d; font-size:12px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.bank-explorer-page .bank-list-tools > span { font-size:11px; }
+.bank-explorer-page .bank-list-tools select { border:0; background:transparent; color:var(--muted); font-size:12px; }
+.bank-explorer-page .resource-bulkbar { gap:8px; }
+.bank-explorer-page .question-card { padding:20px 8px; gap:8px 12px; }
+.bank-explorer-page .question-card-main { min-width:0; }
+.bank-explorer-page .question-meta .question-tag { border:0; background:#f0f5f2; color:#537564; padding:3px 6px; border-radius:4px; font-size:11px; cursor:pointer; }
+.bank-explorer-page .question-stem { font-size:15px; line-height:1.85; }
+.bank-explorer-page .question-source-line { grid-column:2; display:flex; align-items:center; gap:8px; min-width:0; padding:4px 0; color:#829188; font-size:11px; }
+.bank-explorer-page .question-source-line button { max-width:80%; text-align:left; color:inherit; font-size:inherit; border:0; background:none; padding:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; }
+.bank-explorer-page .question-source-line button:hover { color:var(--green); text-decoration:underline; }
+.bank-explorer-page .question-source-line small { white-space:nowrap; }
+.bank-explorer-page .question-actions { flex-wrap:wrap; width:100%; max-width:none; gap:8px; padding-top:4px; }
+.bank-explorer-page .question-actions .row-action { border:0; background:transparent; color:var(--muted); padding:0 6px; }
+.bank-explorer-page .question-actions .expand-action { color:var(--green); padding-left:0; }
+.bank-explorer-page .question-add-to-basket { margin-left:auto; min-height:34px; padding:6px 12px; }
+.bank-explorer-page .question-add-to-basket.in-basket { background:#f0f6f2; border-color:#cbded1; color:var(--green); }
+.bank-explorer-page .bank-platform-categories { display:flex; gap:12px; border-bottom:1px solid var(--resource-border); margin-bottom:24px; }
+.bank-explorer-page .bank-platform-categories button { background:none; border:0; padding:8px 16px; font-size:14px; color:var(--muted); cursor:pointer; }
+.bank-explorer-page .bank-platform-categories button[aria-selected="true"] { border-bottom:2px solid var(--green); color:var(--green); }
+.bank-explorer-page .question-basket-trigger { min-width:210px; border-radius:10px; background:var(--green-dark); box-shadow:0 3px 12px #15392b20; }
+.bank-explorer-page .question-basket-trigger :is(span,b) { color:white; }
+.bank-explorer-page .question-basket-trigger b { background:#397b5d; }
+.bank-explorer-page .question-basket-trigger i small { font-size:11px; }
+.bank-explorer-page .persistent-basket { width:440px; max-width:calc(100vw - 24px); border-radius:10px; box-shadow:0 8px 28px #15392b26; }
+.bank-explorer-page .persistent-basket > header > div > span { background:var(--green-dark); color:white; }
+.bank-explorer-page .persistent-basket header strong { font-size:16px; }
+.bank-explorer-page .persistent-basket header small { font-size:12px; }
+.bank-explorer-page .persistent-basket > footer :is(.btn,a:not(.btn)) { font-size:12px; }
+.bank-explorer-page .basket-save-explainer { flex:0 0 auto; padding:12px 18px; margin:0; background:#f5f8f6; color:var(--muted); font-size:12px; line-height:1.7; }
+.bank-explorer-page .persistent-basket li > div > p { font-size:13px; }
+.bank-explorer-page .persistent-basket li > div > :is(small,span) { font-size:11px; }
+.bank-explorer-page .basket-empty { padding:24px 20px; font-size:13px; color:var(--muted); line-height:1.8; }
+.bank-explorer-page .bank-basket-message { position:fixed; bottom:94px; right:24px; max-width:350px; z-index:31; padding:10px 14px; border:1px solid var(--resource-border); border-radius:7px; background:white; color:#986235; font-size:12px; }
+@media(max-width:1100px) {
+  .bank-explorer-page .bank-explorer.with-knowledge { grid-template-columns:180px minmax(0,1fr); }
+  .bank-explorer-page .bank-search-row { flex-wrap:wrap; gap:8px; }
+  .bank-explorer-page .bank-more-filters > div { right:0; }
+}
+@media(max-width:800px) {
+  .bank-explorer-page .bank-explorer.with-knowledge { display:block; }
+  .bank-explorer-page .bank-browse-pane { border-right:0; border-bottom:1px solid var(--resource-border); }
+  .bank-explorer-page .knowledge-navigator nav { display:flex; flex-wrap:wrap; max-height:140px; }
+  .bank-explorer-page .knowledge-navigator nav > button { width:auto; }
+  .bank-explorer-page .bank-source-picker { max-width:calc(100% - 50px); }
+  .bank-explorer-page .bank-source-row > label select { max-width:100%; }
+  .bank-explorer-page .question-actions { gap:4px; }
+}

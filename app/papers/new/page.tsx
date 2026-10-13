@@ -10,7 +10,11 @@ export default async function NewPaperPage({ searchParams }: { searchParams: Pro
   const requestedIds = (query.ids ?? "").split(",").map((id) => id.trim()).filter(Boolean);
   const requestHeaders = await headers();
   const ownerId = requestHeaders.get("oai-authenticated-user-id") ?? "local-demo";
-  const questions = await getApprovedQuestions(ownerId);
+  const [recentQuestions, requestedQuestions] = await Promise.all([
+    getApprovedQuestions(ownerId),
+    requestedIds.length ? getApprovedQuestions(ownerId, requestedIds) : Promise.resolve([]),
+  ]);
+  const questions = [...new Map([...recentQuestions, ...requestedQuestions].map(question => [question.id, question])).values()];
   const templates = await getPaperTemplates(ownerId);
   return <PaperBuilder questions={questions} initialIds={requestedIds} templates={templates} />;
 }

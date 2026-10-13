@@ -1,0 +1,134 @@
+/* Shared single-choice controls. Keep native form semantics and keyboard handling. */
+select:not([multiple]):not([size]) {
+  min-width: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+select:not([multiple]):not([size]):hover:not(:disabled) {
+  border-color: #9dbbab;
+  background-color: #fbfdfc;
+}
+
+select:not([multiple]):not([size]):focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+select:not([multiple]):not([size]):disabled {
+  cursor: not-allowed;
+  background-color: #f4f7f5;
+  color: var(--muted);
+  opacity: .7;
+}
+
+/* Browsers without customizable selects retain their native picker. */
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+
+  select:not([multiple]):not([size]) {
+    align-items: center;
+    gap: 12px;
+    padding-inline: 12px;
+    background-image: none;
+  }
+
+  select:not([multiple]):not([size]):open {
+    border-color: #6d9e86;
+    background-color: #fff;
+    box-shadow: 0 0 0 3px rgb(31 122 90 / 9%);
+  }
+
+  select:not([multiple]):not([size])::picker-icon {
+    content: "";
+    flex: 0 0 7px;
+    width: 7px;
+    height: 7px;
+    margin: -3px 2px 0 auto;
+    border-right: 1.5px solid #73877d;
+    border-bottom: 1.5px solid #73877d;
+    rotate: 45deg;
+    transition: rotate 140ms ease;
+  }
+
+  select:not([multiple]):not([size]):open::picker-icon {
+    rotate: 225deg;
+    border-color: var(--green);
+    margin-top: 3px;
+  }
+
+  select:not([multiple]):not([size])::picker(select) {
+    box-sizing: border-box;
+    min-width: anchor-size(width);
+    max-width: calc(100vw - 24px);
+    max-height: min(320px, 60dvh);
+    position-try-order: normal;
+    margin-block: 6px;
+    padding: 5px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid #dce7e0;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 12px 32px -6px rgb(23 55 42 / 18%), 0 2px 6px rgb(23 55 42 / 5%);
+    color: var(--ink);
+    font: 400 13px/1.5 "Noto Sans SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    scrollbar-width: thin;
+    scrollbar-color: #bfcec5 transparent;
+  }
+
+  select:not([multiple]):not([size]) option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 38px;
+    padding: 9px 11px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ink);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  select:not([multiple]):not([size]) option:checked {
+    background: var(--green-soft);
+    color: var(--green-dark);
+    font-weight: 600;
+  }
+
+  select:not([multiple]):not([size]) option:hover:not(:disabled),
+  select:not([multiple]):not([size]) option:focus-visible {
+    outline: 0;
+    background: #e3efe8;
+    color: var(--green-dark);
+  }
+
+  select:not([multiple]):not([size]) option::checkmark {
+    order: 1;
+    margin-left: auto;
+    color: var(--green);
+  }
+
+  select:not([multiple]):not([size]) option:disabled {
+    color: #86978e;
+    cursor: not-allowed;
+    font-weight: 400;
+  }
+
+  select:not([multiple]):not([size]) option[value=""]:disabled {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker-icon {
+    transition: none;
+  }
+}

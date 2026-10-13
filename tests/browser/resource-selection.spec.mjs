@@ -32,9 +32,12 @@ test('题库：多选、当前页全选、跨筛选清空、组卷、移动、�
   await cards.nth(1).getByRole('checkbox').check();
   await expect(bulk).toContainText('已选 2 道题');
   await expect(page.getByLabel('全选当前页题目')).toHaveJSProperty('indeterminate', true);
-  const href = await bulk.getByRole('link', { name: '批量加入组卷' }).getAttribute('href');
+  await bulk.getByRole('button', { name: '批量加入选题篮' }).click();
+  await expect(bulk).toHaveCount(0);
+  await page.getByRole('button', { name: '打开选题篮，2 道题' }).click();
+  const href = await page.getByRole('link', { name: '进入组卷' }).getAttribute('href');
   expect(new URL(href, 'http://local').searchParams.get('ids').split(',')).toHaveLength(2);
-  await bulk.getByRole('link', { name: '批量加入组卷' }).click();
+  await page.getByRole('link', { name: '进入组卷' }).click();
   await expect(page.locator('.printable-paper .paper-question')).toHaveCount(2);
   await page.goto(`/bank?documentId=${doc}`);
   await expect(cards.first().getByRole('checkbox')).toBeEnabled();
@@ -56,6 +59,7 @@ test('题库：多选、当前页全选、跨筛选清空、组卷、移动、�
   await page.getByRole('button', { name: '下一页' }).click();
   await expect(cards).toHaveCount(2);
   await expect(bulk).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '打开选题篮，2 道题' })).toBeVisible();
   await cards.first().getByRole('checkbox').check();
   let release;
   const held = new Promise(resolve => { release = resolve; });
@@ -63,9 +67,14 @@ test('题库：多选、当前页全选、跨筛选清空、组卷、移动、�
   await page.getByPlaceholder('搜索题干、答案、知识点或来源').fill('交互题目 1：');
   await expect(page.getByLabel('全选当前页题目')).toBeDisabled();
   await expect(page.locator('.question-cards')).toHaveAttribute('aria-busy', 'true');
+  for (const width of [1440,1920]) {
+    await page.setViewportSize({width,height:1000});
+    await page.evaluate(() => window.scrollTo(0,0));
+    await page.screenshot({path:`tmp/discovery-loading-${width}.png`,animations:'disabled'});
+  }
   release();
-  await page.unroute('**/api/questions?**');
   await expect(cards).toHaveCount(1);
+  await page.unrouteAll({behavior:'wait'});
   await expect(bulk).toHaveCount(0);
   await cards.first().getByRole('checkbox').check();
   await page.getByLabel('批量移动题目').selectOption(folder.id);
@@ -89,7 +98,7 @@ test('题库：多选、当前页全选、跨筛选清空、组卷、移动、�
   await cards.first().getByRole('checkbox').check();
   await page.getByRole('tab', { name: '基础题库', exact: true }).click();
   await expect(bulk).toHaveCount(0);
-  await expect(page.locator('.question-basket-trigger')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '打开选题篮，2 道题' })).toBeVisible();
   await page.getByRole('tab', { name: '我的题库', exact: true }).click();
   await cards.first().getByRole('checkbox').check();
   page.once('dialog', dialog => dialog.dismiss());

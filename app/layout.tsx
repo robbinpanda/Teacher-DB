@@ -6,6 +6,7 @@ import { getTeacherMode } from "../lib/backend-data";
 import "./globals.css";
 import "./resource-management.css";
 import "./workbench.css";
+import "./select-controls.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_BASE_URL || "http://localhost:3050"),

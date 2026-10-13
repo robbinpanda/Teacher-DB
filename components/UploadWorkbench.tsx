@@ -426,9 +426,11 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   return <>
     {tasks.length > 0 && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}>{working && <LoaderCircle size={14} className="spin" />}导入任务{pendingTasks ? ` · ${pendingTasks}` : ""}</button>}
     <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
-    <WorkbenchDialog open={open} drawer titleId="import-title" onClose={() => setOpen(false)}>
+    <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" onClose={() => setOpen(false)}>
       <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>批量上传 PDF，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
-      <div className="wb-dialog-body">
+      <div className="wb-dialog-body wb-import-layout">
+        <section className="wb-import-settings" aria-labelledby="import-settings-title">
+          <div className="wb-import-section-heading"><h3 id="import-settings-title">识别设置</h3><p>设置本批试卷的学科、年级与识别方式</p></div>
         <fieldset className="wb-import-fields" disabled={uploadInBrowser}>
           <legend className="wb-sr-only">试卷信息</legend>
           <div className="wb-field-pair">
@@ -453,7 +455,10 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
           {queuePaused && <p className="wb-field-hint" title={queuePauseReason}>识别队列已暂停，可在“待处理”列表中继续。</p>}
           {(queueCounts.active > 0 || queueCounts.queued > 0) && <p className="wb-field-hint">处理中 {queueCounts.active} 份 · 等待 {queueCounts.queued} 份</p>}
         </div>
-        <div className="wb-field"><span>PDF 文件</span>
+        </section>
+        <section className="wb-import-files" aria-labelledby="import-files-title">
+          <div className="wb-import-section-heading"><h3 id="import-files-title">试卷文件</h3><p>批量添加试卷，确认文件后开始导入</p></div>
+        <div className="wb-field wb-import-upload"><span>PDF 文件</span>
           <input ref={inputRef} className="wb-sr-only" type="file" multiple accept=".pdf,application/pdf" aria-label="选择 PDF 文件" disabled={uploadInBrowser} onChange={event => { chooseFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <button type="button" className={`wb-drop-zone${dragging ? " dragging" : ""}`} disabled={uploadInBrowser} onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); if (!uploadInBrowser) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); chooseFiles(Array.from(event.dataTransfer.files)); }}>
             <UploadCloud size={26} /><strong>点击选择或拖放 PDF</strong><span>支持多选，每批最多 100 份</span>
@@ -462,13 +467,14 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
           {selectedFiles.length > 0 && <div className="wb-file-selection"><div><strong>已选 {selectedFiles.length} 份</strong><button className="wb-text-button" type="button" disabled={uploadInBrowser} onClick={() => setSelectedFiles([])}>清空</button></div><ul>{selectedFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><FileText size={16} /><span title={file.name}>{file.name}<small>{file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(file.size / 1024))} KB`}</small></span><button type="button" className="wb-icon-button" aria-label={`移除 ${file.name}`} disabled={uploadInBrowser} onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}><X size={15} /></button></li>)}</ul></div>}
         </div>
         {tasks.length > 0 && <section className="wb-upload-tasks" aria-label="导入任务"><h3>导入任务 <span>{tasks.length}</span></h3>
-          {uploadInBrowser && <p className="wb-field-hint">可关闭抽屉查看列表；原卷上传完成前，请保持此页面打开。</p>}
+          {uploadInBrowser && <p className="wb-field-hint">可关闭导入窗口查看列表；原卷上传完成前，请保持此页面打开。</p>}
           {taskSyncError && <p className="wb-field-error" role="status">{taskSyncError}</p>}
           <div aria-live="polite">{tasks.map(task => <article key={task.id} className={task.stage === "error" ? "error" : ""}>
             {task.stage === "done" ? <CheckCircle2 size={16} /> : task.stage === "error" ? <AlertCircle size={16} /> : ["idle", "rendering", "preparing", "uploading", "queued", "extracting", "retry_wait"].includes(task.stage) ? <LoaderCircle size={16} className="spin" /> : <FileText size={16} />}
             <div><strong title={task.fileName}>{task.fileName}</strong><p>{task.message}</p>{task.documentId && <Link href={`/review/${task.documentId}`}>{task.stage === "done" ? "前往审核" : "查看试卷"}</Link>}</div>
           </article>)}</div>
         </section>}
+        </section>
       </div>
       <footer className="wb-dialog-footer"><span>{selectedFiles.length ? `已选 ${selectedFiles.length} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "任务进度自动保存" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedFiles.length || uploadDisabled || submitting || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
     </WorkbenchDialog>

@@ -188,6 +188,49 @@
 .wb-dialog .wb-notice { margin: 16px 0 0; }
 .wb-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
+/* Import is a spacious workspace, with persistent actions and one scrolling body. */
+.wb-dialog.wb-import-dialog { width: min(1440px, calc(100vw - 80px)); height: min(960px, calc(100dvh - 64px)); max-height: calc(100dvh - 64px); border-radius: 18px; }
+.wb-import-dialog .wb-dialog-header { padding: 26px 32px; }
+.wb-import-dialog .wb-dialog-header h2 { font-size: 24px; }
+.wb-import-dialog .wb-dialog-header p { font-size: 13px; }
+.wb-import-dialog .wb-dialog-footer { padding: 20px 32px; }
+.wb-import-dialog .wb-dialog-footer .wb-button { min-height: 42px; padding-inline: 20px; font-size: 14px; }
+.wb-import-layout { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); flex: 1; align-items: start; gap: 32px; padding: 28px 32px; background: #f7f9f8; }
+.wb-import-settings, .wb-import-files { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.wb-import-files { align-self: stretch; display: flex; flex-direction: column; }
+.wb-import-section-heading { margin-bottom: 24px; }
+.wb-import-section-heading h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.wb-import-section-heading p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.wb-import-settings .wb-concurrency { margin-bottom: 0; }
+.wb-import-dialog .wb-field { font-size: 14px; }
+.wb-import-dialog .wb-field :is(select, input[type="number"]) { height: 44px; font-size: 14px; }
+.wb-import-upload { flex: 1; }
+.wb-import-dialog .wb-drop-zone { flex: 1; min-height: 280px; gap: 12px; padding: 32px 20px; border-radius: 12px; }
+.wb-import-dialog .wb-drop-zone > svg { width: 40px; height: 40px; margin-bottom: 8px; }
+.wb-import-dialog .wb-drop-zone strong { font-size: 16px; }
+.wb-import-dialog .wb-drop-zone > span { font-size: 13px; }
+.wb-import-dialog .wb-file-selection li { padding: 12px; }
+.wb-import-dialog .wb-file-selection li > span { font-size: 13px; }
+
+@media (max-width: 1100px) {
+  .wb-import-layout { grid-template-columns: minmax(300px, .9fr) minmax(0, 1fr); gap: 20px; padding: 24px; }
+  .wb-import-settings, .wb-import-files { padding: 20px; }
+}
+@media (max-width: 900px) {
+  .wb-dialog.wb-import-dialog { width: min(720px, calc(100vw - 32px)); height: calc(100dvh - 32px); max-height: calc(100dvh - 32px); }
+  .wb-import-layout { grid-template-columns: minmax(0, 1fr); }
+  .wb-import-dialog .wb-drop-zone { min-height: 220px; }
+}
+@media (max-width: 600px) {
+  .wb-dialog.wb-import-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
+  .wb-import-dialog .wb-dialog-header { padding: 20px; }
+  .wb-import-dialog .wb-dialog-header h2 { font-size: 20px; }
+  .wb-import-layout { gap: 16px; padding: 16px; }
+  .wb-import-settings, .wb-import-files { padding: 16px; }
+  .wb-import-dialog .wb-dialog-footer { padding: 16px; }
+  .wb-import-dialog .wb-dialog-footer .wb-button { padding-inline: 14px; }
+}
+
 @media (max-width: 1200px) {
   .workbench { padding: 24px; }
   .wb-toolbar { align-items: flex-start; }
