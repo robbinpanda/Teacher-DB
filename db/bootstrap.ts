@@ -520,7 +520,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 7;
+export const DATABASE_VERSION = 8;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -581,6 +581,17 @@ function initialize() {
       name: "model-service-selection",
       checksum: "model-service-selection-v1",
       up: sqlite => sqlite.exec("ALTER TABLE model_profiles ADD COLUMN service TEXT CHECK(service IN ('opencode','openrouter','custom'))"),
+    },
+    {
+      version: 8,
+      name: "opencode-go-service",
+      checksum: "opencode-go-service-v1",
+      up: sqlite => sqlite.exec(`
+        ALTER TABLE model_profiles ADD COLUMN service_next TEXT CHECK(service_next IN ('opencode','opencode-go','openrouter','custom'));
+        UPDATE model_profiles SET service_next = service;
+        ALTER TABLE model_profiles DROP COLUMN service;
+        ALTER TABLE model_profiles RENAME COLUMN service_next TO service;
+      `),
     },
   ]);
   initialized = true;

@@ -37,11 +37,15 @@ globalThis.fetch = async (endpoint, init) => {
 };
 try {
   const profiles = [];
-  for (const model of ['kimi-k2.6', 'gpt-5.5', 'claude-sonnet-4-6', 'gemini-3.1-pro']) {
-    const response = await POST(http({ service: 'opencode', model, apiKey: 'fixture-secret', baseUrl: 'https://evil.example/v1', provider: 'wrong' }));
+  for (const [service, model] of [
+    ...['gpt-6-luna', 'claude-haiku-5-5', 'mimo-v2.6-flash-free', 'deepseek-v4.1-flash'].map(model => ['opencode', model]),
+    ...['gpt-6-luna', 'claude-haiku-5-5', 'mimo-v2.6-flash', 'deepseek-v4.1-flash'].map(model => ['opencode-go', model]),
+  ]) {
+    const response = await POST(http({ service, model, apiKey: 'fixture-secret', baseUrl: 'https://evil.example/v1', provider: 'wrong' }));
     assert.equal(response.status, 201, await response.clone().text());
     const { profile } = await response.json(); profiles.push(profile);
-    assert.equal(profile.service, 'opencode'); assert.match(profile.baseUrl, /^https:\/\/opencode.ai\/inference\//);
+    assert.equal(profile.service, service);
+    if (service === 'opencode-go') assert.equal(profile.baseUrl, 'https://opencode.ai/inference/go/v1'); assert.match(profile.baseUrl, /^https:\/\/opencode.ai\/inference\//);
     assert.ok(!JSON.stringify(profile).includes('fixture-secret')); assert.equal(profile.apiKeyCiphertext, undefined);
     const input = { ownerId: 'fixture-owner', profileId: profile.id, system: 'system', text: 'question', images: [{ page: 1, dataUrl: 'data:image/png;base64,AAAA' }] };
     const before = requests.length; rejectNext = true;
@@ -57,13 +61,23 @@ try {
     assert.equal(requests.at(-1).headers.get('x-opencode-session'), 'fixture-run');
     assert.equal(requests.at(-2).headers.get('x-opencode-session'), 'fixture-run');
     const test = await testConnection(http({ profileId: profile.id })); assert.equal(test.status, 200, await test.clone().text());
+    for (const req of requests.slice(before)) assert.equal(new URL(req.endpoint).pathname.startsWith('/inference/go/'), service === 'opencode-go');
   }
   const profile = profiles[0]; const context = { params: Promise.resolve({ profileId: profile.id }) };
-  assert.equal((await PUT(http({ model: 'gpt-5.5' }, 'PUT', 'wrong-owner'), context)).status, 404);
-  const update = await PUT(http({ model: 'qwen3.8-flash' }, 'PUT'), context);
+  assert.equal((await PUT(http({ model: 'gpt-6-luna' }, 'PUT', 'wrong-owner'), context)).status, 404);
+  const update = await PUT(http({ model: 'claude-haiku-5-5' }, 'PUT'), context);
   assert.equal(update.status, 200, await update.clone().text());
   assert.equal((await update.json()).profile.provider, 'anthropic-messages');
   assert.equal((await PUT(http({ service: 'openrouter' }, 'PUT'), context)).status, 400);
+  assert.equal((await PUT(http({ service: 'opencode-go' }, 'PUT'), context)).status, 400);
+  const switched = await PUT(http({ service: 'opencode-go', model: 'mimo-v2.6-flash', apiKey: 'fixture-go' }, 'PUT'), context);
+  assert.equal(switched.status, 200, await switched.clone().text());
+  const switchedProfile = (await switched.json()).profile;
+  assert.equal(switchedProfile.service, 'opencode-go');
+  assert.equal(switchedProfile.baseUrl, 'https://opencode.ai/inference/go/v1');
+  const editedGo = await PUT(http({ model: 'claude-haiku-5-5' }, 'PUT'), context);
+  assert.equal(editedGo.status, 200);
+  assert.equal((await editedGo.json()).profile.provider, 'anthropic-messages');
   for (const service of ['openrouter', 'custom']) {
     const response = await POST(http({ service, displayName: service, model: 'xiaomi/mimo-v2.6-flash', apiKey: 'fixture-other', baseUrl: 'https://custom.example/v1' }));
     assert.equal(response.status, 201, await response.clone().text());
@@ -78,8 +92,10 @@ try {
   assert.equal((await POST(http({ service: 'opencode', model: 'unknown', apiKey: 'key' }))).status, 400);
   assert.equal((await POST(http({ service: 'invalid', model: 'model', apiKey: 'key' }))).status, 400);
   assert.ok(getSqlite().prepare('SELECT count(*) AS n FROM model_usage_events').get().n >= 16);
-  const geminiTrace = getSqlite().prepare("SELECT id FROM model_profiles WHERE model='gemini-3.1-pro'").get();
-  assert.ok(geminiTrace);
+  const geminiResponse = await POST(http({ service: 'custom', displayName: 'Gemini fixture', model: 'gemini-3.1-pro', apiKey: 'fixture-secret', provider: 'google-generate-content', baseUrl: 'https://custom.example/v1beta' }));
+  assert.equal(geminiResponse.status, 201);
+  const { profile: geminiProfile } = await geminiResponse.json();
+  await callVisionModel({ ownerId: 'fixture-owner', profileId: geminiProfile.id, system: 'system', text: 'question', images: [{ page: 1, dataUrl: 'data:image/png;base64,AAAA' }], purpose: 'fixture' });
   // The generic trace redaction must also cover Gemini inline image bytes.
   const { ModelCallTrace } = await import('../lib/model-call-trace.ts');
   const trace = new ModelCallTrace(process.env.JIANTI_DATA_DIR, { ownerId: 'fixture-owner', profileId: profile.id, provider: 'google-generate-content', model: 'gemini', purpose: 'fixture' });
@@ -87,15 +103,25 @@ try {
   await (await trace.fetch(captured.endpoint, { method: 'POST', headers: Object.fromEntries(captured.headers), body: JSON.stringify(captured.body) })).text();
   const logged = readFileSync(path.join(trace.directory, 'request-1.json'), 'utf8');
   assert.ok(!logged.includes('AAAA') && !logged.includes('fixture-secret')); assert.match(logged, /omittedImage/);
-  assert.match(logged, /x-opencode-session/);
-  // Simulate a populated v6 database, then migrate in a fresh process (baseline checksum must stay unchanged).
+  assert.ok(!logged.includes('x-opencode-session'));
+  // Reconstruct a populated v7 fixture. Preserve all profile fields while widening the CHECK constraint.
   const db = getSqlite();
+  db.exec("UPDATE model_profiles SET service='custom' WHERE service='opencode-go'; ALTER TABLE model_profiles ADD COLUMN service_old TEXT CHECK(service_old IN ('opencode','openrouter','custom')); UPDATE model_profiles SET service_old=service; ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE model_profiles RENAME COLUMN service_old TO service; DELETE FROM schema_migrations WHERE version=8;");
+  const beforeV8 = db.prepare('SELECT * FROM model_profiles ORDER BY id').all();
+  execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
+    "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
+  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 8);
+  assert.deepEqual(db.prepare('SELECT * FROM model_profiles ORDER BY id').all(), beforeV8);
+  db.prepare("UPDATE model_profiles SET service='opencode-go' WHERE id=?").run(profile.id);
+  assert.throws(() => db.prepare("UPDATE model_profiles SET service='invalid' WHERE id=?").run(profile.id), /CHECK/);
+  // A v6 database must also migrate through both versions.
+
   const beforeMigration = db.prepare('SELECT id,api_key_ciphertext,base_url,provider FROM model_profiles ORDER BY id').all();
-  db.exec('ALTER TABLE model_profiles DROP COLUMN service; DELETE FROM schema_migrations WHERE version=7;');
+  db.exec('ALTER TABLE model_profiles DROP COLUMN service; DELETE FROM schema_migrations WHERE version>=7;');
   execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
     "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
   assert.ok(db.prepare('PRAGMA table_info(model_profiles)').all().some(c => c.name === 'service'));
-  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 7);
+  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 8);
   assert.deepEqual(db.prepare('SELECT id,api_key_ciphertext,base_url,provider FROM model_profiles ORDER BY id').all(), beforeMigration);
   console.log(JSON.stringify({ passed: true, mockRequests: requests.length, dataDirectory: process.env.JIANTI_DATA_DIR }));
 } finally { globalThis.fetch = nativeFetch; }

@@ -1,4 +1,4 @@
-import { isOpenCodeEndpoint, normalizeModelService } from "./model-services.ts";
+import { isOpenCodeEndpoint, isOpenCodeService, normalizeModelService } from "./model-services.ts";
 
 export const MODEL_PROTOCOLS = [
   "openai-chat-completions",
@@ -81,8 +81,9 @@ function anthropicImage(dataUrl: string) {
 
 export function buildVisionHttpRequest(input: VisionRequestInput): VisionHttpRequest {
   const request = buildProtocolRequest(input);
-  if (normalizeModelService(input.service, input.baseUrl) === "opencode") {
-    if (!isOpenCodeEndpoint(request.endpoint)) throw new Error("OpenCode 配置只能向官方 inference 地址发送密钥");
+  const service = normalizeModelService(input.service, input.baseUrl);
+  if (isOpenCodeService(service)) {
+    if (!isOpenCodeEndpoint(request.endpoint, service)) throw new Error("OpenCode 配置只能向所选服务对应的官方 inference 地址发送密钥");
     const sessionId = input.sessionId ?? crypto.randomUUID();
     if (!/^[a-zA-Z0-9_-]{1,200}$/.test(sessionId)) throw new Error("OpenCode session ID 格式无效");
     delete request.headers["x-api-key"];
