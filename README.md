@@ -128,7 +128,7 @@ npm run local:python
 - Anthropic Messages
 - Gemini GenerateContent（含流式）
 
-OpenCode 普通付费、OpenCode Go 套餐与 OpenRouter 提供独立的官方地址预设，不提供公共凭据。普通付费使用 Console 服务账号 Key，Go 使用套餐 Key 和独立的 `/inference/go/v1` 地址；两个入口只提供 GPT 6 Luna、Claude Haiku 5.5、MiMo 2.6 Flash、DeepSeek 4.1 Flash，普通接口 MiMo 按官网标为 Free；分别按模型 ID 匹配协议并发送真实应用标识和会话标识；未知模型可选择自定义模型。可连接符合上述协议并支持图片输入的服务。自定义 Base URL 必须使用 HTTPS，仅 `localhost`、`127.0.0.1` 和 `::1` 允许 HTTP。具体配置和文档依据见 [模型服务适配](docs/model-services.md)。
+OpenCode 普通付费、OpenCode Go 套餐与 OpenRouter 提供独立的官方地址预设，不提供公共凭据。普通付费使用 Console 服务账号 Key，Go 使用套餐 Key 和独立的 `/inference/go/v1` 地址；两个入口均提供 GPT 6 Luna、Claude Haiku 5.5、DeepSeek 4.1 Flash、GLM 5.3 Flash，Go 额外提供 MiMo 2.6 Flash；不提供 Free 模型预设；分别按模型 ID 匹配协议并发送真实应用标识和会话标识；未知模型可选择自定义模型。可连接符合上述协议并支持图片输入的服务。自定义 Base URL 必须使用 HTTPS，仅 `localhost`、`127.0.0.1` 和 `::1` 允许 HTTP。具体配置和文档依据见 [模型服务适配](docs/model-services.md)。
 
 ## 核心工作流
 
