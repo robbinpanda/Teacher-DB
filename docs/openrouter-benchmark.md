@@ -27,6 +27,14 @@ node --import ./server/register.mjs --import tsx scripts/benchmark-openrouter.mj
 node --import ./server/register.mjs --import tsx scripts/benchmark-openrouter.mjs billing tmp/benchmark-config.json
 ```
 
+启用逐题 AI 审核后，每个整卷流程还会产生独立的审核请求。原有 `results.json` / `billing` 的 `costUsd` 只覆盖识别调用；要统计审核的新增费用和完整总费用，在 `run` 结束后执行：
+
+```powershell
+node --import ./server/register.mjs --import tsx scripts/summarize-question-review-benchmark.mjs tmp/benchmark-new-run --billing
+```
+
+这会写入 `question-review-costs.json`，按识别/审核汇总请求数、Token、实际美元费用及逐题状态，并保留每次调用的账单。不加 `--billing` 时只读取本地响应及已保存账单；重复执行不会生成新题目。网络失败或缺失账单不应解释为免费。一次真实 MiMo 实测见 [逐题审核费用报告](benchmarks/2026-10-13-question-review-mimo.md)。
+
 `prepare` 查询 OpenRouter 当前模型目录并检查图片输入能力，复用现有密钥，通过本机 API 添加缺少的配置，保留原来选中的模型。随后用 SQLite backup 创建独立数据库快照，复制指定原卷和页面图片并记录 SHA-256。快照保留原应用标签、教学 Skill 和设置，使测试输入与软件一致。它包含原数据库和加密密钥，必须留在本机忽略目录，不能提交 Git。
 
 `run` 只使用隔离目录，在其中为每个模型/试卷组合创建新文档。原库不新增测试题目、不变更审核状态、不重新启动原队列。每组只执行一次完整流程，同时最多两组；不调用队列自动重试，但保留应用原有 HTTP 参数兼容回退。三张卷子、六个模型意味着 18 次流程，兼容回退可能增加 HTTP 请求数。输出目录或结果文件已存在时拒绝覆盖/重复调用，避免意外重复计费；中断后请先查看证据再决定是否另建测试。
