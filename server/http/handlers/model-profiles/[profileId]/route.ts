@@ -7,7 +7,7 @@ import { normalizeOptionalTokenPrice, repriceModelUsageHistory } from "../../../
 import { encryptSecret, maskSecret } from "../../../../../lib/secret-box";
 import { now, requestOwner } from "../../../../../lib/server";
 import { readJsonPayload } from "../../../../../lib/request-payload";
-import { builtInModelConnection, normalizeModelService } from "../../../../../lib/model-services";
+import { builtInModelConnection, modelDisplayName, normalizeModelService } from "../../../../../lib/model-services";
 
 type UpdatePayload = {
   service?: string;
@@ -103,9 +103,8 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
   const previousService = normalizeModelService(profile.service, profile.baseUrl);
   let service = previousService;
 
-  displayName = payload.displayName?.trim() ?? profile.displayName;
   model = payload.model?.trim() ?? profile.model;
-  if (!displayName || !model) return Response.json({ error: "名称和模型名称不能为空" }, { status: 400 });
+  if (!model) return Response.json({ error: "模型名称不能为空" }, { status: 400 });
   try {
     service = normalizeModelService(payload.service ?? previousService);
     if (service === "custom") {
@@ -116,6 +115,8 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "模型配置无效" }, { status: 400 });
   }
+  displayName = modelDisplayName(service, model, payload.displayName ?? profile.displayName);
+  if (!displayName) return Response.json({ error: "自定义模型需填写显示名称" }, { status: 400 });
   timeoutMs = Math.max(15000, Math.min(300000, Number(payload.timeoutMs ?? profile.timeoutMs)));
   const apiKey = payload.apiKey?.trim();
   if (apiKey) {
@@ -124,8 +125,7 @@ export async function PUT(request: Request, context: { params: Promise<{ profile
     apiKeyIv = encrypted.iv;
     apiKeyMask = maskSecret(apiKey);
   }
-  connectionChanged = displayName !== profile.displayName
-    || service !== previousService
+  connectionChanged = service !== previousService
     || provider !== profile.provider
     || baseUrl !== profile.baseUrl
     || model !== profile.model

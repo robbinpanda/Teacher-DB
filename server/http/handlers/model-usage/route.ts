@@ -2,6 +2,7 @@ import { getSqlite } from "../../../../db";
 import { ensureOwnerModelSettings } from "../../../../lib/model-profiles";
 import { summarizeModelUsage, type UsageEventRow, type UsageProfileRow } from "../../../../lib/model-usage-summary";
 import { requestOwner } from "../../../../lib/server";
+import { modelDisplayName, normalizeModelService } from "../../../../lib/model-services";
 
 function monthWindow(month: string, timezoneOffset: number) {
   const match = /^(\d{4})-(\d{2})$/.exec(month);
@@ -33,13 +34,14 @@ export async function GET(request: Request) {
 
   const sqlite = getSqlite();
   const profiles = sqlite.prepare(
-    `SELECT id, display_name AS displayName, provider, model,
+    `SELECT id, display_name AS displayName, provider, model, service, base_url AS baseUrl,
             input_price_per_million AS inputPricePerMillion,
             output_price_per_million AS outputPricePerMillion,
             cache_price_per_million AS cachedInputPricePerMillion,
             cached_output_price_per_million AS cachedOutputPricePerMillion
        FROM model_profiles WHERE owner_id = ? AND enabled = 1 ORDER BY created_at`,
-  ).all(ownerId) as UsageProfileRow[];
+  ).all(ownerId) as Array<UsageProfileRow & { service: string | null; baseUrl: string }>;
+  for (const profile of profiles) profile.displayName = modelDisplayName(normalizeModelService(profile.service, profile.baseUrl), profile.model, profile.displayName);
   const events = sqlite.prepare(
     `SELECT usage.model_profile_id AS modelProfileId, profile.display_name AS displayName,
             usage.provider, usage.model, usage.purpose, usage.document_id AS documentId,

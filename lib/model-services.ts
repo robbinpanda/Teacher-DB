@@ -26,6 +26,12 @@ export function isOpenCodeService(service: string): service is "opencode" | "ope
   return service === "opencode" || service === "opencode-go";
 }
 
+export function modelDisplayName(service: ModelService, model: string, customName = "") {
+  if (service === "custom") return customName.trim();
+  const modelName = model.trim().split("/").at(-1) ?? "";
+  return modelName ? `${service}-${modelName}`.slice(0, 80) : "";
+}
+
 export function normalizeModelService(value?: string | null, baseUrl = ""): ModelService {
   if (value != null) {
     if ((MODEL_SERVICES as readonly string[]).includes(value)) return value as ModelService;

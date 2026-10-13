@@ -5,7 +5,7 @@ import { appSettings, modelProfiles } from "../db/schema";
 import { decryptSecret } from "./secret-box";
 import { now } from "./server";
 import { normalizeModelProtocol } from "./model-protocols";
-import { normalizeModelService } from "./model-services";
+import { modelDisplayName, normalizeModelService } from "./model-services";
 
 export async function ensureOwnerModelSettings(ownerId: string) {
   await ensureDatabase();
@@ -49,7 +49,8 @@ export async function resolveModelProfile(ownerId: string, requestedId?: string)
     throw new ModelConfigurationError("该模型配置缺少 API Key");
   }
   const apiKey = await decryptSecret(profile.apiKeyCiphertext, profile.apiKeyIv);
-  return { ...profile, service: normalizeModelService(profile.service, profile.baseUrl), provider: normalizeModelProtocol(profile.provider), apiKey };
+  const service = normalizeModelService(profile.service, profile.baseUrl);
+  return { ...profile, service, displayName: modelDisplayName(service, profile.model, profile.displayName), provider: normalizeModelProtocol(profile.provider), apiKey };
 }
 
 export function validateModelBaseUrl(value: string) {

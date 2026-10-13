@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { builtInModelConnection, normalizeModelService, OPENCODE_MODELS, OPENCODE_GO_MODELS } from '../lib/model-services.ts';
+import { builtInModelConnection, modelDisplayName, normalizeModelService, OPENCODE_MODELS, OPENCODE_GO_MODELS } from '../lib/model-services.ts';
 import { buildVisionHttpRequest, extractVisionStreamEvent, extractVisionResponseText } from '../lib/model-protocols.ts';
 import { extractModelTokenUsage } from '../lib/model-usage.ts';
 import { compatibilityBody } from '../lib/model-compatibility.ts';
@@ -97,4 +97,14 @@ test('Gemini images, SSE, non-stream text and usage are normalized without leaki
   assert.equal(fallback.generationConfig.maxOutputTokens, 64);
   assert.equal(fallback.generationConfig.responseMimeType, undefined);
   assert.throws(() => extractVisionResponseText(req.protocol, { promptFeedback: { blockReason: 'SAFETY' } }), /SAFETY/);
+});
+
+test('Built-in display names follow service and model; only custom uses the supplied name', () => {
+  assert.equal(modelDisplayName('opencode', 'glm-5.3-flash', 'old name'), 'opencode-glm-5.3-flash');
+  assert.equal(modelDisplayName('opencode-go', 'opencode-go/glm-5.3-flash'), 'opencode-go-glm-5.3-flash');
+  assert.equal(modelDisplayName('openrouter', ' openrouter/z-ai/glm-5.3-flash '), 'openrouter-glm-5.3-flash');
+  assert.equal(modelDisplayName('openrouter', ''), '');
+  assert.equal(modelDisplayName('custom', 'model', ' 我的模型 '), '我的模型');
+  assert.equal(modelDisplayName('custom', 'model'), '');
+  assert.equal(modelDisplayName('openrouter', 'a'.repeat(200)).length, 80);
 });

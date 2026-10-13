@@ -7,7 +7,7 @@ process.env.JIANTI_DATA_DIR = path.resolve('tmp', `model-services-${crypto.rando
 process.env.JIANTI_DEPLOYMENT_MODE = 'local';
 mkdirSync(process.env.JIANTI_DATA_DIR, { recursive: true });
 const { POST, GET } = await import('../server/http/handlers/model-profiles/route.ts');
-const { PUT } = await import('../server/http/handlers/model-profiles/[profileId]/route.ts');
+const { PUT, DELETE } = await import('../server/http/handlers/model-profiles/[profileId]/route.ts');
 const { POST: testConnection } = await import('../server/http/handlers/model-profiles/test/route.ts');
 const { callTextModel } = await import('../lib/text-model.ts');
 const { callVisionModel, callVisionModelStream } = await import('../lib/vision-model.ts');
@@ -62,6 +62,12 @@ try {
     assert.equal(requests.at(-2).headers.get('x-opencode-session'), 'fixture-run');
     const test = await testConnection(http({ profileId: profile.id })); assert.equal(test.status, 200, await test.clone().text());
     for (const req of requests.slice(before)) assert.equal(new URL(req.endpoint).pathname.startsWith('/inference/go/'), service === 'opencode-go');
+  }
+  // The editing checks reuse model choices; remove their earlier fixture configs
+  // because built-in names now identify the service/model and cannot use aliases.
+  for (const duplicate of profiles.slice(1)) {
+    const removed = await DELETE(http({}, 'DELETE'), { params: Promise.resolve({ profileId: duplicate.id }) });
+    assert.equal(removed.status, 204);
   }
   const profile = profiles[0]; const context = { params: Promise.resolve({ profileId: profile.id }) };
   assert.equal((await PUT(http({ model: 'gpt-6-luna' }, 'PUT', 'wrong-owner'), context)).status, 404);

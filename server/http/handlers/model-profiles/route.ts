@@ -8,10 +8,11 @@ import { validateModelBaseUrl } from "../../../../lib/model-profiles";
 import { normalizeModelProtocol } from "../../../../lib/model-protocols";
 import { normalizeOptionalTokenPrice } from "../../../../lib/model-usage";
 import { readJsonPayload } from "../../../../lib/request-payload";
-import { builtInModelConnection, MODEL_SERVICE_LABELS, normalizeModelService } from "../../../../lib/model-services";
+import { builtInModelConnection, modelDisplayName, normalizeModelService } from "../../../../lib/model-services";
 
-function publicProfile<T extends { provider: string; service?: string | null; baseUrl: string; apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
-  const safe = { ...profile, service: normalizeModelService(profile.service, profile.baseUrl), provider: normalizeModelProtocol(profile.provider) };
+function publicProfile<T extends { displayName: string; model: string; provider: string; service?: string | null; baseUrl: string; apiKeyCiphertext?: string | null; apiKeyIv?: string | null }>(profile: T) {
+  const service = normalizeModelService(profile.service, profile.baseUrl);
+  const safe = { ...profile, service, displayName: modelDisplayName(service, profile.model, profile.displayName), provider: normalizeModelProtocol(profile.provider) };
   delete safe.apiKeyCiphertext;
   delete safe.apiKeyIv;
   return safe;
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "接口协议无效" }, { status: 400 });
   }
-  const displayName = payload.displayName?.trim() || (service === "custom" ? "" : `${MODEL_SERVICE_LABELS[service]} · ${model}`.slice(0, 80));
+  const displayName = modelDisplayName(service, model, payload.displayName);
   if (!displayName) return Response.json({ error: "自定义模型需填写显示名称" }, { status: 400 });
   let inputPricePerMillion: number | null;
   let outputPricePerMillion: number | null;

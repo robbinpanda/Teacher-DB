@@ -7,7 +7,7 @@ import {
   KeyRound, LoaderCircle, Pencil, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi, X,
 } from "lucide-react";
 import { endpointForProtocol, MODEL_PROTOCOL_LABELS, MODEL_PROTOCOLS, type ModelProtocol } from "../lib/model-protocols";
-import { builtInModelConnection, isOpenCodeService, MODEL_SERVICES, MODEL_SERVICE_LABELS, OPENCODE_MODELS, OPENCODE_GO_MODELS, normalizeModelService, type ModelService } from "../lib/model-services";
+import { builtInModelConnection, isOpenCodeService, modelDisplayName, MODEL_SERVICES, MODEL_SERVICE_LABELS, OPENCODE_MODELS, OPENCODE_GO_MODELS, normalizeModelService, type ModelService } from "../lib/model-services";
 
 type Profile = {
   service?: ModelService | null;
@@ -249,7 +249,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
         method: editingId ? "PUT" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...form,
-          ...(form.service !== "custom" ? { baseUrl: undefined, provider: undefined } : {}),
+          ...(form.service !== "custom" ? { baseUrl: undefined, provider: undefined, displayName: undefined } : {}),
           ...(!editingId ? { select: false } : {}) }),
       });
       const result = await response.json() as { error?: string; repricedEvents?: number };
@@ -387,7 +387,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
                 : "填写 OpenRouter 模型 ID（如 xiaomi/mimo-v2.6-flash）和 API Key，自动使用 OpenRouter 接口。"}</p>}
             {preset && <p className="model-service-help" aria-label="预设接口地址">{MODEL_PROTOCOL_LABELS[preset.provider]} · <code>{endpointForProtocol(preset.baseUrl, preset.provider, preset.model)}</code></p>}
             <div className="model-editor-fields">
-              <label><span>显示名称{form.service !== "custom" && <small>选填，默认使用模型名</small>}</span><input required={form.service === "custom"} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：我的识题模型" /></label>
+              <label><span>显示名称{form.service !== "custom" && <small>根据服务和模型自动生成</small>}</span><input aria-label="显示名称" required={form.service === "custom"} readOnly={form.service !== "custom"} value={modelDisplayName(form.service, form.model, form.displayName)} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder={form.service === "custom" ? "例如：我的识题模型" : "选择模型后自动生成"} /></label>
               {form.service === "custom" && <><label><span>接口协议</span><select required value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as ModelProtocol })}>{MODEL_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{MODEL_PROTOCOL_LABELS[protocol]}</option>)}</select></label>
               <label className="wide"><span>API Base URL</span><input required type="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label></>}
               <label><span>Model Name</span>{isOpenCodeService(form.service)
