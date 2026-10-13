@@ -38,8 +38,8 @@ globalThis.fetch = async (endpoint, init) => {
 try {
   const profiles = [];
   for (const [service, model] of [
-    ...['gpt-6-luna', 'claude-haiku-5-5', 'mimo-v2.6-flash-free', 'deepseek-v4.1-flash'].map(model => ['opencode', model]),
-    ...['gpt-6-luna', 'claude-haiku-5-5', 'mimo-v2.6-flash', 'deepseek-v4.1-flash'].map(model => ['opencode-go', model]),
+    ...['gpt-6-luna', 'claude-haiku-5-5', 'deepseek-v4.1-flash', 'glm-5.3-flash'].map(model => ['opencode', model]),
+    ...['gpt-6-luna', 'claude-haiku-5-5', 'mimo-v2.6-flash', 'deepseek-v4.1-flash', 'glm-5.3-flash'].map(model => ['opencode-go', model]),
   ]) {
     const response = await POST(http({ service, model, apiKey: 'fixture-secret', baseUrl: 'https://evil.example/v1', provider: 'wrong' }));
     assert.equal(response.status, 201, await response.clone().text());

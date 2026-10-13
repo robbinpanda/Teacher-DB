@@ -1,22 +1,24 @@
 import { test, expect } from '@playwright/test';
 
-test('普通与 Go 各四个模型，切换地址并独立保存、重新编辑', async ({ page }) => {
+test('普通四个模型、Go 五个模型，切换地址并独立保存、重新编辑', async ({ page }) => {
   await page.goto('/settings/models');
   await page.getByRole('radio', { name: '设置OpenCode Go 套餐模型', exact: true }).check();
   const modelSelect = page.getByRole('combobox', { name: 'Model Name', exact: true });
-  await expect(modelSelect.locator('option:not([disabled])')).toHaveText(['GPT 6 Luna', 'Claude Haiku 5.5', 'MiMo 2.6 Flash', 'DeepSeek 4.1 Flash']);
-  await page.getByRole('combobox', { name: 'Model Name', exact: true }).selectOption('claude-haiku-5-5');
+  await expect(modelSelect.locator('option:not([disabled])')).toHaveText(['GPT 6 Luna', 'Claude Haiku 5.5', 'MiMo 2.6 Flash', 'DeepSeek 4.1 Flash', 'GLM 5.3 Flash']);
+  await page.getByRole('combobox', { name: 'Model Name', exact: true }).selectOption('glm-5.3-flash');
   const preview = page.getByLabel('预设接口地址', { exact: true });
-  await expect(preview).toContainText('Anthropic Messages');
-  await expect(preview).toContainText('https://opencode.ai/inference/go/v1/messages');
+  await expect(preview).toContainText('Chat Completions');
+  await expect(preview).toContainText('https://opencode.ai/inference/go/v1/chat/completions');
   await page.getByRole('radio', { name: '设置OpenCode 普通付费模型', exact: true }).check();
-  await expect(preview).toContainText('Anthropic Messages');
-  await expect(preview).toContainText('https://opencode.ai/inference/anthropic/v1/messages');
-  await expect(modelSelect.locator('option:not([disabled])')).toHaveText(['GPT 6 Luna', 'Claude Haiku 5.5', 'MiMo 2.6 Flash（Free）', 'DeepSeek 4.1 Flash']);
-  await modelSelect.selectOption('mimo-v2.6-flash-free');
-  await expect(page.getByText('普通接口官方仅列出 MiMo 2.6 Flash Free；该模型受免费层访问限制。')).toBeVisible();
+  await expect(preview).toContainText('Chat Completions');
+  await expect(preview).toContainText('https://opencode.ai/inference/openai/v1/chat/completions');
+  await expect(modelSelect.locator('option:not([disabled])')).toHaveText(['GPT 6 Luna', 'Claude Haiku 5.5', 'DeepSeek 4.1 Flash', 'GLM 5.3 Flash']);
   await page.getByRole('radio', { name: '设置OpenCode Go 套餐模型', exact: true }).check();
+  await expect(modelSelect).toHaveValue('glm-5.3-flash');
+  await modelSelect.selectOption('mimo-v2.6-flash');
+  await page.getByRole('radio', { name: '设置OpenCode 普通付费模型', exact: true }).check();
   await expect(modelSelect).toHaveValue('');
+  await page.getByRole('radio', { name: '设置OpenCode Go 套餐模型', exact: true }).check();
   await modelSelect.selectOption('mimo-v2.6-flash');
   await page.getByLabel('API Key', { exact: true }).fill('fixture-go-browser-key');
   await page.getByRole('button', { name: '保存模型', exact: true }).click();
@@ -25,10 +27,10 @@ test('普通与 Go 各四个模型，切换地址并独立保存、重新编辑'
   await page.reload();
   await card.getByRole('button', { name: '编辑', exact: true }).click();
   await expect(page.getByRole('radio', { name: '设置OpenCode Go 套餐模型', exact: true })).toBeChecked();
-  await page.getByRole('combobox', { name: 'Model Name', exact: true }).selectOption('claude-haiku-5-5');
+  await page.getByRole('combobox', { name: 'Model Name', exact: true }).selectOption('glm-5.3-flash');
   await page.getByRole('button', { name: '保存修改', exact: true }).click();
-  await expect(card).toContainText('Anthropic Messages');
-  await expect(card).toContainText('claude-haiku-5-5');
+  await expect(card).toContainText('Chat Completions');
+  await expect(card).toContainText('glm-5.3-flash');
   await page.setViewportSize({ width: 390, height: 844 });
   await card.getByRole('button', { name: '编辑', exact: true }).click();
   await expect(preview).toBeVisible();
@@ -49,10 +51,10 @@ test('服务选择显示对应字段，OpenCode 只填模型名和 Key 即可保
   await expect(card).toContainText('https://opencode.ai/inference/openai/v1');
   await card.getByRole('button', { name: '编辑', exact: true }).click();
   await expect(page.getByRole('radio', { name: '设置OpenCode 普通付费模型' })).toBeChecked();
-  await page.getByRole('combobox', { name: 'Model Name', exact: true }).selectOption('claude-haiku-5-5');
+  await page.getByRole('combobox', { name: 'Model Name', exact: true }).selectOption('glm-5.3-flash');
   await page.getByRole('button', { name: '保存修改', exact: true }).click();
-  await expect(card).toContainText('Anthropic Messages');
-  await expect(card).toContainText('https://opencode.ai/inference/anthropic/v1');
+  await expect(card).toContainText('Chat Completions');
+  await expect(card).toContainText('https://opencode.ai/inference/openai/v1');
   await page.getByRole('radio', { name: '设置自定义模型' }).check();
   await expect(page.getByLabel('API Base URL', { exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: '接口协议', exact: true })).toBeVisible();

@@ -385,7 +385,6 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
               : form.service === "opencode-go"
                 ? <>选择模型并填写套餐 API Key，使用独立的 <a href="https://opencode.ai/v2/docs/console/go/" target="_blank" rel="noreferrer">Go / Go Plus 接口</a>。官网将 Go 定位为编程代理套餐，题库调用是否获准由服务商决定。</>
                 : "填写 OpenRouter 模型 ID（如 xiaomi/mimo-v2.6-flash）和 API Key，自动使用 OpenRouter 接口。"}</p>}
-            {form.service === "opencode" && form.model === "mimo-v2.6-flash-free" && <p className="model-service-help">普通接口官方仅列出 MiMo 2.6 Flash Free；该模型受免费层访问限制。</p>}
             {preset && <p className="model-service-help" aria-label="预设接口地址">{MODEL_PROTOCOL_LABELS[preset.provider]} · <code>{endpointForProtocol(preset.baseUrl, preset.provider, preset.model)}</code></p>}
             <div className="model-editor-fields">
               <label><span>显示名称{form.service !== "custom" && <small>选填，默认使用模型名</small>}</span><input required={form.service === "custom"} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：我的识题模型" /></label>

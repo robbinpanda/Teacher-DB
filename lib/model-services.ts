@@ -6,20 +6,21 @@ export const MODEL_SERVICE_LABELS: Record<ModelService, string> = {
   opencode: "OpenCode 普通付费", "opencode-go": "OpenCode Go 套餐", openrouter: "OpenRouter", custom: "自定义",
 };
 
-// Official endpoint tables checked 2026-10-13. Keep the requested four choices per service.
+// Official endpoint tables checked 2026-10-13. Only offer the requested paid/subscription models.
 // https://opencode.ai/v2/docs/console/models/ and https://opencode.ai/v2/docs/console/go/
 type PresetModel = { id: string; label: string; protocol: ModelProtocol };
 export const OPENCODE_MODELS: readonly PresetModel[] = [
   { id: "gpt-6-luna", label: "GPT 6 Luna", protocol: "openai-responses" },
   { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", protocol: "anthropic-messages" },
-  { id: "mimo-v2.6-flash-free", label: "MiMo 2.6 Flash（Free）", protocol: "openai-chat-completions" },
   { id: "deepseek-v4.1-flash", label: "DeepSeek 4.1 Flash", protocol: "openai-chat-completions" },
+  { id: "glm-5.3-flash", label: "GLM 5.3 Flash", protocol: "openai-chat-completions" },
 ];
-// Console only documents the Free ID; Go uses a distinct subscription ID.
-export const OPENCODE_GO_MODELS: readonly PresetModel[] = OPENCODE_MODELS.map(model =>
-  model.id === "mimo-v2.6-flash-free"
-    ? { ...model, id: "mimo-v2.6-flash", label: "MiMo 2.6 Flash" }
-    : model);
+// MiMo is offered only through the Go subscription preset.
+export const OPENCODE_GO_MODELS: readonly PresetModel[] = [
+  ...OPENCODE_MODELS.slice(0, 2),
+  { id: "mimo-v2.6-flash", label: "MiMo 2.6 Flash", protocol: "openai-chat-completions" },
+  ...OPENCODE_MODELS.slice(2),
+];
 
 export function isOpenCodeService(service: string): service is "opencode" | "opencode-go" {
   return service === "opencode" || service === "opencode-go";
