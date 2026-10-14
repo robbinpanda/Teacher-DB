@@ -2,6 +2,7 @@ import { routes } from "./routes";
 import { result, toResponse } from "../core/result";
 import { readModel } from "./read-models";
 import { z } from "zod";
+import { runtimeLog } from "../../lib/runtime-log.mjs";
 
 type Params = Record<string, string | string[]>;
 type Handler = (request: Request, context: { params: Promise<Params> }) => Promise<Response>;
@@ -52,6 +53,7 @@ async function dispatch(request: Request): Promise<Response> {
 }
 
 export async function dispatchRequest(request: Request): Promise<Response> {
+  const startedAt = performance.now();
   const requestId = crypto.randomUUID();
   let response: Response;
   if (!["GET", "HEAD"].includes(request.method) && request.headers.get("content-type")?.includes("application/json")) {
@@ -70,5 +72,10 @@ export async function dispatchRequest(request: Request): Promise<Response> {
     } else response = toResponse(result({ error: response.status === 404 ? "资源不存在" : "请求处理失败", requestId }, { status: response.status }));
   }
   response.headers.set("x-request-id", requestId);
+  const durationMs = Math.round(performance.now() - startedAt);
+  if (durationMs >= 1000 || response.status >= 500) runtimeLog("request_slow_or_failed", {
+    requestId, method: request.method, pathname: new URL(request.url).pathname,
+    status: response.status, durationMs,
+  });
   return response;
 }

@@ -1,4 +1,5 @@
 import "server-only";
+import { getExtractionSpeed } from "./extraction-speed";
 import { automaticAiReviewEnabled } from "./ai-review-settings";
 
 import type Database from "better-sqlite3";
@@ -15,7 +16,7 @@ import {
 import { getDocumentIntegrity, integrityError } from "./document-integrity";
 import { assertDocumentLease, LostDocumentLeaseError, renewDocumentLease } from "./job-lease";
 import { availableQueueCapacity, DEFAULT_UPLOAD_CONCURRENCY, normalizeUploadConcurrency } from "./upload-concurrency";
-import { EXTRACTION_CIRCUIT_FAILURE_THRESHOLD, recordExtractionFailure, resetExtractionFailureStreak } from "./extraction-circuit";
+import { countsTowardExtractionCircuit, EXTRACTION_CIRCUIT_FAILURE_THRESHOLD, recordExtractionFailure, resetExtractionFailureStreak } from "./extraction-circuit";
 
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 25_000;
@@ -35,6 +36,7 @@ type RunRow = {
 };
 
 type ExtractionFailure = {
+  savedQuestionCount?: number;
   error?: string;
   code?: string;
   retryable?: boolean;
@@ -125,7 +127,7 @@ export async function enqueueDocumentExtraction(input: {
        ON CONFLICT(document_id) DO UPDATE SET
          owner_id = excluded.owner_id, profile_id = excluded.profile_id, status = excluded.status,
          next_attempt_at = NULL, lease_owner = NULL, lease_expires_at = NULL,
-         last_error = NULL, question_total = NULL, completed_question_numbers_json = '[]',
+         last_error = NULL,
          stream_phase = excluded.stream_phase, last_stream_event_at = NULL,
          stream_message = excluded.stream_message, finished_at = NULL, updated_at = excluded.updated_at`,
     ).run(
@@ -200,18 +202,21 @@ function parkWaitingJobs(sqlite: Database.Database, ownerId: string, reason: str
     `UPDATE document_jobs SET status = 'paused', next_attempt_at = NULL, lease_owner = NULL,
        lease_expires_at = NULL, last_error = ?, stream_phase = 'paused', stream_message = ?,
        finished_at = NULL, updated_at = ?
-     WHERE owner_id = ? AND status IN ('queued', 'retry_wait', 'failed')`,
+     WHERE owner_id = ? AND status IN ('queued', 'retry_wait', 'failed')
+       AND NOT EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id=document_jobs.document_id AND r.error_code='source_only')`,
   ).run(reason, reason, timestamp, ownerId);
   sqlite.prepare(
     `UPDATE extraction_runs SET status = 'paused', next_attempt_at = NULL,
        lease_owner = NULL, lease_expires_at = NULL, finished_at = NULL
      WHERE status <> 'complete' AND status <> 'running' AND document_id IN (
        SELECT document_id FROM document_jobs WHERE owner_id = ? AND status = 'paused'
+         AND NOT EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id=document_jobs.document_id AND r.error_code='source_only')
      )`,
   ).run(ownerId);
   sqlite.prepare(
     `UPDATE documents SET status = 'extracting', error = ?, updated_at = ?
-     WHERE id IN (SELECT document_id FROM document_jobs WHERE owner_id = ? AND status = 'paused')`,
+     WHERE id IN (SELECT document_id FROM document_jobs WHERE owner_id = ? AND status = 'paused'
+       AND NOT EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id=document_jobs.document_id AND r.error_code='source_only'))`,
   ).run(reason, timestamp, ownerId);
 }
 
@@ -285,6 +290,7 @@ export async function getExtractionQueueSettings(ownerId: string) {
     activeCount: Number(counts.activeCount ?? 0),
     queuedCount: Number(counts.queuedCount ?? 0),
     pausedCount: Number(counts.pausedCount ?? 0),
+    speed: getExtractionSpeed(sqlite, ownerId),
   };
 }
 
@@ -337,15 +343,16 @@ export async function setExtractionQueuePaused(ownerId: string, paused: boolean)
        WHERE status <> 'complete' AND document_id IN (
          SELECT document_id FROM document_jobs
          WHERE owner_id = ? AND status IN ('paused', 'retry_wait', 'failed', 'queued')
+           AND NOT EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id=document_jobs.document_id AND r.error_code='source_only')
        )`,
     ).run(ownerId);
     const resumed = transaction.prepare(
       `UPDATE document_jobs SET status = 'queued', attempt = 0, next_attempt_at = NULL,
          lease_owner = NULL, lease_expires_at = NULL, last_error = NULL, stream_phase = 'queued',
-         stream_message = '等待整卷模型调用', question_total = NULL,
-         completed_question_numbers_json = '[]', last_stream_event_at = NULL,
+         stream_message = '等待从未完成题目继续', last_stream_event_at = NULL,
          finished_at = NULL, updated_at = ?
-       WHERE owner_id = ? AND status IN ('paused', 'retry_wait', 'failed', 'queued')`,
+       WHERE owner_id = ? AND status IN ('paused', 'retry_wait', 'failed', 'queued')
+         AND NOT EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id=document_jobs.document_id AND r.error_code='source_only')`,
     ).run(timestamp, ownerId);
     transaction.prepare(
       `UPDATE documents SET status = 'extracting', error = NULL, updated_at = ?
@@ -404,9 +411,8 @@ function claimJobs() {
         const workerId = crypto.randomUUID();
         transaction.prepare(
           `UPDATE document_jobs SET status = 'processing', lease_owner = ?, lease_expires_at = ?,
-             next_attempt_at = NULL, last_error = NULL, question_total = NULL,
-             completed_question_numbers_json = '[]', stream_phase = 'connecting',
-             stream_message = '正在连接模型并通读整卷', last_stream_event_at = NULL,
+             next_attempt_at = NULL, last_error = NULL, stream_phase = 'preparing',
+             stream_message = '等待本地图像预处理', last_stream_event_at = NULL,
              started_at = COALESCE(started_at, ?), attempt = attempt + 1, updated_at = ?
            WHERE document_id = ?`,
         ).run(workerId, futureIso(LEASE_MS), timestamp, timestamp, job.documentId);
@@ -508,12 +514,23 @@ async function processJob(job: JobRow & { workerId: string }) {
       // Some failures (for example decrypting the model credential) happen before
       // the page run is activated, so its attempt can remain zero. The document
       // job attempt is the durable retry clock and prevents an infinite retry loop.
-      const attempt = effectiveExtractionAttempt(run.attempt, job.attempt);
+      const madeProgress = (failure.savedQuestionCount ?? 0) > 0;
+      const attempt = madeProgress ? 1 : effectiveExtractionAttempt(run.attempt, job.attempt);
       const retryable = failure.retryable !== false && !shouldPauseExtraction(attempt);
       const timestamp = now();
       const message = (failure.error ?? "整卷识别失败").slice(0, 4000);
       const circuit = sqliteTransaction((transaction) => {
         assertDocumentLease(transaction, job.documentId, job.workerId, timestamp);
+        if (madeProgress) {
+          // Retry budget applies to the next unfinished question, not the entire paper.
+          transaction.prepare("UPDATE document_jobs SET attempt=1 WHERE document_id=?").run(job.documentId);
+          transaction.prepare("UPDATE extraction_runs SET attempt=1 WHERE document_id=? AND status<>'complete'").run(job.documentId);
+          transaction.prepare("UPDATE app_settings SET extraction_failure_streak=0 WHERE owner_id=?").run(job.ownerId);
+        }
+        if (!countsTowardExtractionCircuit(failure.code)) {
+          transaction.prepare("UPDATE app_settings SET extraction_failure_streak=0 WHERE owner_id=?").run(job.ownerId);
+          return { paused: false, reason: null };
+        }
         const state = recordQueueFailure(transaction, job.ownerId, message, timestamp);
         if (state.paused) parkClaimedJob(transaction, job, state.reason ?? "识别队列已暂停", timestamp);
         return state;
@@ -626,7 +643,7 @@ async function pump() {
   const queued = getSqlite().prepare(
     "SELECT COUNT(*) AS count FROM document_jobs WHERE status = 'queued'",
   ).get() as { count: number };
-  if (queued.count) schedulePump(25);
+  if (queued.count) schedulePump(1000);
   else {
     const wakeTimes = [next.nextAttemptAt, lease.leaseExpiresAt].filter(Boolean).map((value) => Date.parse(value!));
     if (wakeTimes.length) schedulePump(Math.min(30_000, Math.max(25, Math.min(...wakeTimes) - Date.now())));

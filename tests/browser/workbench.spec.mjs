@@ -111,8 +111,11 @@ test("导入抽屉保留配置、文件暂存校验、拖放和焦点恢复", as
   const input = dialog.getByLabel("选择 PDF 文件");
   await input.setInputFiles({ name: "wrong.txt", mimeType: "text/plain", buffer: Buffer.from("x") });
   await expect(dialog.getByRole("alert")).toContainText("仅支持 PDF");
-  await input.setInputFiles(Array.from({ length: 101 }, (_, i) => ({ name: `${i}.pdf`, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") })));
-  await expect(dialog.getByRole("alert")).toContainText("最多导入 100 份");
+  await input.setInputFiles(Array.from({ length: 1001 }, (_, i) => ({ name: `${i}.pdf`, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") })));
+  await expect(dialog.getByRole("alert")).toContainText("最多导入 1000 份");
+  await input.setInputFiles(Array.from({ length: 1000 }, (_, i) => ({ name: `${i}.pdf`, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") })));
+  await expect(dialog.getByText("已选 1000 份", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "清空", exact: true }).click();
   await input.setInputFiles([{ name: "待导入一.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") }, { name: "待导入二.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") }]);
   await expect(dialog.getByText("已选 2 份", { exact: true })).toBeVisible();
   await expect(dialog.locator(".wb-file-selection li")).toHaveCount(2);
@@ -257,7 +260,7 @@ test("五份原卷交给后台后清空，删除试卷再打开不残留", async
     await dialog.getByRole("button", { name: "关闭", exact: true }).click();
     await page.getByRole("tab", { name: /^全部/ }).click();
     await page.getByRole("button", { name: "批量操作" }).click();
-    await page.getByRole("button", { name: "全选", exact: true }).click();
+    await page.getByRole("button", { name: "全选本页", exact: true }).click();
     await page.getByRole("button", { name: "批量删除", exact: true }).click();
     await page.getByRole("button", { name: /同步删除试卷和题目/ }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -302,12 +305,12 @@ test("上传期间关闭重开保留当前任务，失败可见，新批次不�
 test("同步失败保留现有数据，模型配置失败明确提示并可重开恢复", async ({ page }) => {
   const fixture = papers();
   let failDocuments = true, failModels = true;
-  await page.route("**/api/documents", route => failDocuments ? route.fulfill({ status: 503, json: { error: "试卷状态暂不可用" } }) : route.continue());
+  await page.route(url => url.pathname === "/api/documents", route => failDocuments ? route.fulfill({ status: 503, json: { error: "试卷状态暂不可用" } }) : route.continue());
   await page.route("**/api/model-profiles", route => failModels ? route.fulfill({ status: 503, json: { error: "模型配置暂不可用" } }) : route.continue());
   try {
     await page.goto("/");
     await expect(page.locator(".workbench").getByRole("alert")).toContainText("试卷状态暂不可用");
-    await expect(page.locator(".wb-table tbody tr")).toHaveCount(7);
+    await expect(page.locator(".wb-table tbody tr")).toHaveCount(10);
     failDocuments = false;
     await expect(page.locator(".workbench").getByRole("alert")).toHaveCount(0, { timeout: 8000 });
     await page.getByRole("button", { name: "导入试卷", exact: true }).click();
@@ -383,7 +386,9 @@ test("超过列表上限时旧的识别任务仍会被返回并置顶", async ({
     const response=await request.get('/api/documents');
     expect(response.ok()).toBe(true);
     const result=await response.json();
-    expect(result.documents).toHaveLength(100);
+    expect(result.documents).toHaveLength(50);
+    expect(result.pagination.total).toBeGreaterThanOrEqual(110);
+    expect(result.pagination.totalPages).toBeGreaterThanOrEqual(3);
     expect(result.documents[0].id).toBe(active.id);
   } finally {fixture.close();}
 });

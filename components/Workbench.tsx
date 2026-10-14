@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { AlertTriangle, Check, FileStack, FileX2, ListChecks, LoaderCircle, Pause, Play, ScanText, Search, Trash2, X } from "lucide-react";
+import type { DocumentListResult } from "../lib/document-list";
 import type { SourceDocument } from "../lib/types";
-import { documentGroup, documentGroups as groupMeta, filterDocuments, type DocumentGroup, type DocumentSort } from "../lib/workbench-documents";
+import type { ExtractionSpeed } from "../lib/extraction-speed";
+import { documentGroup, documentGroups as groupMeta, type DocumentGroup, type DocumentSort } from "../lib/workbench-documents";
 import { DocumentTable } from "./DocumentTable";
 import { WorkbenchOverview } from "./WorkbenchOverview";
 import { WorkbenchDialog } from "./WorkbenchDialog";
@@ -19,17 +21,15 @@ type QueueControlState = {
   pausedCount: number;
   activeCount: number;
   queuedCount: number;
+  speed?: ExtractionSpeed;
 };
 
-export function Workbench({ initialDocuments, approvedQuestions, importOpen = false }: { importOpen?: boolean; initialDocuments: SourceDocument[]; approvedQuestions: number }) {
+export function Workbench({ initialPage, importOpen = false }: { importOpen?: boolean; initialPage: DocumentListResult }) {
   const router = useRouter();
-  const [documents, setDocuments] = useState(initialDocuments);
-  const [activeGroup, setActiveGroup] = useState<DocumentGroup>(() => {
-    if (initialDocuments.some((document) => documentGroup(document) === "pending_review")) return "pending_review";
-    if (initialDocuments.some((document) => documentGroup(document) === "preprocessing")) return "preprocessing";
-    if (initialDocuments.some((document) => documentGroup(document) === "reviewed")) return "reviewed";
-    return "all";
-  });
+  const [documents, setDocuments] = useState(initialPage.documents);
+  const [metadata, setMetadata] = useState(initialPage);
+  const [page, setPage] = useState(1);
+  const [activeGroup, setActiveGroup] = useState<DocumentGroup>("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<DocumentSort>("newest");
   const [refreshing, setRefreshing] = useState(true);
@@ -48,23 +48,59 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
   const [listError, setListError] = useState("");
   const [queueState, setQueueState] = useState<QueueControlState>({ automaticAiReviewEnabled: false, paused: false, pauseReason: null, pausedCount: 0, activeCount: 0, queuedCount: 0 });
   const [queueBusy, setQueueBusy] = useState(false);
+  const [speed, setSpeed] = useState<ExtractionSpeed>();
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+    const controller = new AbortController();
     const refresh = async () => {
-      if (document.hidden || approvingRef.current) return;
+      if (document.hidden || inFlight) return;
+      inFlight = true;
+      try {
+        const response = await fetch("/api/extraction-queue?summary=1", {
+          cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
+        });
+        if (!response.ok) throw new Error("速度监控暂不可用");
+        const result = await response.json() as Partial<QueueControlState>;
+        if (!cancelled) setSpeed(result.speed);
+      } catch {
+        if (!cancelled) setSpeed(undefined);
+      } finally { inFlight = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2000);
+    const visible = () => { if (!document.hidden) void refresh(); };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+    const controller = new AbortController();
+    const refresh = async () => {
+      if (document.hidden || approvingRef.current || inFlight) return;
+      inFlight = true;
       const version = listVersionRef.current;
       try {
         const [response, queueResponse] = await Promise.all([
-          fetch("/api/documents", { cache: "no-store" }),
-          fetch("/api/extraction-queue", { cache: "no-store" }),
+          fetch(`/api/documents?${new URLSearchParams({ page: String(page), pageSize: "50", group: activeGroup, search, sort })}`, { cache: "no-store", signal: controller.signal }),
+          fetch("/api/extraction-queue?summary=1", { cache: "no-store", signal: controller.signal }),
         ]);
-        const result = await response.json().catch(() => ({})) as { documents?: SourceDocument[]; error?: string };
+        const result = await response.json().catch(() => ({})) as DocumentListResult & { error?: string };
         const queue = await queueResponse.json().catch(() => ({})) as Partial<QueueControlState> & { error?: string };
         if (!response.ok || !result.documents) throw new Error(result.error ?? "无法更新试卷状态");
         if (!queueResponse.ok) throw new Error(queue.error ?? "无法更新识别队列状态");
         if (!cancelled && version === listVersionRef.current) {
           setDocuments(result.documents);
+          setMetadata(result);
+          if (result.pagination.page !== page) setPage(result.pagination.page);
           setQueueState({
             automaticAiReviewEnabled: queue.automaticAiReviewEnabled === true,
             paused: Boolean(queue.paused),
@@ -72,6 +108,7 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
             pausedCount: Number(queue.pausedCount ?? 0),
             activeCount: Number(queue.activeCount ?? 0),
             queuedCount: Number(queue.queuedCount ?? 0),
+            speed: queue.speed,
           });
           const currentIds = new Set(result.documents.map((item) => item.id));
           setSelectedIds((ids) => new Set(Array.from(ids).filter((id) => currentIds.has(id))));
@@ -79,18 +116,20 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
         }
       } catch (caught) {
         if (!cancelled && version === listVersionRef.current) setListError(caught instanceof Error ? caught.message : "无法更新试卷状态");
-      } finally { if (!cancelled) setRefreshing(false); }
+      } finally { inFlight = false; if (!cancelled) setRefreshing(false); }
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 3000);
+    const firstRefresh = window.setTimeout(() => void refresh(), 200);
+    const timer = window.setInterval(() => void refresh(), 5000);
     const onVisibilityChange = () => { if (!document.hidden) void refresh(); };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       cancelled = true;
+      controller.abort();
+      window.clearTimeout(firstRefresh);
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [initialDocuments]);
+  }, [initialPage, page, activeGroup, search, sort]);
 
   async function controlQueue(action: "pause" | "resume") {
     setQueueBusy(true);
@@ -267,12 +306,9 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role='tab']")[nextIndex]?.focus();
   }
 
-  const groupCounts = Object.fromEntries(groupMeta.map((group) => [
-    group.id,
-    group.id === "all" ? documents.length : documents.filter((document) => documentGroup(document) === group.id).length,
-  ])) as Record<DocumentGroup, number>;
+  const groupCounts = metadata.counts;
   const activeGroupMeta = groupMeta.find((group) => group.id === activeGroup) ?? groupMeta[0];
-  const activeDocuments = filterDocuments(documents, activeGroup, search, sort);
+  const activeDocuments = documents;
   const allActiveSelected = activeDocuments.length > 0 && activeDocuments.every((document) => selectedIds.has(document.id));
   const selectedDocuments = documents.filter((document) => selectedIds.has(document.id));
 
@@ -286,6 +322,8 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
   function selectGroup(group: DocumentGroup) {
     if (batchAction || deletingMode) return;
     setActiveGroup(group);
+    setPage(1);
+    setRefreshing(true);
     setSelectedIds(new Set());
     setSelectionMode(false);
     setSearch("");
@@ -304,17 +342,17 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
         <UploadWorkbench initiallyOpen={importOpen} />
       </div>
     </header>
-    <WorkbenchOverview documents={documents} approvedQuestions={approvedQuestions} onSelect={selectGroup} />
+    <WorkbenchOverview stats={metadata.stats} speed={speed} onSelect={selectGroup} />
     <section className="wb-library" aria-labelledby="papers-heading">
-      <div className="wb-library-heading"><h2 id="papers-heading">试卷管理 <span>{documents.length} 份</span></h2>{refreshing && <span className="wb-sync"><LoaderCircle size={13} className="spin" />同步中</span>}</div>
+      <div className="wb-library-heading"><h2 id="papers-heading">试卷管理 <span>{metadata.counts.all.toLocaleString("zh-CN")} 份</span></h2>{refreshing && <span className="wb-sync"><LoaderCircle size={13} className="spin" />同步中</span>}</div>
       <div className="wb-toolbar">
         <div className="wb-tabs" role="tablist" aria-label="试卷处理状态">
           {groupMeta.map((group, index) => <button type="button" role="tab" id={`document-tab-${group.id}`} aria-controls="document-status-panel" aria-selected={activeGroup === group.id} tabIndex={activeGroup === group.id ? 0 : -1} key={group.id} disabled={busy} onClick={() => selectGroup(group.id)} onKeyDown={event => moveGroupFocus(event, index)} title={group.description}>{group.title}<b>{groupCounts[group.id]}</b></button>)}
         </div>
         <div className="wb-tools">
-          <label className="wb-search"><Search size={15} /><input type="search" aria-label="搜索试卷名称" placeholder="搜索试卷名称" value={search} disabled={busy} onChange={event => { setSearch(event.target.value); setSelectedIds(new Set()); }} /></label>
-          <select className="wb-sort" aria-label="试卷排序" value={sort} onChange={event => setSort(event.target.value as DocumentSort)}><option value="newest">上传时间：最新</option><option value="oldest">上传时间：最早</option><option value="name">试卷名称</option></select>
-          {activeDocuments.length > 0 && <button className="wb-button" type="button" disabled={busy} onClick={() => { setSelectionMode(true); setSelectedIds(allActiveSelected ? new Set() : new Set(activeDocuments.map(document => document.id))); setBatchNotice(""); }}>{allActiveSelected ? "取消全选" : "全选"}</button>}
+          <label className="wb-search"><Search size={15} /><input type="search" aria-label="搜索试卷名称" placeholder="搜索试卷名称" value={search} disabled={busy} onChange={event => { setSearch(event.target.value); setPage(1); setSelectedIds(new Set()); }} /></label>
+          <select className="wb-sort" aria-label="试卷排序" value={sort} onChange={event => { setSort(event.target.value as DocumentSort); setPage(1); setSelectedIds(new Set()); }}><option value="newest">上传时间：最新</option><option value="oldest">上传时间：最早</option><option value="name">试卷名称</option></select>
+          {activeDocuments.length > 0 && <button className="wb-button" type="button" disabled={busy} onClick={() => { setSelectionMode(true); setSelectedIds(allActiveSelected ? new Set() : new Set(activeDocuments.map(document => document.id))); setBatchNotice(""); }}>{allActiveSelected ? "取消本页全选" : "全选本页"}</button>}
           {!selectionMode && activeDocuments.length > 0 && <button className="wb-button" type="button" disabled={busy} onClick={() => { setSelectionMode(true); setBatchNotice(""); }}><ListChecks size={15} />批量操作</button>}
         </div>
       </div>
@@ -339,6 +377,18 @@ export function Workbench({ initialDocuments, approvedQuestions, importOpen = fa
         {batchWarning && <p className="wb-notice wb-error document-bulk-warning" role="alert"><AlertTriangle size={15} />{batchWarning}</p>}
         {activeDocuments.length ? <DocumentTable documents={activeDocuments} selectionMode={selectionMode} selectedIds={selectedIds} retryingIds={retryingIds} busy={busy} onToggle={toggleDocument} onDelete={document => { setTarget(document); setError(""); }} onRetry={document => void retryDocument(document)} /> :
           <div className="wb-empty document-group-empty"><FileStack size={28} /><h3>{search.trim() ? "没有匹配的试卷" : activeGroupMeta.empty}</h3><p>{search.trim() ? "试试其他名称，或清除搜索条件。" : documents.length ? "可切换其他状态查看试卷。" : "支持批量上传 PDF，识别完成后即可审核。"}</p>{search.trim() && <button type="button" className="wb-button" onClick={() => setSearch("")}>清除搜索</button>}</div>}
+        <form className="wb-pagination" aria-label="试卷分页" onSubmit={event => {
+          event.preventDefault();
+          const value = Number(new FormData(event.currentTarget).get("page"));
+          if (Number.isInteger(value) && value > 0) { setPage(Math.min(value, metadata.pagination.totalPages)); setSelectedIds(new Set()); }
+        }}>
+          <span>共 {metadata.pagination.total.toLocaleString("zh-CN")} 份 · 每页 {metadata.pagination.pageSize} 份</span>
+          <button type="button" className="wb-button" disabled={busy || page <= 1} onClick={() => { setPage(page - 1); setSelectedIds(new Set()); }}>上一页</button>
+          <span>第 {metadata.pagination.page} / {metadata.pagination.totalPages} 页</span>
+          <button type="button" className="wb-button" disabled={busy || page >= metadata.pagination.totalPages} onClick={() => { setPage(page + 1); setSelectedIds(new Set()); }}>下一页</button>
+          <label>跳至 <input key={metadata.pagination.page} aria-label="跳转页码" name="page" type="number" min="1" max={metadata.pagination.totalPages} defaultValue={metadata.pagination.page} /></label>
+          <button className="wb-button" disabled={busy} type="submit">跳转</button>
+        </form>
       </section>
     </section>
     <WorkbenchDialog open={Boolean(target || batchDeleteOpen)} titleId="delete-document-title" busy={Boolean(deletingMode)} onClose={closeDeleteDialog}>

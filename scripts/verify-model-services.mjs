@@ -61,7 +61,13 @@ try {
     assert.equal(requests.at(-1).headers.get('x-opencode-session'), 'fixture-run');
     assert.equal(requests.at(-2).headers.get('x-opencode-session'), 'fixture-run');
     const test = await testConnection(http({ profileId: profile.id })); assert.equal(test.status, 200, await test.clone().text());
-    for (const req of requests.slice(before)) assert.equal(new URL(req.endpoint).pathname.startsWith('/inference/go/'), service === 'opencode-go');
+    // Check every outgoing request, including connection tests and compatibility retries.
+    for (const req of requests.slice(before)) {
+      assert.equal(new URL(req.endpoint).pathname.startsWith('/inference/go/'), service === 'opencode-go');
+      assert.match(req.headers.get('x-opencode-session') ?? '', /^[a-zA-Z0-9_-]{1,200}$/);
+      assert.equal(req.headers.get('user-agent'), 'Jianti-Teacher-Question-Bank/0.1.0');
+      assert.equal(req.headers.get('authorization'), 'Bearer fixture-secret');
+    }
   }
   // The editing checks reuse model choices; remove their earlier fixture configs
   // because built-in names now identify the service/model and cannot use aliases.
@@ -116,7 +122,7 @@ try {
   const beforeV8 = db.prepare('SELECT * FROM model_profiles ORDER BY id').all();
   execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
     "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
-  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 9);
+  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 10);
   assert.deepEqual(db.prepare('SELECT * FROM model_profiles ORDER BY id').all(), beforeV8);
   db.prepare("UPDATE model_profiles SET service='opencode-go' WHERE id=?").run(profile.id);
   assert.throws(() => db.prepare("UPDATE model_profiles SET service='invalid' WHERE id=?").run(profile.id), /CHECK/);
@@ -127,7 +133,7 @@ try {
   execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
     "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
   assert.ok(db.prepare('PRAGMA table_info(model_profiles)').all().some(c => c.name === 'service'));
-  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 9);
+  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 10);
   assert.deepEqual(db.prepare('SELECT id,api_key_ciphertext,base_url,provider FROM model_profiles ORDER BY id').all(), beforeMigration);
   console.log(JSON.stringify({ passed: true, mockRequests: requests.length, dataDirectory: process.env.JIANTI_DATA_DIR }));
 } finally { globalThis.fetch = nativeFetch; }

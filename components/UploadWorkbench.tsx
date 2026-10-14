@@ -9,10 +9,13 @@ import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPL
 import { useEducationScope } from "./AppShell";
 import { fetchUploadJson } from "../lib/upload-request";
 import { uploadResponseSchema } from "../lib/api-contracts";
+import { persistPendingUploads, readPendingUploads, removePendingUpload, type PendingUpload } from "../lib/pending-uploads";
 import { WorkbenchDialog } from "./WorkbenchDialog";
+import { MAX_IMPORT_BATCH_SIZE } from "../lib/import-paper-name";
+import { browserPdfConcurrency, renderPdfPages, PDF_RESOURCE_OPTIONS, type RenderedPage } from "../lib/pdf-render";
+import { reportBrowserRuntime, changeActivePdfCount } from "../lib/browser-runtime";
 
 type Stage = "idle" | "rendering" | "uploading" | "error";
-type RenderedPage = { blob: Blob; width: number; height: number };
 type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; documentId?: string; renderer?: string; modelDisplayName?: string };
 type QueueSnapshot = {
   concurrency?: number;
@@ -35,13 +38,6 @@ type ModelProfilesResponse = {
   error?: string;
 };
 
-async function canvasToPage(canvas: HTMLCanvasElement): Promise<RenderedPage> {
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((value) => value ? resolve(value) : reject(new Error("页面截图失败")), "image/jpeg", 0.9);
-  });
-  return { blob, width: canvas.width, height: canvas.height };
-}
-
 async function renderPdf(
   file: File,
   onReady: (pageCount: number) => Promise<void>,
@@ -49,25 +45,23 @@ async function renderPdf(
 ) {
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
-  await onReady(pdf.numPages);
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1.65 });
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(viewport.width);
-    canvas.height = Math.round(viewport.height);
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("无法创建 PDF 画布");
-    await page.render({ canvas, canvasContext: context, viewport }).promise;
-    await onPage(await canvasToPage(canvas), pageNumber, pdf.numPages);
-    canvas.width = 1;
-    canvas.height = 1;
+  changeActivePdfCount(1);
+  reportBrowserRuntime("pdf_start");
+  try {
+    await renderPdfPages(pdfjs.getDocument({ ...PDF_RESOURCE_OPTIONS, data: await file.arrayBuffer(), canvasMaxAreaInBytes: 32 * 1024 * 1024 }), onReady, onPage);
+  } catch (error) {
+    reportBrowserRuntime("pdf_error");
+    throw error;
+  } finally {
+    changeActivePdfCount(-1);
+    reportBrowserRuntime("pdf_end");
   }
 }
 
 export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const router = useRouter();
+  const [recoverable, setRecoverable] = useState<PendingUpload[]>([]);
+  useEffect(() => { void readPendingUploads().then(setRecoverable).catch(() => undefined); }, []);
   const { subject, stage, setSubject, setStage } = useEducationScope();
   const [open, setOpen] = useState(initiallyOpen);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -80,6 +74,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   const batchControllerRef = useRef<{ setConcurrency: (value: unknown) => void } | null>(null);
   const [tasks, setTasks] = useState<UploadTask[]>([]);
   const [importNotice, setImportNotice] = useState("");
+  const [namingWarnings, setNamingWarnings] = useState<string[]>([]);
   const [concurrencyDraft, setConcurrencyDraft] = useState(String(DEFAULT_UPLOAD_CONCURRENCY));
   const [appliedConcurrency, setAppliedConcurrency] = useState(DEFAULT_UPLOAD_CONCURRENCY);
   const [concurrencySaving, setConcurrencySaving] = useState(false);
@@ -114,7 +109,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
     if (typeof result.concurrency === "number") {
       concurrencyRef.current = result.concurrency;
       setAppliedConcurrency(result.concurrency);
-      batchControllerRef.current?.setConcurrency(result.concurrency);
+      batchControllerRef.current?.setConcurrency(browserPdfConcurrency(result.concurrency));
       if (syncDraft || !concurrencyDraftDirtyRef.current) setConcurrencyDraft(String(result.concurrency));
     }
     setQueueCounts({ active: Number(result.activeCount ?? 0), queued: Number(result.queuedCount ?? 0) });
@@ -140,7 +135,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/extraction-queue", { cache: "no-store" })
+    void fetch("/api/extraction-queue?summary=1", { cache: "no-store" })
       .then(async (response) => ({ response, result: await response.json() as QueueSnapshot }))
       .then(({ response, result }) => {
         if (cancelled || !response.ok) return;
@@ -172,6 +167,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   }, [open]);
 
   function handOffTask(taskId: string) {
+    void removePendingUpload(taskId).then(() => setRecoverable(items => items.filter(item => item.id !== taskId))).catch(() => undefined);
     setTasks(items => items.filter(item => item.id !== taskId));
     setImportNotice("原卷已保存，后续分页、识别和审核进度请在试卷管理中查看。");
   }
@@ -245,7 +241,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   }
 
   async function processFile(file: File, taskId: string, metadata: typeof sourceMeta, profileId?: string) {
-    patchTask(taskId, { stage: "rendering", message: "正在把原卷渲染为高清页面…" });
+    patchTask(taskId, { stage: "uploading", message: "正在保存原卷并整理试卷名称…" });
     let persistedDocumentId: string | undefined;
     try {
       const provisional = new FormData();
@@ -255,6 +251,8 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
       Object.entries(metadata).forEach(([key, value]) => provisional.append(key, value));
       const provisionalResult = uploadResponseSchema.parse(await fetchUploadJson("/api/documents", { method: "POST", body: provisional }));
       if (!provisionalResult.id) throw new Error("原卷预登记失败");
+      if (provisionalResult.namingWarning) setNamingWarnings(previous => [...previous, `${file.name}：${provisionalResult.namingWarning}`]);
+      if (provisionalResult.name) patchTask(taskId, { fileName: provisionalResult.name });
       const currentDocumentId = provisionalResult.id;
       persistedDocumentId = currentDocumentId;
       patchTask(taskId, { documentId: currentDocumentId });
@@ -322,11 +320,16 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
 
   async function processFiles(files: File[]) {
     if (!files.length || uploadDisabled) return;
+    if (files.length > MAX_IMPORT_BATCH_SIZE) { setFileError(`每批最多导入 ${MAX_IMPORT_BATCH_SIZE} 份试卷，请分批上传。`); return; }
+    setNamingWarnings([]);
     setBatchActive(true);
     const metadata = { ...sourceMeta };
     const batchProfileId = selectedProfileId || undefined;
     const batchProfile = modelProfiles.find((profile) => profile.id === batchProfileId);
-    const queued = files.slice(0, 100).map((file) => ({ id: crypto.randomUUID(), file }));
+    const queued = files.map((file) => ({ id: crypto.randomUUID(), file, fileName: file.name, metadata, profileId: batchProfileId }));
+    try { await persistPendingUploads(queued); }
+    catch { setBatchActive(false); setSelectedFiles(files); setFileError("浏览器无法保存待上传文件，请释放本地空间后重试；文件尚未开始上传。"); return; }
+    setRecoverable(queued);
     setImportNotice("");
     setTasks(queued.map((item) => ({
       id: item.id, fileName: item.file.name, stage: "idle" as Stage, message: "等待处理…", pageCount: 0, completedPages: 0,
@@ -334,7 +337,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
     })));
     const controller = createDynamicConcurrencyController(
       queued,
-      concurrencyRef.current,
+      browserPdfConcurrency(concurrencyRef.current),
       (item) => processFile(item.file, item.id, metadata, batchProfileId),
     );
     batchControllerRef.current = controller;
@@ -344,6 +347,17 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
       if (batchControllerRef.current === controller) batchControllerRef.current = null;
       setBatchActive(false);
     }
+  }
+
+  async function resumePendingUploads() {
+    if (batchActive || !recoverable.length) return;
+    setBatchActive(true);
+    const queued = [...recoverable];
+    setTasks(queued.map(item => ({ id: item.id, fileName: item.fileName, stage: "idle", message: "等待恢复导入…", pageCount: 0, completedPages: 0 })));
+    const controller = createDynamicConcurrencyController(queued, browserPdfConcurrency(concurrencyRef.current), item => processFile(new File([item.file], item.fileName, { type: item.file.type || "application/pdf" }), item.id, item.metadata, item.profileId));
+    batchControllerRef.current = controller;
+    try { await controller.promise; }
+    finally { batchControllerRef.current = null; setBatchActive(false); }
   }
 
   function chooseFiles(files: File[]) {
@@ -357,7 +371,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
     for (const file of files) {
       if (!combined.some(item => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) combined.push(file);
     }
-    if (combined.length > 100) { setFileError("每批最多导入 100 份试卷，请分批上传。"); return; }
+    if (combined.length > MAX_IMPORT_BATCH_SIZE) { setFileError(`每批最多导入 ${MAX_IMPORT_BATCH_SIZE} 份试卷，请分批上传。`); return; }
     if (combined.some(file => file.size === 0)) { setFileError("文件为空，请选择有效的 PDF 试卷。"); return; }
     if (combined.some(file => file.size > 100 * 1024 * 1024)) { setFileError("单份原卷不能超过 100 MB，请压缩后上传。"); return; }
     setSelectedFiles(combined);
@@ -384,6 +398,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   const uploadInBrowser = batchActive || submitting;
 
   return <>
+    {recoverable.length > 0 && !batchActive && <button className="wb-button" type="button" onClick={() => { setOpen(true); void resumePendingUploads(); }}>恢复未完成导入（{recoverable.length}）</button>}
     {uploadInBrowser && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}><LoaderCircle size={14} className="spin" />正在导入 · {tasks.length}</button>}
     <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
     <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" onClose={() => setOpen(false)}>
@@ -410,7 +425,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
         </fieldset>
         <div className="wb-field wb-concurrency"><div className="wb-field-heading"><label htmlFor="import-concurrency">并行试卷数</label><span>已应用 {appliedConcurrency} 份</span></div>
           <div className="wb-input-action"><input id="import-concurrency" aria-label="同时处理试卷数" type="number" inputMode="numeric" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={event => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={event => { if (event.key === "Enter") void applyConcurrency(); }} /><button type="button" className="wb-button" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button></div>
-          <p className="wb-field-hint">同时上传和识别的试卷上限，支持 1–{MAX_UPLOAD_CONCURRENCY} 份。</p>
+          <p className="wb-field-hint">后台同时识别的试卷上限，支持 1–{MAX_UPLOAD_CONCURRENCY} 份。浏览器上传和分页最多同时 2 份，避免内存耗尽。</p>
           {concurrencyFeedback && <p role="status" className={concurrencyError ? "wb-field-error" : "wb-field-hint"}>{concurrencyFeedback}</p>}
           {queuePaused && <p className="wb-field-hint" title={queuePauseReason}>识别队列已暂停，可在“待处理”列表中继续。</p>}
           {(queueCounts.active > 0 || queueCounts.queued > 0) && <p className="wb-field-hint">处理中 {queueCounts.active} 份 · 等待 {queueCounts.queued} 份</p>}
@@ -421,12 +436,14 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
         <div className="wb-field wb-import-upload"><span>PDF 文件</span>
           <input ref={inputRef} className="wb-sr-only" type="file" multiple accept=".pdf,application/pdf" aria-label="选择 PDF 文件" disabled={uploadInBrowser} onChange={event => { chooseFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <button type="button" className={`wb-drop-zone${dragging ? " dragging" : ""}`} disabled={uploadInBrowser} onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); if (!uploadInBrowser) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); chooseFiles(Array.from(event.dataTransfer.files)); }}>
-            <UploadCloud size={26} /><strong>点击选择或拖放 PDF</strong><span>支持多选，每批最多 100 份</span>
+            <UploadCloud size={26} /><strong>点击选择或拖放 PDF</strong><span>支持多选，每批最多 {MAX_IMPORT_BATCH_SIZE} 份</span>
           </button>
           {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
+          <p className="wb-field-hint">默认由 MiMo 2.6 Flash 根据文件名整理为“年份＋一模/二模＋区域”或“年份＋学校＋期中/期末/月考/周考”。缺失信息留空，其他类型保留原名。</p>
           {selectedFiles.length > 0 && <div className="wb-file-selection"><div><strong>已选 {selectedFiles.length} 份</strong><button className="wb-text-button" type="button" disabled={uploadInBrowser} onClick={() => setSelectedFiles([])}>清空</button></div><ul>{selectedFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><FileText size={16} /><span title={file.name}>{file.name}<small>{file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(file.size / 1024))} KB`}</small></span><button type="button" className="wb-icon-button" aria-label={`移除 ${file.name}`} disabled={uploadInBrowser} onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}><X size={15} /></button></li>)}</ul></div>}
         </div>
         {importNotice && <p className="wb-field-hint" role="status">{importNotice}</p>}
+        {namingWarnings.length > 0 && <details className="wb-field-hint"><summary>{namingWarnings.length} 份试卷未能自动整理名称，已保留原名</summary><ul>{namingWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
         {tasks.length > 0 && <section className="wb-upload-tasks" aria-label="导入任务"><h3>导入任务 <span>{tasks.length}</span></h3>
           {uploadInBrowser && <p className="wb-field-hint">可关闭导入窗口查看列表；原卷上传完成前，请保持此页面打开。</p>}
           <div aria-live="polite">{tasks.map(task => <article key={task.id} className={task.stage === "error" ? "error" : ""}>

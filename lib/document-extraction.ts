@@ -28,10 +28,11 @@ export const wholeDocumentSystemPrompt = [
   "【题目总数核对】输出 meta 前，先按题目正文逐页清点实际可见的顶层题号，确认最后一道题及其小问结束的位置，再核对答案页与原题的对应关系。questionCount 必须等于正文中不同顶层题号的数量；在从 1 开始连续编号的试卷中，它也等于最后一道顶层题号。",
   "PDF 页数、页脚的‘共 N 页’、章节标题的‘共 N 题’、各章节宣称题数的加总、文件名和提示示例都不能作为实际题数。章节标题可能印错，必须以正文中实际可见的顶层题号为准；答案页重复出现的题号和小问不增加题数。不要为凑齐宣称的题数虚构题目。",
   "不要输出 Markdown、说明、代码围栏或外层数组。每个事件必须是一个独立、完整的 JSON 对象，按以下顺序立即输出：",
-  "1. 通读并确认题目总数后，先输出且只输出一个 meta JSON 对象。event 固定为 \"meta\"；questionCount 是经过上述核对的实际题数，必须输出正整数；documentMeta 是对象，字段包括 subject、grade、year、examType、region、school，依据本次原卷填写，无法确认的字段省略。没有预设题数、年份、年级或地区。",
+  "1. 通读并确认题目总数后，先输出一个 meta JSON 对象，然后在同一次回复中继续输出所有 question 事件和 done。严禁只输出 meta 就结束回复。event 固定为 \"meta\"；questionCount 是经过上述核对的实际题数，必须输出正整数；documentMeta 是对象，字段包括 subject、grade、year、examType、region、school，依据本次原卷填写，无法确认的字段省略。没有预设题数、年份、年级或地区。",
   "2. 然后严格按题号逐题输出 question 事件；每完成一题就立刻输出，不要等全部题目完成：",
   "每条题目事件的外层必须有 event=\"question\" 和 question 对象。question 对象必填字段：number、type、stem、options、answer、analysis、answerSource、uncertainties、repairs、firstLinePage、sourcePages、answerPages、assets、uniqueImageCount、selectedImageCount、missingImages、unlocatedImages、tags、needsHumanReview。按本题实际内容填写，所有数组可在对应内容不存在时为 []。assets 元素为 {id,role,kind,label}；options 元素为 {key,content}。不要输出 confidence 或自评分数；先完成本题内部验收再输出，后续审核仅作补充。",
   "3. 所有题目输出后，最后且只输出一次：{\"event\":\"done\"}。之后立即停止输出。",
+  "断点续传时，若所有题目都已成功保存且没有缺题，仍必须在本次回复输出 meta 和 done 两个事件；不要编造更大题号，不要把已保存题目再编号。填空横线统一写为短横线或一个空白标记，禁止无限重复下划线。",
   JSON_LATEX_PROMPT,
 ].join("\n");
 

@@ -7,6 +7,9 @@ import { setAutomaticAiReviewEnabled } from "../../../../lib/ai-review-settings"
 
 export async function GET(request: Request) {
   const ownerId = requestOwner(request);
+  if (new URL(request.url).searchParams.get("summary") === "1") {
+    return Response.json(await getExtractionQueueSettings(ownerId), { headers: { "cache-control": "no-store" } });
+  }
   const [jobs, settings] = await Promise.all([listDocumentJobs(ownerId), getExtractionQueueSettings(ownerId)]);
   void kickExtractionQueue();
   return Response.json({ jobs, preparations: listDocumentPreparations(ownerId), ...settings });

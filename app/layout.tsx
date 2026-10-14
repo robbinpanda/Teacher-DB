@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "katex/dist/katex.min.css";
 import { AppShell } from "../components/AppShell";
+import { RuntimeDiagnostics } from "../components/RuntimeDiagnostics";
 import { getTeacherMode } from "../lib/backend-data";
 import "./globals.css";
 import "./resource-management.css";
@@ -33,7 +34,7 @@ export default async function RootLayout({
   const initialMode = anonymousRemote ? "personal" : await getTeacherMode(requestHeaders.get("oai-authenticated-user-id") ?? "local-demo");
   return (
     <html lang="zh-CN">
-      <body><AppShell initialMode={initialMode}>{children}</AppShell></body>
+      <body><RuntimeDiagnostics /><AppShell initialMode={initialMode}>{children}</AppShell></body>
     </html>
   );
 }

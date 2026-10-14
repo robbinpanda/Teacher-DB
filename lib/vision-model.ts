@@ -10,6 +10,7 @@ import { dataDirectory, getSqlite } from "../db";
 import { extractModelTokenUsage, recordModelUsage } from "./model-usage";
 import { ModelCallTrace } from "./model-call-trace";
 import { hasModelThinking, isThinkingSettingError, thinkingDisabledMessage } from "./model-thinking";
+import { hasRunawayFiller } from "./extraction-stream-guard";
 
 type VisionCall = {
   ownerId: string;
@@ -292,6 +293,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
           resetIdleTimer();
           content += event.textDelta;
           trace.output("text", event.textDelta);
+          if (hasRunawayFiller(content)) throw new ModelCallError("模型持续重复输出填空线，已中止并保留已完成题目", "repetitive_output", true);
           await handlers.onActivity?.({ kind: "text", delta: event.textDelta });
           await handlers.onTextDelta(event.textDelta);
         }
@@ -320,7 +322,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     failure = error;
     if (error instanceof DOMException && error.name === "AbortError") {
       if (idleTimedOut) {
-        throw new ModelCallError("模型连续 90 秒没有输出正文，已停止调用", "stream_idle_timeout", false);
+        throw new ModelCallError("模型连续 90 秒没有输出正文，等待从未完成题目继续", "stream_idle_timeout", true);
       }
       throw new ModelCallError("模型流被中止", "stream_aborted", true);
     }

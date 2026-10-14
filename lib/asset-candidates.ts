@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { findInkComponents } from "./ink-components.ts";
 
 export type PixelBox = { x: number; y: number; width: number; height: number };
 export type AssetCandidate = PixelBox & { id: string };
@@ -7,25 +8,7 @@ export type AssetCandidate = PixelBox & { id: string };
 export async function detectAssetCandidates(bytes: Buffer): Promise<{ width: number; height: number; candidates: AssetCandidate[] }> {
   const { data, info } = await sharp(bytes, { limitInputPixels: 12_000_000 }).flatten({ background: "white" }).greyscale().raw().toBuffer({ resolveWithObject: true });
   const { width, height } = info;
-  const seen = new Uint8Array(width * height);
-  const queue = new Int32Array(width * height);
-  const components: Array<PixelBox & { area: number }> = [];
-  for (let start = 0; start < data.length; start++) {
-    if (seen[start] || data[start] > 220) continue;
-    let head = 0, tail = 1, x0 = start % width, x1 = x0, y0 = Math.floor(start / width), y1 = y0;
-    queue[0] = start; seen[start] = 1;
-    while (head < tail) {
-      const current = queue[head++], x = current % width, y = Math.floor(current / width);
-      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
-      // Bridge small gaps in antialiasing, dashed lines and pale photograph edges.
-      for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
-        const nx = x + dx, ny = y + dy, next = ny * width + nx;
-        if (nx < 0 || nx >= width || ny < 0 || ny >= height || seen[next] || data[next] > 220) continue;
-        seen[next] = 1; queue[tail++] = next;
-      }
-    }
-    if (tail >= 4) components.push({ x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1, area: tail });
-  }
+  const components = findInkComponents(data, width, height);
   const scale = width / 982;
   const cores = components.filter((c) => c.width >= 60 * scale && c.height >= 45 * scale && c.area >= 160 * scale * scale);
   // Stem-and-leaf plots have one thin divider and disconnected digits, not an outer frame.

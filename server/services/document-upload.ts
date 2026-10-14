@@ -8,6 +8,7 @@ import { deleteFile, putFile } from "../../lib/file-storage";
 import { findReusableDocument } from "../../lib/document-upload";
 import { enqueueDocumentPreparation, processorConfigured } from "./document-preparation";
 import { uploadMetadataSchema } from "../../lib/api-contracts";
+import { nameImportedDocument } from "./document-naming";
 
 
 const maxOriginalBytes = 100 * 1024 * 1024;
@@ -116,7 +117,10 @@ export async function uploadDocument(ownerId: string, form: FormData) {
     await deleteFile(originalKey).catch(() => undefined);
     throw error;
   }
+  const naming = await nameImportedDocument(ownerId, id, file.name);
+  getSqlite().prepare("UPDATE documents SET name=?,updated_at=? WHERE id=? AND owner_id=? AND name=?")
+    .run(naming.name, now(), id, ownerId, file.name);
   const preparation = await prepareExisting(id, "uploading");
   if (preparation && preparation.status >= 400) return preparation;
-  return result({ id, originalKey, pageCount, checksum, duplicate: false, preparationQueued: Boolean(preparation) }, { status: 201 });
+  return result({ id, originalKey, pageCount, checksum, duplicate: false, preparationQueued: Boolean(preparation), name: naming.name, namingWarning: naming.namingWarning }, { status: 201 });
 }

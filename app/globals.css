@@ -1059,3 +1059,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dashboard-library .document-row-wrap:not(.selection-active) .document-row { padding-right: 72px; }
 .dashboard-library .document-row-wrap.paused:not(.selection-active) .document-row { padding-right: 102px; }
 
+
+.wb-pagination { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:16px; flex-wrap:wrap; } .wb-pagination input { width:80px; border:1px solid #d1d5db; border-radius:6px; padding:6px; }

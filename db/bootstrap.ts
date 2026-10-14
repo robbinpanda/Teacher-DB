@@ -352,6 +352,10 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   sqlite.exec("CREATE INDEX IF NOT EXISTS runs_queue_idx ON extraction_runs(status, next_attempt_at)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_queue_idx ON document_jobs(status, next_attempt_at, queued_at)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS document_jobs_owner_idx ON document_jobs(owner_id, status)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS documents_visible_created_idx ON documents(owner_id, created_at, id) WHERE source_removed_at IS NULL");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS documents_visible_name_idx ON documents(owner_id, name, id) WHERE source_removed_at IS NULL");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS runs_document_status_page_idx ON extraction_runs(document_id, status, page_number)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS questions_document_status_idx ON questions(document_id, status)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS paper_folders_owner_parent_idx ON paper_folders(owner_id, parent_id)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS papers_owner_folder_idx ON papers(owner_id, folder_id, updated_at)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS question_folders_owner_parent_idx ON question_folders(owner_id, parent_id)");
@@ -369,7 +373,8 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
      SELECT owner_id, 1,
        '检测到多份试卷同时处于退避状态，已暂停全部识别。请检查网络或模型 API 后点击“全部开始”。',
        ?, 3, ?
-     FROM document_jobs WHERE status = 'retry_wait'
+     FROM document_jobs j WHERE status = 'retry_wait'
+       AND NOT EXISTS (SELECT 1 FROM extraction_runs r WHERE r.document_id=j.document_id AND r.error_code='incomplete_extraction')
      GROUP BY owner_id HAVING COUNT(*) >= 3
      ON CONFLICT(owner_id) DO UPDATE SET
        extraction_paused = 1,
@@ -520,7 +525,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 9;
+export const DATABASE_VERSION = 10;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -603,6 +608,19 @@ function initialize() {
         UPDATE document_jobs SET ai_review_enabled = 1 WHERE EXISTS (
           SELECT 1 FROM questions q WHERE q.document_id = document_jobs.document_id AND q.ai_review_json IS NOT NULL AND q.ai_review_json <> 'null'
         );
+      `),
+    },
+    {
+      version: 10,
+      name: "document-list-query-indexes",
+      checksum: "document-list-query-indexes-v1",
+      // Existing databases have already applied installBaseline. Adding indexes
+      // there alone leaves their list queries scanning all completed runs.
+      up: sqlite => sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS documents_visible_created_idx ON documents(owner_id, created_at, id) WHERE source_removed_at IS NULL;
+        CREATE INDEX IF NOT EXISTS documents_visible_name_idx ON documents(owner_id, name, id) WHERE source_removed_at IS NULL;
+        CREATE INDEX IF NOT EXISTS runs_document_status_page_idx ON extraction_runs(document_id, status, page_number);
+        CREATE INDEX IF NOT EXISTS questions_document_status_idx ON questions(document_id, status);
       `),
     },
   ]);

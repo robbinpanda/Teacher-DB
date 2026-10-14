@@ -52,11 +52,13 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
   }
   if (payload.status === "approved") {
     const integrity = getDocumentIntegrity(sqlite, ownedQuestion.documentId)!;
-    const nextNumbers = (sqlite.prepare("SELECT id, number FROM questions WHERE document_id = ?").all(ownedQuestion.documentId) as Array<{ id: string; number: string }>)
+    const emptyQuestionNumbers = (sqlite.prepare("SELECT id, number, stem FROM questions WHERE document_id = ?").all(ownedQuestion.documentId) as Array<{ id: string; number: string; stem: string }>)
+      .filter(question => !(question.id === questionId ? payload.stem : question.stem).trim()).map(question => question.id === questionId ? payload.number : question.number);
+    const nextNumbers = (sqlite.prepare("SELECT id, number, stem FROM questions WHERE document_id = ?").all(ownedQuestion.documentId) as Array<{ id: string; number: string; stem: string }>)
       .map((question) => question.id === questionId ? payload.number : question.number);
     const missingQuestionNumbers = missingPositiveNumbers(nextNumbers);
     const invalidQuestionNumbers = nextNumbers.filter((number) => !isValidQuestionNumber(number));
-    const reviewIntegrity = { ...integrity, missingQuestionNumbers, invalidQuestionNumbers, questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0 };
+    const reviewIntegrity = { ...integrity, missingQuestionNumbers, invalidQuestionNumbers, emptyQuestionNumbers, questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0 && emptyQuestionNumbers.length === 0 };
     reviewIntegrity.reviewReady = reviewIntegrity.pagesComplete && reviewIntegrity.questionsComplete;
     if (!reviewIntegrity.reviewReady) return result({ error: integrityError(reviewIntegrity) }, { status: 409 });
   }
@@ -167,9 +169,11 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
       if (payload.imageIssuesResolved === true) transaction.prepare("UPDATE questions SET missing_images_json='[]' WHERE id=?").run(questionId);
       if (payload.status === "approved") {
         const integrity = getDocumentIntegrity(transaction, ownedQuestion.documentId)!;
+        const emptyQuestionNumbers = (transaction.prepare("SELECT id, number, stem FROM questions WHERE document_id = ?").all(ownedQuestion.documentId) as Array<{ id: string; number: string; stem: string }>)
+          .filter(question => !(question.id === questionId ? payload.stem : question.stem).trim()).map(question => question.id === questionId ? payload.number : question.number);
         const nextNumbers = (transaction.prepare(
-          "SELECT id, number FROM questions WHERE document_id = ?",
-        ).all(ownedQuestion.documentId) as Array<{ id: string; number: string }>)
+          "SELECT id, number, stem FROM questions WHERE document_id = ?",
+        ).all(ownedQuestion.documentId) as Array<{ id: string; number: string; stem: string }>)
           .map((question) => question.id === questionId ? payload.number : question.number);
         const missingQuestionNumbers = missingPositiveNumbers(nextNumbers);
         const invalidQuestionNumbers = nextNumbers.filter((number) => !isValidQuestionNumber(number));
@@ -177,7 +181,7 @@ export async function saveQuestion(ownerId: string, questionId: string, value: R
           ...integrity,
           missingQuestionNumbers,
           invalidQuestionNumbers,
-          questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0,
+          emptyQuestionNumbers, questionsComplete: nextNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0 && emptyQuestionNumbers.length === 0,
         };
         reviewIntegrity.reviewReady = reviewIntegrity.pagesComplete && reviewIntegrity.questionsComplete;
         if (!reviewIntegrity.reviewReady) throw new QuestionIntegrityError(integrityError(reviewIntegrity));

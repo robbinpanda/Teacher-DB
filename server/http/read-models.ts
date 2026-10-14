@@ -8,7 +8,7 @@ import { requestOwner } from "../../lib/server";
 import { result, toResponse } from "../core/result";
 
 const querySchema = z.object({
-  resource: z.enum(["documents", "bank", "review", "approved-questions", "paper", "paper-library", "paper-templates", "teacher-mode", "classes", "class", "assignments", "assignment", "paper-print"]),
+  resource: z.enum(["document-page", "documents", "bank", "review", "approved-questions", "paper", "paper-library", "paper-templates", "teacher-mode", "classes", "class", "assignments", "assignment", "paper-print"]),
   id: z.string().min(1).max(100).optional(),
   token: z.string().max(2000).optional(),
   ids: z.array(z.string().min(1).max(100)).max(2000).optional(),
@@ -25,6 +25,7 @@ export async function readModel(request: Request) {
   if (idResources.includes(query.resource) && !query.id) return toResponse(result({ error: "缺少资源编号" }, { status: 400 }));
   let data: unknown;
   switch (query.resource) {
+    case "document-page": data = await questions.getDocumentPage(ownerId); break;
     case "documents": data = await questions.getDocuments(ownerId); break;
     case "bank": data = await questions.getBankData(ownerId); break;
     case "review": data = await questions.getReviewData(query.id!, ownerId); break;

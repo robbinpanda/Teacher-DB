@@ -1,4 +1,5 @@
 import "server-only";
+import { selectDocumentWindow, type DocumentListOptions, type DocumentListResult } from "./document-list";
 
 import { getSqlite } from "../db";
 import { ensureDatabase } from "../db/bootstrap";
@@ -429,8 +430,10 @@ export async function getBankData(ownerId: string) {
   };
 }
 
-export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
+export async function getDocuments(ownerId: string, documentIds?: string[]): Promise<SourceDocument[]> {
   await ensureDatabase();
+  const ids = documentIds ?? selectDocumentWindow(getSqlite(), ownerId).ids;
+  if (!ids.length) return [];
   const rows = getSqlite().prepare(
     `SELECT d.id, d.name, COALESCE(d.subject, '未设置学科') AS subject,
             COALESCE(d.grade, '未设置年级') AS grade, d.page_count AS pageCount,
@@ -458,9 +461,16 @@ export async function getDocuments(ownerId: string): Promise<SourceDocument[]> {
        FROM documents d LEFT JOIN questions q ON q.document_id = d.id
        LEFT JOIN document_jobs j ON j.document_id = d.id
        LEFT JOIN model_profiles mp ON mp.id = j.profile_id AND mp.owner_id = d.owner_id
-      WHERE d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id ORDER BY CASE WHEN j.status = 'processing' THEN 0 ELSE 1 END, d.created_at DESC LIMIT 100`,
-  ).all(ownerId) as SourceDocument[];
-  return rows.map(row => ({ ...row, aiReviewEnabled: Boolean(row.aiReviewEnabled) }));
+      WHERE d.owner_id = ? AND d.source_removed_at IS NULL AND d.id IN (${ids.map(()=>"?").join(",")}) GROUP BY d.id`,
+  ).all(ownerId, ...ids) as SourceDocument[];
+  const order = new Map(ids.map((id,index)=>[id,index]));
+  return rows.sort((a,b)=>order.get(a.id)!-order.get(b.id)!).map(row => ({ ...row, aiReviewEnabled: Boolean(row.aiReviewEnabled) }));
+}
+
+export async function getDocumentPage(ownerId: string, options: DocumentListOptions = {}): Promise<DocumentListResult> {
+  await ensureDatabase();
+  const { ids, ...metadata } = selectDocumentWindow(getSqlite(), ownerId, options);
+  return { ...metadata, documents: await getDocuments(ownerId, ids) };
 }
 
 export type SavedPaper = {

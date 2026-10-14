@@ -1,12 +1,17 @@
 import { uploadDocument } from "../../../services/document-upload";
-import { getDocuments } from "../../../../lib/question-repository";
+import { getDocumentPage } from "../../../../lib/question-repository";
+import type { DocumentListOptions } from "../../../../lib/document-list";
 import { toResponse } from "../../../core/result";
 import { readFormDataPayload } from "../../../../lib/request-payload";
 import { requestOwner } from "../../../../lib/server";
 
 
 export async function GET(request: Request) {
-  return Response.json({ documents: await getDocuments(requestOwner(request)) }, { headers: { "cache-control": "no-store" } });
+  const params = new URL(request.url).searchParams;
+  return Response.json(await getDocumentPage(requestOwner(request), {
+    page: Number(params.get("page") ?? 1), pageSize: Number(params.get("pageSize") ?? 50),
+    group: params.get("group") as DocumentListOptions["group"], sort: params.get("sort") as DocumentListOptions["sort"], search: params.get("search") ?? "",
+  }), { headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(request: Request) {

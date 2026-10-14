@@ -53,6 +53,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
       "SELECT status FROM documents WHERE id = ? AND owner_id = ?",
     ).get(documentId, ownerId) as { status: string } | undefined;
     if (!document) return { error: "文档不存在", statusCode: 404 } as const;
+    if (payload.status === "failed" && ["reviewing", "complete"].includes(document.status)
+      && getDocumentIntegrity(transaction, documentId)?.reviewReady) {
+      return { error: "原卷已有完整识别结果，重复上传失败不会覆盖现有状态", statusCode: 409 } as const;
+    }
     if (payload.paperFolderId && !transaction.prepare("SELECT 1 FROM paper_folders WHERE id = ? AND owner_id = ?").get(payload.paperFolderId, ownerId)) {
       return { error: "目标文件夹不存在", statusCode: 400 } as const;
     }

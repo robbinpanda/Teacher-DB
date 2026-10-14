@@ -1,3 +1,4 @@
+import path from "node:path";
 export type SourceTextRow = { page: number; text: string };
 export type SourceQuestionInventory = {
   source: "pdf-text-corroborated";
@@ -32,7 +33,9 @@ export function corroborateSourceQuestionInventory(rows: SourceTextRow[], pageCo
 
 export async function readSourceQuestionInventory(bytes: Uint8Array, pageCount: number) {
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const task = getDocument({ data: Uint8Array.from(bytes), useSystemFonts: true });
+  const resources = (folder: string) => path.resolve("node_modules", "pdfjs-dist", folder).replace(/\\/g, "/") + "/";
+  const task = getDocument({ data: Uint8Array.from(bytes), useSystemFonts: true,
+    cMapUrl: resources("cmaps"), cMapPacked: true, standardFontDataUrl: resources("standard_fonts"), wasmUrl: resources("wasm") });
   try {
     const document = await task.promise;
     if (document.numPages !== pageCount) return null;

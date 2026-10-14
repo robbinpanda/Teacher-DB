@@ -264,7 +264,9 @@ export function ReviewWorkspace({
   }
 
   const recognitionInProgress = ["queued", "processing", "retry_wait", "paused", "failed"].includes(job.status ?? "");
-  const recognitionPhaseLabel = recognition.phase === "thinking"
+  const recognitionPhaseLabel = recognition.phase === "preparing"
+    ? "正在本地准备图像"
+    : recognition.phase === "thinking"
     ? "模型正在通读与思考"
     : recognition.phase === "receiving"
       ? "正在逐题接收并保存"

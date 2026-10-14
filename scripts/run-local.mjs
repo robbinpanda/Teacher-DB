@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { loadEnvironment } from "./env.mjs";
 import { preparePython } from "./python-runtime.mjs";
 import { buildFingerprint } from "./build-fingerprint.mjs";
+import { runtimeLog, installRuntimeMonitor } from "../lib/runtime-log.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2));
@@ -18,19 +19,31 @@ const processorPort = Number(option("processor-port", process.env.JIANTI_PROCESS
 if (![webPort, apiPort, processorPort].every(port => Number.isInteger(port) && port >= 1 && port <= 65535)) throw new Error("服务端口必须是 1–65535 的整数");
 process.env.APP_BASE_URL ||= `http://127.0.0.1:${webPort}`;
 const instanceId = crypto.randomUUID();
+process.env.JIANTI_INSTANCE_ID = instanceId;
+process.env.JIANTI_PROCESS_ROLE = "supervisor";
+process.env.JIANTI_RUNTIME_LOG_DIR ||= path.join(root, ".runtime", "logs", `local-${webPort}`);
+installRuntimeMonitor();
 const statePath = path.join(root, ".runtime", `local-${webPort}.json`);
 const children = [];
 let stopping = false;
 const restarts = new Map();
 
 function start(label, commandArgs, extraEnv = {}, executable = process.execPath) {
-  const child = spawn(executable, commandArgs, {
+  const monitoredArgs = executable === process.execPath ? ["--import", "./scripts/runtime-monitor.mjs", ...commandArgs] : commandArgs;
+  const child = spawn(executable, monitoredArgs, {
     cwd: root, env: { ...process.env, NODE_ENV: mode === "dev" ? "development" : "production", JIANTI_INSTANCE_ID: instanceId, JIANTI_API_PORT: String(apiPort),
-      JIANTI_API_URL: `http://127.0.0.1:${apiPort}`, ...extraEnv }, stdio: "inherit", windowsHide: true,
+      JIANTI_PROCESS_ROLE: label, JIANTI_API_URL: `http://127.0.0.1:${apiPort}`, ...extraEnv }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+  });
+  runtimeLog("child_start", { label, childPid: child.pid });
+  for (const stream of ["stdout", "stderr"]) child[stream].on("data", chunk => {
+    runtimeLog("child_output", { label, childPid: child.pid, stream, text: chunk.toString("utf8") });
   });
   children.push(child);
   child.once("error", error => { console.error(`[local] ${label}: ${error.message}`); void stop(1); });
-  child.once("exit", code => {
+  child.once("exit", (code, signal) => {
+    runtimeLog("child_exit", { label, childPid: child.pid, code, signal, stopping });
+    const index = children.indexOf(child);
+    if (index >= 0) children.splice(index, 1);
     if (stopping) return;
     if (label === "api" || label === "worker" || label === "processor") {
       const previous = restarts.get(label);
@@ -38,6 +51,7 @@ function start(label, commandArgs, extraEnv = {}, executable = process.execPath)
       restarts.set(label, { count, at: Date.now() });
       if (count <= 5) {
         const delay = Math.min(8000, 500 * 2 ** (count - 1));
+        runtimeLog("child_restart", { label, count, delay });
         console.error(`[local] ${label} exited (${code}); restarting in ${delay}ms`);
         setTimeout(() => { if (!stopping) start(label, commandArgs, extraEnv, executable); }, delay);
         return;
@@ -134,6 +148,23 @@ try {
   await mkdir(path.dirname(statePath), { recursive: true });
   await writeFile(statePath, JSON.stringify({ project: root, supervisorPid: process.pid, instanceId, webPort, apiPort, startedAt: new Date().toISOString() }, null, 2));
   console.log(`[local] ready http://localhost:${webPort} (NestJS + independent worker${process.env.JIANTI_DOCUMENT_PROCESSOR_URL ? " + FastAPI PDF" : ""})`);
+  console.log(`[local] runtime logs: ${process.env.JIANTI_RUNTIME_LOG_DIR}`);
+  runtimeLog("services_ready", { webPort, apiPort });
+  let probing = false;
+  setInterval(async () => {
+    if (stopping || probing) return;
+    probing = true;
+    try {
+      for (const port of [apiPort, webPort]) {
+        const started = Date.now();
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/api/ready?dependencies=1`, { signal: AbortSignal.timeout(3000) });
+          const ready = await response.json();
+          runtimeLog("health_sample", { port, status: response.status, durationMs: Date.now() - started, workerReady: ready.workerReady });
+        } catch (error) { runtimeLog("health_failed", { port, durationMs: Date.now() - started, error }); }
+      }
+    } finally { probing = false; }
+  }, 15000).unref();
   if (args.has("--open") && process.platform === "win32") {
     spawn("powershell.exe", ["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Start-Process 'http://localhost:${webPort}'`], { windowsHide: true, stdio: "ignore" });
   }

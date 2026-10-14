@@ -20,10 +20,12 @@ export async function callTextModel(input: {
   images?: Array<{ page: number; dataUrl: string }>;
   maxOutputTokens?: number;
   temperature?: number;
+  timeoutMs?: number;
 }) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), profile.timeoutMs);
+  const timeoutMs = Math.min(profile.timeoutMs, input.timeoutMs ?? profile.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let trace: ModelCallTrace | undefined;
   let failure: unknown;
   try {
@@ -81,7 +83,7 @@ export async function callTextModel(input: {
   } catch (error) {
     failure = error;
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`模型调用超过 ${Math.round(profile.timeoutMs / 1000)} 秒，已安全中止`);
+      throw new Error(`模型调用超过 ${Math.round(timeoutMs / 1000)} 秒，已安全中止`);
     }
     throw error;
   } finally {

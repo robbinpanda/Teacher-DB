@@ -29,6 +29,7 @@ function RecognitionProgress({ document: doc }: { document: SourceDocument }) {
         </div>
       </div>;
     })}
+    {doc.jobStatus === "processing" && ["preparing", "connecting"].includes(doc.recognitionPhase ?? "") && <small className="wb-recognition-phase">{doc.recognitionPhase === "connecting" ? "等待模型响应" : doc.recognitionMessage}</small>}
     {!doc.aiReviewEnabled && <small>AI 复核已关闭</small>}
   </div>;
 }

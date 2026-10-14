@@ -12,7 +12,7 @@ export const progressResponseSchema = z.object({
 }).passthrough();
 
 export const extractionInputSchema = z.object({ documentId: z.string().trim().min(1).max(100), fileName: z.string().max(180).optional(), profileId: z.string().min(1).max(100).optional(), workerId: z.string().min(1).max(100).optional() }).strict();
-export const uploadResponseSchema = z.object({ id: z.string().min(1), status: z.enum(documentStatuses).optional(), pageCount: z.number().int().min(0).max(250).optional(), preparationQueued: z.boolean().optional() }).passthrough();
+export const uploadResponseSchema = z.object({ id: z.string().min(1), status: z.enum(documentStatuses).optional(), pageCount: z.number().int().min(0).max(250).optional(), preparationQueued: z.boolean().optional(), name: z.string().optional(), namingWarning: z.string().optional() }).passthrough();
 
 export const uploadMetadataSchema = z.object({
   subject: z.string().max(60), grade: z.string().max(60), sourceExamType: z.string().max(120),

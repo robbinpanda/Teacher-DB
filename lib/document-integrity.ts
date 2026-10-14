@@ -14,6 +14,7 @@ export type DocumentIntegrity = {
   questionNumbers: number[];
   invalidQuestionNumbers: string[];
   missingQuestionNumbers: number[];
+  emptyQuestionNumbers: string[];
   pagesComplete: boolean;
   questionsComplete: boolean;
   reviewReady: boolean;
@@ -36,9 +37,11 @@ export function getDocumentIntegrity(sqlite: Database.Database, documentId: stri
     `SELECT DISTINCT page_number AS pageNumber FROM extraction_runs
       WHERE document_id = ? AND status = 'complete' ORDER BY page_number`,
   ).all(documentId) as Array<{ pageNumber: number }>).map((row) => row.pageNumber);
-  const rawQuestionNumbers = (sqlite.prepare(
-    "SELECT number FROM questions WHERE document_id = ? ORDER BY CAST(number AS INTEGER), number",
-  ).all(documentId) as Array<{ number: string }>).map((row) => row.number);
+  const questionRows = sqlite.prepare(
+    "SELECT number, stem FROM questions WHERE document_id = ? ORDER BY CAST(number AS INTEGER), number",
+  ).all(documentId) as Array<{ number: string; stem: string }>;
+  const rawQuestionNumbers = questionRows.map(row => row.number);
+  const emptyQuestionNumbers = questionRows.filter(row => !row.stem.trim()).map(row => row.number);
   const invalidQuestionNumbers = rawQuestionNumbers.filter((number) => !isValidQuestionNumber(number));
   const questionNumbers = rawQuestionNumbers.filter(isValidQuestionNumber).map(Number);
   const missingPageNumbers = missingPositiveNumbers(storedPageNumbers, document.pageCount);
@@ -48,7 +51,7 @@ export function getDocumentIntegrity(sqlite: Database.Database, documentId: stri
   const missingQuestionNumbers = missingPositiveNumbers(questionNumbers);
   const pagesComplete = document.pageCount > 0 && storedPageNumbers.length === document.pageCount
     && missingPageNumbers.length === 0 && unexpectedPageNumbers.length === 0 && incompletePageNumbers.length === 0;
-  const questionsComplete = questionNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0;
+  const questionsComplete = questionNumbers.length > 0 && missingQuestionNumbers.length === 0 && invalidQuestionNumbers.length === 0 && emptyQuestionNumbers.length === 0;
   return {
     pageCount: document.pageCount,
     storedPageNumbers,
@@ -59,6 +62,7 @@ export function getDocumentIntegrity(sqlite: Database.Database, documentId: stri
     questionNumbers,
     invalidQuestionNumbers,
     missingQuestionNumbers,
+    emptyQuestionNumbers,
     pagesComplete,
     questionsComplete,
     reviewReady: pagesComplete && questionsComplete,
@@ -66,6 +70,7 @@ export function getDocumentIntegrity(sqlite: Database.Database, documentId: stri
 }
 
 export function integrityError(integrity: DocumentIntegrity) {
+  if (integrity.emptyQuestionNumbers.length) return `第 ${integrity.emptyQuestionNumbers.join("、")} 题题干为空，需要重新识别或补录，不能入库`;
   if (integrity.missingPageNumbers.length) return `原卷缺少第 ${integrity.missingPageNumbers.join("、")} 页，请重新上传同一 PDF 补齐页面`;
   if (integrity.unexpectedPageNumbers.length) return `原卷出现超出声明页数的第 ${integrity.unexpectedPageNumbers.join("、")} 页，请重新上传并核对 PDF`;
   if (integrity.incompletePageNumbers.length) return `第 ${integrity.incompletePageNumbers.join("、")} 页尚未完成识别`;

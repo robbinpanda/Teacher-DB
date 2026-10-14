@@ -24,6 +24,7 @@ async function query<T>(resource: string, ownerId: string, params: Record<string
 }
 
 export const getDocuments = (ownerId: string): ReturnType<typeof Questions.getDocuments> => query("documents", ownerId);
+export const getDocumentPage = (ownerId: string): ReturnType<typeof Questions.getDocumentPage> => query("document-page", ownerId);
 export const getBankData = (ownerId: string): ReturnType<typeof Questions.getBankData> => query("bank", ownerId);
 export const getReviewData = (id: string, ownerId: string): ReturnType<typeof Questions.getReviewData> => query("review", ownerId, { id });
 export const getApprovedQuestions = (ownerId: string, ids?: string[]): ReturnType<typeof Questions.getApprovedQuestions> => query("approved-questions", ownerId, { ids });

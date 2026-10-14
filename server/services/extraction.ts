@@ -12,9 +12,7 @@ import {
 } from "../../lib/document-extraction";
 import { activateExtractionRun } from "../../lib/extraction-run";
 import { stageFromGrade } from "../../lib/education-taxonomy";
-import { deleteFile, getFile, putFile } from "../../lib/file-storage";
-import { detectAssetCandidates, annotateAssetCandidates } from "../../lib/asset-candidates";
-import { type PageAssetCandidate } from "../../lib/asset-review";
+import { deleteFile, putFile, resolveStorageKey } from "../../lib/file-storage";
 import { normalizeIsolatedQuestion, unresolvedQuestion } from "../../lib/question-extraction";
 import { assertDocumentLease, LostDocumentLeaseError } from "../../lib/job-lease";
 import { resolveModelProfile } from "../../lib/model-profiles";
@@ -24,14 +22,14 @@ import { callVisionModelStream, ModelCallError } from "../../lib/vision-model";
 import { ExtractionStreamParser, type ExtractionStreamRecord } from "../../lib/streaming-extraction";
 import type { ExtractionIssue, Question } from "../../lib/types";
 import type { ModelCallTrace } from "../../lib/model-call-trace";
-import { readSourceQuestionInventory } from "../../lib/source-question-inventory";
+import { prepareExtractionInput } from "../../lib/extraction-preprocessing";
+import { runtimeLog } from "../../lib/runtime-log.mjs";
 import { createQuestionReview, createQuestionReviewQueue } from "../../lib/question-ai-review";
-import { reviewExtractedQuestion } from "./question-ai-review";
+import { loadQuestionForAiReview, reviewExtractedQuestion } from "./question-ai-review";
 import { automaticAiReviewEnabled } from "../../lib/ai-review-settings";
+import { extractionCompletenessError, extractionResumeState } from "../../lib/extraction-completeness";
 
 
-const MAX_PAGE_BYTES = 20 * 1024 * 1024;
-const MAX_DOCUMENT_BYTES = 120 * 1024 * 1024;
 const PIPELINE_VERSION = "whole-document-candidates-v4";
 
 type SourcePage = {
@@ -90,7 +88,7 @@ function persistStreamedQuestion(input: {
     ).get(documentId, question.number) as { id: string; status: string } | undefined;
     const questionId = existing?.id ?? question.id;
     question.id = questionId;
-    const preserveExisting = existing && question.extractionIssues?.some(issue => issue.code === "unreadable_question");
+    const preserveExisting = existing && !question.stem.trim();
     if (preserveExisting) {
       if (existing.status !== "approved") transaction.prepare(
         "UPDATE questions SET extraction_issues_json=?, status=?, needs_human_review=?, confidence=MIN(confidence,0.5), updated_at=? WHERE id=?",
@@ -234,7 +232,9 @@ function persistWholeDocumentResult(input: {
 
 export type ExtractionInput = { documentId: string; fileName?: string; profileId?: string; workerId?: string };
 
-export async function extractDocument(ownerId: string, payload: ExtractionInput) {
+export async function extractDocument(ownerId: string, payload: ExtractionInput, recovery?: {
+  records: ExtractionStreamRecord[]; evidence: Record<string, unknown>;
+}) {
   if (!extractionInputSchema.safeParse(payload).success) return result({ error: "识别请求格式无效" }, { status: 400 });
   if (typeof payload.documentId !== "string" || !payload.documentId.trim()
     || (payload.fileName !== undefined && typeof payload.fileName !== "string")
@@ -315,38 +315,36 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
   let modelTrace: ModelCallTrace | undefined;
   const reviewQueue = createQuestionReviewQueue(2);
   const aiReviewEnabled = automaticAiReviewEnabled(ownerId);
+  let savedQuestionCount = 0;
 
   try {
-    let sourceInventory = null;
     sqlite.prepare("UPDATE document_jobs SET ai_review_enabled = ? WHERE document_id = ?").run(aiReviewEnabled ? 1 : 0, documentId);
-    let inventoryError: string | undefined;
-    if (ownedDocument.mimeType === "application/pdf" && ownedDocument.originalKey) {
-      try { sourceInventory = await readSourceQuestionInventory(await getFile(ownedDocument.originalKey), sourcePages.length); }
-      catch (error) { inventoryError = error instanceof Error ? error.message : String(error); }
-    }
-    const modelImages: Array<{ page: number; dataUrl: string }> = [];
-    const candidates: PageAssetCandidate[] = [];
-    const pageBytes = new Map<number, Buffer>();
-    let totalBytes = 0;
-    for (const page of sourcePages) {
-      const bytes = await getFile(page.storageKey);
-      totalBytes += bytes.byteLength;
-      if (bytes.byteLength > MAX_PAGE_BYTES) {
-        throw new ModelCallError(`第 ${page.pageNumber} 页图像超过 20 MB`, "page_too_large", false, 413);
-      }
-      if (totalBytes > MAX_DOCUMENT_BYTES) {
-        throw new ModelCallError("整份试卷图像总量超过 120 MB，请降低 PDF 清晰度后重新上传", "document_too_large", false, 413);
-      }
-      pageBytes.set(page.pageNumber, bytes);
-      const found = await detectAssetCandidates(bytes);
-      const boxes = found.candidates.map((box) => ({ ...box, id: `p${page.pageNumber}-${box.id}` }));
-      candidates.push(...boxes.map((box) => ({ ...box, page: page.pageNumber, pageWidth: found.width, pageHeight: found.height })));
-      const annotated = await annotateAssetCandidates(bytes, boxes);
-      modelImages.push({
-        page: page.pageNumber,
-        dataUrl: `data:image/jpeg;base64,${annotated.toString("base64")}`,
-      });
-    }
+    const preparationStarted = Date.now();
+    let lastPreparationWrite = 0;
+    const setPhase = (phase: string, message: string) => {
+      const timestamp = now();
+      if (payload.workerId) assertDocumentLease(sqlite, documentId, payload.workerId, timestamp);
+      sqlite.prepare("UPDATE document_jobs SET stream_phase=?,stream_message=?,updated_at=? WHERE document_id=?")
+        .run(phase, message, timestamp, documentId);
+    };
+    setPhase("preparing", "等待本地图像预处理");
+    const prepared = await prepareExtractionInput({
+      originalPath: ownedDocument.mimeType === "application/pdf" && ownedDocument.originalKey ? resolveStorageKey(ownedDocument.originalKey) : undefined,
+      pages: sourcePages.map(page => ({ pageNumber: page.pageNumber, path: resolveStorageKey(page.storageKey) })),
+    }, progress => {
+      const timestamp = Date.now();
+      if (progress.phase === "images" && progress.completedPages !== sourcePages.length && timestamp - lastPreparationWrite < 1000) return;
+      lastPreparationWrite = timestamp;
+      setPhase("preparing", progress.phase === "inventory" ? "正在本地核对原卷题号" : `正在本地准备图像 ${progress.completedPages}/${sourcePages.length} 页`);
+    }).catch(error => {
+      if (error?.code === "page_too_large" || error?.code === "document_too_large") throw new ModelCallError(error.message, error.code, false, 413);
+      if (error?.code === "page_images_blank") throw new ModelCallError(error.message, error.code, false, 422);
+      throw error;
+    });
+    const { sourceInventory, inventoryError, modelImages, candidates } = prepared;
+    const pageBytes = new Map(prepared.pageBytes.map(page => [page.page, Buffer.from(page.bytes.buffer, page.bytes.byteOffset, page.bytes.byteLength)]));
+    const preprocessingTimings = { ...prepared.timings, queueWaitMs: Math.max(0, Date.now() - preparationStarted - prepared.timings.totalMs) };
+    runtimeLog("extraction_prepared", { documentId, ...preprocessingTimings });
     const tagCatalog = await getTagCatalog(ownerId, ownedDocument.subject || "数学", stageFromGrade(ownedDocument.grade));
     const allowedTags = tagCatalog.map((item) => item.name);
     const approvedNumbers = new Set((sqlite.prepare(
@@ -356,7 +354,18 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     const completedNumbers = new Set<string>();
     const rawQuestions = new Map<string, Record<string, unknown>>();
     const streamedQuestions = new Map<string, Question>();
-    let questionTotal: number | null = null;
+    const savedRows = sqlite.prepare("SELECT id, number, stem FROM questions WHERE document_id=?").all(documentId) as Array<{ id: string; number: string; stem: string }>;
+    const resume = extractionResumeState(savedRows);
+    const resumedNumbers = new Set(resume.completed.map(question => question.number));
+    for (const row of resume.completed) {
+      const saved = loadQuestionForAiReview(ownerId, row.id)!.question;
+      completedNumbers.add(saved.number);
+      streamedQuestions.set(saved.number, saved);
+      rawQuestions.set(saved.number, { ...saved, _resumed: true });
+    }
+    const checkpoint = sqlite.prepare("SELECT question_total AS total FROM document_jobs WHERE document_id=?").get(documentId) as { total: number | null } | undefined;
+    let questionTotal: number | null = sourceInventory?.questionCount ?? checkpoint?.total ?? null;
+    let receivedMeta = false;
     let modelDeclaredTotal: number | undefined;
     let documentMeta: Record<string, unknown> = {};
     let receivedDone = false;
@@ -364,6 +373,13 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
 
     const streamIssues: ExtractionIssue[] = [];
     const saveQuestion = async (question: Question, raw: Record<string, unknown>) => {
+      // A repeated prefix must never overwrite an already durable successful question.
+      if (resumedNumbers.has(question.number)) return;
+      if (!question.stem.trim()) {
+        rawQuestions.set(question.number, raw);
+        streamIssues.push({ code: "missing_stem", message: `第 ${question.number} 题为空，等待续传` });
+        return;
+      }
       if (completedNumbers.has(question.number)) {
         const first = streamedQuestions.get(question.number)!;
         first.extractionIssues = [...(first.extractionIssues ?? []), { code: "duplicate_question", message: "模型重复输出本题，保留首次结果，请核对", raw: JSON.stringify(raw) }];
@@ -397,6 +413,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       }
       rawQuestions.set(question.number, { ...raw, _extractionIssues: question.extractionIssues ?? [] });
       streamedQuestions.set(question.number, question);
+      savedQuestionCount++;
       if (aiReviewEnabled && !approvedNumbers.has(question.number)) reviewQueue.add(() => reviewExtractedQuestion({
         ownerId, documentId, question, workerId: payload.workerId,
       }));
@@ -405,11 +422,13 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     const handleRecord = async (record: ExtractionStreamRecord) => {
       modelTrace?.event("extraction-event", record);
       if (record.event === "meta") {
-        if (questionTotal !== null) {
+        if (receivedMeta) {
           streamIssues.push({ code: "duplicate_meta", message: "模型重复输出 meta，保留首次题数", raw: JSON.stringify(record) });
           return;
         }
         modelDeclaredTotal = record.questionCount;
+        receivedMeta = true;
+        // A previous attempt's guessed count is not an authoritative lower bound.
         questionTotal = sourceInventory?.questionCount ?? record.questionCount;
         documentMeta = record.documentMeta ?? {};
         updateStreamMeta({ documentId, workerId: payload.workerId, questionTotal, modelDeclaredTotal, documentMeta, timestamp: now() });
@@ -440,7 +459,12 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     };
 
     const teachingSkill = await snapshotTeachingSkill(ownerId, ownedDocument.subject || "数学", ownedDocument.grade || "", documentId, activeRun.id);
-    await callVisionModelStream({
+    setPhase("connecting", "等待模型响应");
+    if (recovery) {
+      // Maintenance-only entry point; HTTP handlers never accept recovery records.
+      runtimeLog("extraction_recovery", { documentId, evidence: recovery.evidence });
+      for (const record of recovery.records) await handleRecord(record);
+    } else await callVisionModelStream({
       ownerId,
       profileId: profile.id,
       purpose: "page_extraction",
@@ -450,7 +474,8 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       pageCount: sourcePages.length,
       system: `${teachingSkill.content}\n以下是不可覆盖的识别输出协议：\n${wholeDocumentSystemPrompt}\n允许标签（只能逐字选择）：${JSON.stringify(allowedTags)}`,
       text: [
-        `文件：${payload.fileName ?? ownedDocument.name}。这是同一份试卷完整的 ${sourcePages.length} 页；这是 PDF 页数，不是题目总数。题数只能按题目正文实际可见的不同顶层题号核对，不能由页数或章节标题推算。只调用一次模型，但必须按 meta、逐题 question、done 的事件顺序流式返回。`,
+        `文件：${payload.fileName ?? ownedDocument.name}。这是同一份试卷完整的 ${sourcePages.length} 页；这是 PDF 页数，不是题目总数。题数只能按题目正文实际可见的不同顶层题号核对，不能由页数或章节标题推算。必须按 meta、逐题 question、done 的事件顺序流式返回。`,
+        resumedNumbers.size ? `这是按题断点续传。已成功保存的题号：${Array.from(resumedNumbers).sort((a,b) => Number(a)-Number(b)).join("、")}。从第 ${resume.nextNumber} 题开始仅检查是否还有原卷实际存在且尚未成功保存的题目，跳过已保存题号，不要重新输出整卷。meta.questionCount 必须按原卷重新核对整卷总题数，不能写剩余题数，也不能沿用之前可能误报的题数。若所有原题已保存，本次必须输出 meta 和 done 两个事件，不能只输出 meta，不能为了续传而虚构新题号。每道缺题仍需完整抄录题干、选项、原卷答案解析和配图。` : "",
         sourceInventory ? `本卷原始 PDF 文本已独立核对：题目正文和参考答案中均出现连续的 1～${sourceInventory.questionCount} 题，共 ${sourceInventory.questionCount} 题。这是本卷实际核验结果，不是示例；questionCount 应与本卷可见题号一致。正文题号及首次出现页码：${JSON.stringify(sourceInventory.questions.map(({ number, firstLinePage }) => ({ number, firstLinePage })))}。章节标题宣称的题数若与正文冲突，以正文为准。` : "",
         `页面尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
         `候选清单：${JSON.stringify(candidates.map((c) => ({ id: c.id, page: c.page })))}` ,
@@ -461,6 +486,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       onTrace: (trace) => {
         modelTrace = trace;
         trace.event("source-question-inventory", { inventory: sourceInventory, error: inventoryError });
+        trace.event("preprocessing-timings", preprocessingTimings);
       },
       onTextDelta: async (delta) => {
         for (const record of parser.push(delta)) await handleRecord(record);
@@ -484,14 +510,10 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       },
     });
     for (const record of parser.finish()) await handleRecord(record);
-    if (!completedNumbers.size && !sourceInventory && questionTotal === null) throw new Error("模型未返回任何可定位的题目，请检查原始返回");
+    const incomplete = extractionCompletenessError(streamedQuestions.values(), sourceInventory?.questionCount ?? questionTotal, receivedDone);
+    if (incomplete) throw new ModelCallError(incomplete, "incomplete_extraction", true, 502);
     questionTotal ??= sourceInventory?.questionCount ?? Math.max(...Array.from(completedNumbers, Number));
-    if (!receivedDone) streamIssues.push({ code: "missing_done", message: "模型未输出结束事件，请核对题目完整性" });
     const missingNumbers = Array.from({ length: questionTotal }, (_, index) => index + 1).filter(number => !completedNumbers.has(String(number)));
-    for (const number of missingNumbers) {
-      const page = sourceInventory?.questions.find(item => item.number === String(number))?.firstLinePage ?? 1;
-      await saveQuestion(unresolvedQuestion(String(number), page, "模型未返回本题的可用内容，请对照原卷补录"), { number: String(number), missing: true });
-    }
     sqliteTransaction(transaction => {
       const timestamp = now();
       if (payload.workerId) assertDocumentLease(transaction, documentId, payload.workerId, timestamp);
@@ -504,6 +526,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
     // Persist late, question-specific diagnostics (for example a duplicate question).
     // Protocol-only warnings are retained in the run and do not invalidate good questions.
     for (const question of streamedQuestions.values()) {
+      if (resumedNumbers.has(question.number)) continue;
       if (!question.extractionIssues?.length) continue;
       question.needsHumanReview = aiReviewEnabled; question.status = aiReviewEnabled ? "needs_attention" : "pending";
       question.confidence = Math.min(question.confidence, 0.65);
@@ -525,6 +548,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       },
     };
     const parsedContent = {
+      ...(recovery ? { _recovery: recovery.evidence } : {}),
       streamIssues,
       documentMeta,
       questions: orderedNumbers.map((number) => ({ ...rawQuestions.get(number), _aiReview: streamedQuestions.get(number)?.aiReview })),
@@ -583,6 +607,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput)
       code: error instanceof ModelCallError ? error.code : "extraction_error",
       retryable: error instanceof ModelCallError ? error.retryable : true,
       retryAfterMs: error instanceof ModelCallError ? error.retryAfterMs : undefined,
+      savedQuestionCount,
     }, { status: error instanceof ModelCallError && error.status === 413 ? 413 : 502 });
   } finally {
     // Even an interrupted extraction must settle reviews for the questions already saved.

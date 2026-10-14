@@ -17,11 +17,11 @@ test("review remains blocked until every page completed and question numbering i
     CREATE TABLE documents (id TEXT PRIMARY KEY, page_count INTEGER NOT NULL);
     CREATE TABLE pages (document_id TEXT NOT NULL, page_number INTEGER NOT NULL);
     CREATE TABLE extraction_runs (document_id TEXT NOT NULL, page_number INTEGER, status TEXT NOT NULL);
-    CREATE TABLE questions (document_id TEXT NOT NULL, number TEXT NOT NULL);
+    CREATE TABLE questions (document_id TEXT NOT NULL, number TEXT NOT NULL, stem TEXT NOT NULL DEFAULT '题干');
     INSERT INTO documents VALUES ('paper', 3);
     INSERT INTO pages VALUES ('paper', 1), ('paper', 2);
     INSERT INTO extraction_runs VALUES ('paper', 1, 'complete'), ('paper', 2, 'complete');
-    INSERT INTO questions VALUES ('paper', '1'), ('paper', '3');
+    INSERT INTO questions (document_id, number) VALUES ('paper', '1'), ('paper', '3');
   `);
 
   assert.deepEqual(getDocumentIntegrity(sqlite, "paper"), {
@@ -34,6 +34,7 @@ test("review remains blocked until every page completed and question numbering i
     questionNumbers: [1, 3],
     invalidQuestionNumbers: [],
     missingQuestionNumbers: [2],
+    emptyQuestionNumbers: [],
     pagesComplete: false,
     questionsComplete: false,
     reviewReady: false,
@@ -47,11 +48,11 @@ test("non-canonical question numbers block review even when numeric values look 
     CREATE TABLE documents (id TEXT PRIMARY KEY, page_count INTEGER NOT NULL);
     CREATE TABLE pages (document_id TEXT NOT NULL, page_number INTEGER NOT NULL);
     CREATE TABLE extraction_runs (document_id TEXT NOT NULL, page_number INTEGER, status TEXT NOT NULL);
-    CREATE TABLE questions (document_id TEXT NOT NULL, number TEXT NOT NULL);
+    CREATE TABLE questions (document_id TEXT NOT NULL, number TEXT NOT NULL, stem TEXT NOT NULL DEFAULT '题干');
     INSERT INTO documents VALUES ('paper', 1);
     INSERT INTO pages VALUES ('paper', 1);
     INSERT INTO extraction_runs VALUES ('paper', 1, 'complete');
-    INSERT INTO questions VALUES ('paper', '01');
+    INSERT INTO questions (document_id, number) VALUES ('paper', '01');
   `);
   const integrity = getDocumentIntegrity(sqlite, "paper");
   assert.deepEqual(integrity.invalidQuestionNumbers, ["01"]);
