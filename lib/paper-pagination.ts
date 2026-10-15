@@ -4,6 +4,8 @@ export type MeasuredPaperBlock = {
   headingHeight: number;
   answer: boolean;
   minimumBlank: number;
+  /** A single narrow image row also provides writing space to its right. */
+  sideAnswerHeight?: number;
 };
 
 export type PaperPageItem = { index: number; heading: boolean; blank: number; continuation?: boolean };
@@ -49,7 +51,10 @@ export function paginatePaper(blocks: MeasuredPaperBlock[], pageHeight: number, 
     let heading = previousSection !== block.sectionId;
     const size = () => {
       const headingHeight = heading ? block.headingHeight : 0;
-      const blank = block.answer ? Math.max(block.contentHeight, block.minimumBlank, pageHeight / 2 - headingHeight - block.contentHeight) : 0;
+      const sideAnswerHeight = Math.min(block.contentHeight, Math.max(0, block.sideAnswerHeight ?? 0));
+      // Do not count the same image row as both full-width question content and
+      // required blank space. Keep its physical height so the next question cannot overlap it.
+      const blank = block.answer ? Math.max(0, block.contentHeight - 2 * sideAnswerHeight, block.minimumBlank, pageHeight / 2 - headingHeight - block.contentHeight) : 0;
       return { blank, height: headingHeight + block.contentHeight + blank + (block.answer ? 0 : gap) };
     };
     let dimensions = size();

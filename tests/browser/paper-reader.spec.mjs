@@ -5,6 +5,53 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 test.use({ extraHTTPHeaders: { 'oai-authenticated-user-id': 'paper-reader-browser' } });
 
+test('单张窄图旁的空白可作答，含图简答题仍按半页排版，多图不减免', async ({ page }) => {
+  const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, 'teacher-question-bank.sqlite3'));
+  const stamp = new Date().toISOString(), doc = crypto.randomUUID();
+  db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,created_at,updated_at) VALUES (?,'paper-reader-browser','窄图半页测试','application/pdf','complete',?,?)").run(doc, stamp, stamp);
+  const ids = Array.from({ length: 4 }, () => crypto.randomUUID());
+  ids.forEach((id, i) => {
+    db.prepare("INSERT INTO questions (id,document_id,number,type,stem,status,page_number,bbox_json,created_at,updated_at) VALUES (?,?,?,?,?,'approved',1,'{}',?,?)")
+      .run(id, doc, String(i + 1), i === 0 ? 'fill' : 'answer', i === 0 ? '已知 $x=1$，求 $x+1$。' : '如图，在四棱锥 $P-ABCD$ 中，满足给定条件。\n（1）证明两个平面互相垂直。\n（2）求二面角的平面角大小。\n请写出必要的推导过程。', stamp, stamp);
+    if (i > 0) db.prepare("INSERT INTO question_assets (id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES (?,?,'figure','question','四棱锥','narrow-diagram.svg','{}',?)").run(crypto.randomUUID(), id, stamp);
+  });
+  await page.route('**/api/files/narrow-diagram.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><path d="M80 520 L400 80 L720 520 Z" fill="none" stroke="black" stroke-width="4"/></svg>' }));
+  await page.goto(`/papers/uploaded/${doc}`);
+  const paper = page.locator('.printable-paper');
+  await expect(paper).toHaveAttribute('data-pagination-ready', 'true');
+  await expect(paper.locator('.paper-paginated')).toHaveCount(2);
+  const secondPage = paper.locator('.paper-paginated').nth(1);
+  await expect(secondPage.locator('.paper-question-line > b')).toHaveText(['3.', '4.']);
+  const bounds = await secondPage.locator('.paper-answer-question').evaluateAll(questions => questions.map(question => {
+    const content = question.querySelector('.paper-question-content').getBoundingClientRect();
+    const figure = question.querySelector('.paper-asset-stage').getBoundingClientRect();
+    const blank = question.querySelector('.answer-space').getBoundingClientRect();
+    const rect = question.getBoundingClientRect();
+    return { top: rect.top, bottom: rect.bottom, height: rect.height, content: content.height, figure: figure.height, imageBottom: question.querySelector('img').getBoundingClientRect().bottom, blank: blank.height };
+  }));
+  expect(bounds[0].height).toBeCloseTo(bounds[1].height, 0);
+  expect(bounds[0].imageBottom).toBeLessThan(bounds[1].top);
+  for (const question of bounds) {
+    expect(question.blank).toBeLessThan(question.content);
+    expect(question.blank + question.figure + 1).toBeGreaterThanOrEqual(question.content - question.figure);
+  }
+  await secondPage.screenshot({ path: 'tmp/narrow-image-half-page.png' });
+  const task = getDocument({ data: new Uint8Array(await page.pdf({ preferCSSPageSize: true })) });
+  const pdf = await task.promise;
+  expect(pdf.numPages).toBe(2);
+  const text = (await (await pdf.getPage(2)).getTextContent()).items.map(item => item.str).join('');
+  expect(text).toContain('3.');
+  expect(text).toContain('4.');
+  await task.destroy();
+  db.prepare("INSERT INTO question_assets (id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES (?,?,'figure','question','第二张图','narrow-diagram.svg','{}',?)").run(crypto.randomUUID(), ids[2], stamp);
+  await page.reload();
+  const multi = paper.locator(`.paper-question[data-question-id="${ids[2]}"]:not([data-continuation])`);
+  await expect(multi.locator('img')).toHaveCount(2);
+  const sheet = paper.locator('.paper-paginated').filter({ has: page.locator(`.paper-question[data-question-id="${ids[2]}"]:not([data-continuation])`) });
+  await expect(sheet.locator('.paper-question-line > b')).toHaveText(['3.']);
+  db.close();
+});
+
 test('原卷直接阅读 LaTeX 试卷，简答题两题一页且长题留白充足', async ({ page, request }) => {
   const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, 'teacher-question-bank.sqlite3'));
   const stamp = new Date().toISOString(), doc = crypto.randomUUID();

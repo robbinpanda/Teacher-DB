@@ -38,13 +38,33 @@ export function PaperPages({ className, variables, header, binding, blocks, foot
       const styles = getComputedStyle(root);
       const gap = parseFloat(getComputedStyle(root.querySelector(".paper-measure-gap")!).height);
       const available = parseFloat(styles.minHeight) - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom) - (footerText || showPageNumber ? 32 : 0);
-      const measurements = Array.from(body.querySelectorAll<HTMLElement>(".paper-measure-block")).map((element, index) => ({
-        sectionId: blocks[index].sectionId,
-        contentHeight: element.querySelector<HTMLElement>(".paper-question-content")!.offsetHeight,
-        headingHeight: element.querySelector<HTMLElement>(".paper-heading-wrap")!.offsetHeight,
-        answer: blocks[index].answer,
-        minimumBlank: blocks[index].minimumBlank,
-      }));
+      const measurements = Array.from(body.querySelectorAll<HTMLElement>(".paper-measure-block")).map((element, index) => {
+        const content = element.querySelector<HTMLElement>(".paper-question-content")!;
+        const figures = content.querySelectorAll<HTMLElement>(".paper-asset-stage");
+        let sideAnswerHeight = 0;
+        if (blocks[index].answer && figures.length === 1) {
+          const figure = figures[0];
+          const image = figure.querySelector("img");
+          const drawing = figure.firstElementChild?.getBoundingClientRect();
+          const bounds = content.getBoundingClientRect();
+          const row = figure.getBoundingClientRect();
+          // Require at least half the line for writing, including captions and
+          // user-applied scaling/offsets. Unloaded, wide or overflowing images get no credit.
+          if (image?.complete && image.naturalWidth > 0 && drawing && bounds.width > 0
+            && drawing.left >= bounds.left && bounds.right - drawing.right >= bounds.width / 2
+            && drawing.top >= row.top - 0.5 && drawing.bottom <= row.bottom + 0.5) {
+            sideAnswerHeight = figure.offsetHeight;
+          }
+        }
+        return {
+          sectionId: blocks[index].sectionId,
+          contentHeight: content.offsetHeight,
+          headingHeight: element.querySelector<HTMLElement>(".paper-heading-wrap")!.offsetHeight,
+          answer: blocks[index].answer,
+          minimumBlank: blocks[index].minimumBlank,
+          sideAnswerHeight,
+        };
+      });
       setPages(paginatePaper(measurements, available, headerElement.offsetHeight, gap, columns));
       setReady(true);
     };

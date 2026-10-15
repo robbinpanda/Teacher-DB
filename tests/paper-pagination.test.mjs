@@ -26,6 +26,31 @@ test('超长题的留白跨页延续且总量不少于题干', () => {
   assert.equal(pages.flatMap(page => page.columns.flat()).reduce((sum, item) => sum + item.blank, 0), 650);
 });
 
+test('单张窄图右侧计入作答区，两道含图简答题仍可各占半页', () => {
+  const blocks = [answer(300, { sideAnswerHeight: 200 }), answer(300, { sideAnswerHeight: 200 })];
+  const pages = paginatePaper(blocks, 960, 0, 20);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].columns[0].length, 2);
+  for (const item of pages[0].columns[0]) {
+    assert.equal(300 + item.blank + (item.heading ? 40 : 0), 480);
+    assert.ok(item.blank + 200 >= 300 - 200);
+  }
+});
+
+test('宽图和多图没有侧边作答区时仍保留完整留白', () => {
+  const pages = paginatePaper([answer(300), answer(300)], 960, 0, 20);
+  assert.equal(pages.length, 2);
+  assert.equal(pages[0].columns[0][0].blank, 300);
+});
+
+test('窄图不压缩明确设置的留白，也不能覆盖下一题', () => {
+  const pages = paginatePaper([answer(300, { sideAnswerHeight: 200, minimumBlank: 400 }), answer()], 960, 0, 20);
+  assert.equal(pages[0].columns[0][0].blank, 400);
+  assert.equal(pages.length, 2);
+  const tall = paginatePaper([answer(550, { sideAnswerHeight: 500 }), answer()], 960, 0, 20);
+  assert.equal(tall.length, 2);
+});
+
 test('双栏客观题后简答题另起单栏页，保留卷首空间和题序', () => {
   const blocks = [answer(350, { answer: false, sectionId: 'fill' }), answer(350, { answer: false, sectionId: 'fill' }), answer(), answer()];
   const pages = paginatePaper(blocks, 960, 300, 20, 2);
