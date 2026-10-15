@@ -483,6 +483,22 @@ export type SavedPaper = {
   questions: QuestionWithSource[];
 };
 
+export async function getUploadedPaperData(documentId: string, ownerId: string) {
+  await ensureDatabase();
+  const sqlite = getSqlite();
+  const document = sqlite.prepare(
+    `SELECT id, name AS title, status, COALESCE(subject, '') AS subject, COALESCE(grade, '') AS grade
+       FROM documents WHERE id = ? AND owner_id = ? AND source_kind = 'uploaded'`,
+  ).get(documentId, ownerId) as { id: string; title: string; status: string; subject: string; grade: string } | undefined;
+  if (!document) return null;
+  // Read the saved recognition results, including retained questions after source-file deletion.
+  const rows = sqlite.prepare(
+    `${questionSelect} WHERE d.id = ? AND d.owner_id = ?
+      ORDER BY q.page_number, CAST(q.number AS INTEGER), q.number, q.created_at`,
+  ).all(documentId, ownerId) as QuestionRow[];
+  return { ...document, questions: await hydrateQuestions(rows) };
+}
+
 export async function getPaperData(paperId: string, ownerId: string): Promise<SavedPaper | null> {
   await ensureDatabase();
   const sqlite = getSqlite();

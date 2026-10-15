@@ -29,6 +29,7 @@ export const getBankData = (ownerId: string): ReturnType<typeof Questions.getBan
 export const getReviewData = (id: string, ownerId: string): ReturnType<typeof Questions.getReviewData> => query("review", ownerId, { id });
 export const getApprovedQuestions = (ownerId: string, ids?: string[]): ReturnType<typeof Questions.getApprovedQuestions> => query("approved-questions", ownerId, { ids });
 export const getPaperData = (id: string, ownerId: string): ReturnType<typeof Questions.getPaperData> => query("paper", ownerId, { id });
+export const getUploadedPaperData = (id: string, ownerId: string): ReturnType<typeof Questions.getUploadedPaperData> => query("uploaded-paper", ownerId, { id });
 export const getPaperLibrary = (ownerId: string): ReturnType<typeof PaperLibrary.getPaperLibrary> => query("paper-library", ownerId);
 export const getPaperTemplates = (...args: Parameters<typeof PaperTemplates.getPaperTemplates>): ReturnType<typeof PaperTemplates.getPaperTemplates> => query("paper-templates", args[0], { subject: args[1], stage: args[2] });
 export const getTeacherMode = (ownerId: string): ReturnType<typeof School.getTeacherMode> => query("teacher-mode", ownerId);

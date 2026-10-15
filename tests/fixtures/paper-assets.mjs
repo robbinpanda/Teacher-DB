@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { getSqlite } from '../../db/index.ts';
 import { ensureDatabase } from '../../db/bootstrap.ts';
-import { getPaperData, getApprovedQuestions, searchApprovedQuestions } from '../../lib/question-repository.ts';
+import { getPaperData, getUploadedPaperData, getApprovedQuestions, searchApprovedQuestions } from '../../lib/question-repository.ts';
 import { normalizePaperSettings } from '../../lib/paper-templates.ts';
 import { POST } from '../../server/http/handlers/papers/route.ts';
 import { getPaperLibrary, createPaperFolder, deletePaperFolder, deleteLibraryPaper } from '../../lib/paper-library.ts';
@@ -48,4 +48,9 @@ assert.equal(library.papers[0].folderId, folder.id);
 assert.equal(library.papers[0].questionCount, 3);
 assert.equal((await getPaperLibrary('other')).papers.length, 0);
 await assert.rejects(deletePaperFolder('teacher', folder.id), /不为空/);
+assert.equal(await getUploadedPaperData('source', 'other'), null);
+assert.equal(await getUploadedPaperData('imported', 'teacher'), null);
+assert.deepEqual((await getUploadedPaperData('source', 'teacher')).questions.map(q => q.number), ['1', '2', '3']);
+db.prepare("UPDATE documents SET source_removed_at = ? WHERE id='source'").run(timestamp);
+assert.equal((await getUploadedPaperData('source', 'teacher')).questions.length, 3);
 db.close();
