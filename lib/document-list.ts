@@ -1,8 +1,9 @@
+import { documentScopeSql, type EducationScope } from "./education-scope.ts";
 import type Database from "better-sqlite3";
 import type { SourceDocument } from "./types";
 import type { DocumentGroup, DocumentSort } from "./workbench-documents";
 
-export type DocumentListOptions = { page?: number; pageSize?: number; group?: DocumentGroup; search?: string; sort?: DocumentSort };
+export type DocumentListOptions = { page?: number; pageSize?: number; group?: DocumentGroup; search?: string; sort?: DocumentSort; scope?: EducationScope };
 export type DocumentListResult = {
   documents: SourceDocument[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
@@ -19,12 +20,14 @@ export function selectDocumentWindow(sqlite: Database.Database, ownerId: string,
   const pageSize = Number.isFinite(options.pageSize) ? Math.max(1, Math.min(100, Math.floor(options.pageSize!))) : 50;
   const requestedPage = Number.isFinite(options.page) ? Math.max(1, Math.floor(options.page!)) : 1;
   const group = ["preprocessing","pending_review","reviewed"].includes(options.group ?? "") ? options.group! : "all";
-  const base = "d.owner_id=? AND d.source_removed_at IS NULL";
+  const scope = documentScopeSql(options.scope);
+  const base = "d.owner_id=? AND d.source_removed_at IS NULL" + scope.sql;
+  const baseParams = [ownerId, ...scope.params];
   const counts: Record<DocumentGroup, number> = { all: 0, preprocessing: 0, pending_review: 0, reviewed: 0 };
-  for (const row of sqlite.prepare(`SELECT ${bucket} AS bucket, COUNT(*) AS n FROM documents d WHERE ${base} GROUP BY bucket`).all(ownerId) as Array<{bucket: Exclude<DocumentGroup,"all">; n: number}>) {
+  for (const row of sqlite.prepare(`SELECT ${bucket} AS bucket, COUNT(*) AS n FROM documents d WHERE ${base} GROUP BY bucket`).all(...baseParams) as Array<{bucket: Exclude<DocumentGroup,"all">; n: number}>) {
     counts[row.bucket] = row.n; counts.all += row.n;
   }
-  const clauses = [base]; const params: (string|number)[] = [ownerId];
+  const clauses = [base]; const params: (string|number)[] = [...baseParams];
   if(group!=="all"){clauses.push(`(${bucket})=?`);params.push(group);}
   const search = options.search?.trim().slice(0,180);
   if(search){clauses.push("d.name LIKE ? ESCAPE '\\'");params.push(`%${search.replace(/[\\%_]/g,"\\$&")}%`);}
@@ -38,6 +41,6 @@ export function selectDocumentWindow(sqlite: Database.Database, ownerId: string,
   const stats = sqlite.prepare(`SELECT
     COALESCE(SUM(CASE WHEN q.status='approved' THEN 1 ELSE 0 END),0) AS approvedQuestions,
     COALESCE(SUM(CASE WHEN d.status='reviewing' AND d.source_removed_at IS NULL AND q.status<>'approved' THEN 1 ELSE 0 END),0) AS pendingQuestions
-    FROM documents d JOIN questions q ON q.document_id=d.id WHERE d.owner_id=?`).get(ownerId) as { approvedQuestions:number; pendingQuestions:number };
+    FROM documents d JOIN questions q ON q.document_id=d.id WHERE d.owner_id=?${scope.sql}`).get(...baseParams) as { approvedQuestions:number; pendingQuestions:number };
   return { ids, pagination:{page,pageSize,total,totalPages},counts,stats:{...stats,processing:counts.preprocessing} };
 }

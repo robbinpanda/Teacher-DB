@@ -1,3 +1,4 @@
+import { documentScopeSql, type EducationScope } from "./education-scope";
 import "server-only";
 import { getExtractionSpeed } from "./extraction-speed";
 import { automaticAiReviewEnabled } from "./ai-review-settings";
@@ -269,17 +270,18 @@ function isQueuePaused(ownerId: string) {
   return Boolean(getQueueSettingsRow(getSqlite(), ownerId)?.paused);
 }
 
-export async function getExtractionQueueSettings(ownerId: string) {
+export async function getExtractionQueueSettings(ownerId: string, scope?: EducationScope) {
   await ensureDatabase();
   const sqlite = getSqlite();
   const settings = getQueueSettingsRow(sqlite, ownerId);
+  const filter = documentScopeSql(scope);
   const counts = sqlite.prepare(
     `SELECT
        SUM(CASE WHEN status = 'processing' AND lease_expires_at >= ? THEN 1 ELSE 0 END) AS activeCount,
        SUM(CASE WHEN status IN ('queued', 'retry_wait') THEN 1 ELSE 0 END) AS queuedCount,
        SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END) AS pausedCount
-     FROM document_jobs WHERE owner_id = ?`,
-  ).get(now(), ownerId) as { activeCount: number | null; queuedCount: number | null; pausedCount: number | null };
+     FROM document_jobs WHERE owner_id = ?${scope ? ` AND document_id IN (SELECT d.id FROM documents d WHERE 1=1${filter.sql})` : ""}`,
+  ).get(now(), ownerId, ...filter.params) as { activeCount: number | null; queuedCount: number | null; pausedCount: number | null };
   return {
     concurrency: normalizeUploadConcurrency(settings?.concurrency, DEFAULT_UPLOAD_CONCURRENCY),
     automaticAiReviewEnabled: automaticAiReviewEnabled(ownerId),
@@ -290,7 +292,7 @@ export async function getExtractionQueueSettings(ownerId: string) {
     activeCount: Number(counts.activeCount ?? 0),
     queuedCount: Number(counts.queuedCount ?? 0),
     pausedCount: Number(counts.pausedCount ?? 0),
-    speed: getExtractionSpeed(sqlite, ownerId),
+    speed: getExtractionSpeed(sqlite, ownerId, new Date(), scope),
   };
 }
 

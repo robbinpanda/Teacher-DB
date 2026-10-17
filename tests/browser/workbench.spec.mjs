@@ -3,6 +3,9 @@ import Database from "better-sqlite3";
 import path from "node:path";
 
 test.use({ extraHTTPHeaders: { "oai-authenticated-user-id": "workbench-browser" } });
+// Match the high-school fixtures for both SSR and API requests.
+test.use({ storageState: { cookies: [{ name: 'teacher-db-scope', value: encodeURIComponent(JSON.stringify({subject:'数学',stage:'high'})), domain: '127.0.0.1', path: '/', expires: -1, httpOnly: false, secure: false, sameSite: 'Lax' }], origins: [] } });
+
 
 function papers() {
   const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, "teacher-question-bank.sqlite3"));
@@ -94,8 +97,8 @@ test("导入抽屉保留配置、文件暂存校验、拖放和焦点恢复", as
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "导入试卷" });
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel("学段", { exact: true }).selectOption("high");
-  await dialog.getByLabel("学科", { exact: true }).selectOption("物理");
+  await expect(dialog.getByRole("region", { name: "目标题库" })).toContainText("高中 · 数学");
+  await expect(dialog.getByLabel("学科", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("年级", { exact: true }).selectOption("高二");
   await dialog.getByLabel("选择识别模型").selectOption("two");
   await expect.poll(() => selected).toBe("two");
@@ -245,7 +248,7 @@ test("五份原卷交给后台后清空，删除试卷再打开不残留", async
   const fixture = papers();
   let posts = 0;
   await page.route("**/api/model-profiles", route => route.fulfill({ json: { profiles: [], selectedProfileId: "" } }));
-  await page.route("**/api/documents", route => route.request().method() === "POST"
+  await page.route(/\/api\/documents(?:\?.*)?$/, route => route.request().method() === "POST"
     ? route.fulfill({ json: { id: fixture.items[posts++].id, preparationQueued: true, status: "uploading" } }) : route.continue());
   try {
     await page.goto("/");
@@ -277,7 +280,7 @@ test("上传期间关闭重开保留当前任务，失败可见，新批次不�
   const gate = new Promise(resolve => { release = resolve; });
   let received = false;
   await page.route("**/api/model-profiles", route => route.fulfill({ json: { profiles: [], selectedProfileId: "" } }));
-  await page.route("**/api/documents", async route => {
+  await page.route(/\/api\/documents(?:\?.*)?$/, async route => {
     if (route.request().method() !== "POST") return route.continue();
     received = true;
     await gate;
@@ -379,7 +382,7 @@ test("超过列表上限时旧的识别任务仍会被返回并置顶", async ({
   fixture.db.prepare("INSERT INTO document_jobs (document_id,owner_id,status,lease_expires_at,queued_at,updated_at) VALUES (?,'workbench-browser','processing','2099-01-01',?,?)").run(active.id,stamp,stamp);
   for(let index=0;index<100;index++) {
     const id=crypto.randomUUID();
-    fixture.db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,page_count,created_at,updated_at) VALUES (?,'workbench-browser','较新的试卷','application/pdf','failed',0,?,?)").run(id,stamp,stamp);
+    fixture.db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,page_count,subject,grade,created_at,updated_at) VALUES (?,'workbench-browser','较新的试卷','application/pdf','failed',0,'数学','高三',?,?)").run(id,stamp,stamp);
     fixture.items.push({id});
   }
   try {

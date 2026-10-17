@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, FileText, LoaderCircle, Plus, UploadCloud, X } from "lucide-react";
-import { educationStages, gradesByStage, subjects, type EducationStage } from "../lib/education-taxonomy";
+import { AlertCircle, LibraryBig, FileText, LoaderCircle, Plus, UploadCloud, X } from "lucide-react";
+import { educationStages, gradesByStage, stageFromGrade, stageLabel } from "../lib/education-taxonomy";
 import { createDynamicConcurrencyController, DEFAULT_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY } from "../lib/upload-concurrency";
 import { useEducationScope } from "./AppShell";
 import { fetchUploadJson } from "../lib/upload-request";
@@ -61,14 +61,15 @@ async function renderPdf(
 export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const router = useRouter();
   const [recoverable, setRecoverable] = useState<PendingUpload[]>([]);
-  useEffect(() => { void readPendingUploads().then(setRecoverable).catch(() => undefined); }, []);
-  const { subject, stage, setSubject, setStage } = useEducationScope();
+  const { subject, stage } = useEducationScope();
+  useEffect(() => { void readPendingUploads().then(items => setRecoverable(items.filter(item => item.metadata.subject === subject && stageFromGrade(item.metadata.grade) === stage))).catch(() => undefined); }, [subject, stage]);
   const [open, setOpen] = useState(initiallyOpen);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const concurrencyRef = useRef(DEFAULT_UPLOAD_CONCURRENCY);
   const concurrencyDraftDirtyRef = useRef(false);
   const batchControllerRef = useRef<{ setConcurrency: (value: unknown) => void } | null>(null);
@@ -94,6 +95,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   const [uploadGrade, setUploadGrade] = useState("");
   const profileGrade = teachingProfile.grades.find((grade) => gradesByStage[stage].includes(grade));
   const effectiveGrade = gradesByStage[stage].includes(uploadGrade) ? uploadGrade : profileGrade ?? educationStages.find((item) => item.value === stage)?.defaultGrade ?? "九年级";
+  const targetBank = `${stageLabel(stage)} · ${subject}`;
   const sourceMeta = {
     subject,
     grade: effectiveGrade,
@@ -169,7 +171,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   function handOffTask(taskId: string) {
     void removePendingUpload(taskId).then(() => setRecoverable(items => items.filter(item => item.id !== taskId))).catch(() => undefined);
     setTasks(items => items.filter(item => item.id !== taskId));
-    setImportNotice("原卷已保存，后续分页、识别和审核进度请在试卷管理中查看。");
+    setImportNotice(`原卷已保存到「${targetBank}」，后续分页、识别和审核进度请在试卷管理中查看。`);
   }
 
   function patchTask(taskId: string, patch: Partial<UploadTask>) {
@@ -242,6 +244,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
 
   async function processFile(file: File, taskId: string, metadata: typeof sourceMeta, profileId?: string) {
     patchTask(taskId, { stage: "uploading", message: "正在保存原卷并整理试卷名称…" });
+    const uploadUrl = `/api/documents?${new URLSearchParams({ subject: metadata.subject, stage: stageFromGrade(metadata.grade) })}`;
     let persistedDocumentId: string | undefined;
     try {
       const provisional = new FormData();
@@ -249,7 +252,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
       provisional.append("pageCount", "0");
       if (profileId) provisional.append("profileId", profileId);
       Object.entries(metadata).forEach(([key, value]) => provisional.append(key, value));
-      const provisionalResult = uploadResponseSchema.parse(await fetchUploadJson("/api/documents", { method: "POST", body: provisional }));
+      const provisionalResult = uploadResponseSchema.parse(await fetchUploadJson(uploadUrl, { method: "POST", body: provisional }));
       if (!provisionalResult.id) throw new Error("原卷预登记失败");
       if (provisionalResult.namingWarning) setNamingWarnings(previous => [...previous, `${file.name}：${provisionalResult.namingWarning}`]);
       if (provisionalResult.name) patchTask(taskId, { fileName: provisionalResult.name });
@@ -273,7 +276,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
         original.append("file", file);
         original.append("pageCount", String(pageCount));
         Object.entries(metadata).forEach(([key, value]) => original.append(key, value));
-        const documentResult = await fetchUploadJson<{ id?: string }>("/api/documents", { method: "POST", body: original });
+        const documentResult = await fetchUploadJson<{ id?: string }>(uploadUrl, { method: "POST", body: original });
         if (!documentResult.id) throw new Error("原卷保存失败");
         if (documentResult.id !== currentDocumentId) throw new Error("原卷登记与分页任务不一致");
         router.refresh();
@@ -400,18 +403,17 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   return <>
     {recoverable.length > 0 && !batchActive && <button className="wb-button" type="button" onClick={() => { setOpen(true); void resumePendingUploads(); }}>恢复未完成导入（{recoverable.length}）</button>}
     {uploadInBrowser && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}><LoaderCircle size={14} className="spin" />正在导入 · {tasks.length}</button>}
-    <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
-    <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" onClose={() => setOpen(false)}>
+    <button ref={triggerRef} type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
+    <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" returnFocusRef={triggerRef} onClose={() => setOpen(false)}>
       <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>批量上传 PDF，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
       <div className="wb-dialog-body wb-import-layout">
         <section className="wb-import-settings" aria-labelledby="import-settings-title">
-          <div className="wb-import-section-heading"><h3 id="import-settings-title">识别设置</h3><p>设置本批试卷的学科、年级与识别方式</p></div>
+          <section className="wb-import-destination" aria-label="目标题库">
+            <LibraryBig size={22} aria-hidden="true" /><div><span>目标题库</span><strong>{targetBank}</strong><p>本批试卷自动归入此题库。要更换目标，请关闭窗口后在侧栏切换学科或学段。</p></div>
+          </section>
+          <div className="wb-import-section-heading"><h3 id="import-settings-title">识别设置</h3><p>选择当前学段内的年级与识别方式</p></div>
         <fieldset className="wb-import-fields" disabled={uploadInBrowser}>
           <legend className="wb-sr-only">试卷信息</legend>
-          <div className="wb-field-pair">
-            <div className="wb-field"><label htmlFor="import-stage">学段</label><select id="import-stage" value={stage} onChange={event => setStage(event.target.value as EducationStage)}>{educationStages.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-            <div className="wb-field"><label htmlFor="import-subject">学科</label><select id="import-subject" value={subject} onChange={event => setSubject(event.target.value)}>{subjects.map(item => <option key={item}>{item}</option>)}</select></div>
-          </div>
           <div className="wb-field"><label htmlFor="import-grade">年级</label><select id="import-grade" value={effectiveGrade} onChange={event => setUploadGrade(event.target.value)}>{gradesByStage[stage].map(grade => <option key={grade}>{grade}</option>)}</select></div>
           <div className="wb-field"><div className="wb-field-heading"><span>教学 Skill</span><Link href="/settings/skills">查看与定制</Link></div><div className="wb-field-note">自动使用当前年级、学科已启用的个人 Skill；未设置时使用默认规则。{teachingProfile.textbook && <span>教材：{teachingProfile.textbook}</span>}</div></div>
           <div className="wb-field"><div className="wb-field-heading"><label htmlFor="import-model">识别模型</label><Link href="/settings/models">管理模型</Link></div>
@@ -453,7 +455,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
         </section>}
         </section>
       </div>
-      <footer className="wb-dialog-footer"><span>{selectedFiles.length ? `已选 ${selectedFiles.length} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "部分文件导入失败，请查看提示" : importNotice ? "后续进度请在试卷管理中查看" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length || importNotice ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedFiles.length || uploadDisabled || submitting || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
+      <footer className="wb-dialog-footer"><span>目标：{targetBank} · {selectedFiles.length ? `已选 ${selectedFiles.length} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "部分文件导入失败，请查看提示" : importNotice ? "后续进度请在试卷管理中查看" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length || importNotice ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedFiles.length || uploadDisabled || submitting || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
     </WorkbenchDialog>
   </>;
 }

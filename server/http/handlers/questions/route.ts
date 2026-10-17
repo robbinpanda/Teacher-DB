@@ -1,3 +1,4 @@
+import { requestEducationScope } from "../../../../lib/education-scope";
 import { searchApprovedQuestions } from "../../../../lib/question-repository";
 import { sqliteTransaction } from "../../../../db";
 import { ensureDatabase } from "../../../../db/bootstrap";
@@ -15,9 +16,9 @@ export async function GET(request: Request) {
     type: url.searchParams.get("type") ?? undefined,
     tag: url.searchParams.get("tag") ?? undefined,
     documentId: url.searchParams.get("documentId") ?? undefined,
-    subject: url.searchParams.get("subject") ?? undefined,
+    subject: requestEducationScope(request).subject,
     grade: url.searchParams.get("grade") ?? undefined,
-    stage: url.searchParams.get("stage") ?? undefined,
+    stage: requestEducationScope(request).stage,
     year,
     examType: url.searchParams.get("examType") ?? undefined,
     region: url.searchParams.get("region") ?? undefined,

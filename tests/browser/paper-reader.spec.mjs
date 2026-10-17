@@ -4,6 +4,9 @@ import path from 'node:path';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 test.use({ extraHTTPHeaders: { 'oai-authenticated-user-id': 'paper-reader-browser' } });
+// Match the high-school fixtures for both SSR and API requests.
+test.use({ storageState: { cookies: [{ name: 'teacher-db-scope', value: encodeURIComponent(JSON.stringify({subject:'数学',stage:'high'})), domain: '127.0.0.1', path: '/', expires: -1, httpOnly: false, secure: false, sameSite: 'Lax' }], origins: [] } });
+
 
 test('单张窄图旁的空白可作答，含图简答题仍按半页排版，多图不减免', async ({ page }) => {
   const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, 'teacher-question-bank.sqlite3'));

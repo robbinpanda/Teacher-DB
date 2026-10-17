@@ -1,3 +1,4 @@
+import { documentStageSql } from "../../../../../lib/education-scope";
 import { sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { deleteFile } from "../../../../../lib/file-storage";
@@ -57,7 +58,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
       && getDocumentIntegrity(transaction, documentId)?.reviewReady) {
       return { error: "原卷已有完整识别结果，重复上传失败不会覆盖现有状态", statusCode: 409 } as const;
     }
-    if (payload.paperFolderId && !transaction.prepare("SELECT 1 FROM paper_folders WHERE id = ? AND owner_id = ?").get(payload.paperFolderId, ownerId)) {
+    if (payload.paperFolderId && !transaction.prepare(`SELECT 1 FROM paper_folders f JOIN documents d ON d.owner_id = f.owner_id
+      WHERE f.id = ? AND f.owner_id = ? AND d.id = ? AND f.subject = COALESCE(NULLIF(d.subject, ''), '数学') AND f.stage = (${documentStageSql()})`).get(payload.paperFolderId, ownerId, documentId)) {
       return { error: "目标文件夹不存在", statusCode: 400 } as const;
     }
     if (payload.status && !canTransitionDocument(document.status, payload.status)) {
@@ -99,6 +101,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     transaction.prepare(
       `UPDATE documents SET ${assignments.join(", ")} WHERE id = ? AND owner_id = ?`,
     ).run(...values, documentId, ownerId);
+    if (payload.subject !== undefined || payload.grade !== undefined) {
+      // Metadata corrections move the source and its questions into the new scope.
+      // Existing folders belong to a single scope, so incompatible links become unfiled.
+      transaction.prepare(`UPDATE documents AS d SET paper_folder_id = NULL WHERE d.id = ? AND d.owner_id = ?
+        AND paper_folder_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM paper_folders f
+          WHERE f.id = d.paper_folder_id AND f.owner_id = d.owner_id
+            AND f.subject = COALESCE(NULLIF(d.subject, ''), '数学') AND f.stage = (${documentStageSql()}))`).run(documentId, ownerId);
+      transaction.prepare(`UPDATE questions SET folder_id = NULL WHERE document_id = ? AND folder_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM question_folders f JOIN documents d ON d.id = questions.document_id
+          WHERE f.id = questions.folder_id AND f.owner_id = d.owner_id
+            AND f.subject = COALESCE(NULLIF(d.subject, ''), '数学') AND f.stage = (${documentStageSql()}))`).run(documentId);
+    }
     return { saved: true, status: payload.status ?? document.status } as const;
   });
   if ("error" in outcome) return Response.json({ error: outcome.error }, { status: outcome.statusCode });

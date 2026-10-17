@@ -1,3 +1,4 @@
+import { requestEducationScope } from "../../../../../lib/education-scope";
 import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { assertQuestionFolderMoveDepth, MAX_QUESTION_FOLDER_DEPTH } from "../../../../../lib/question-folder-rules";
@@ -15,9 +16,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ folde
   try {
     const { folderId } = await context.params;
     const ownerId = requestOwner(request);
+    const scope = requestEducationScope(request);
     const sqlite = getSqlite();
-    const folder = sqlite.prepare("SELECT id, parent_id AS parentId, name FROM question_folders WHERE id = ? AND owner_id = ?")
-      .get(folderId, ownerId) as { id: string; parentId: string | null; name: string } | undefined;
+    const folder = sqlite.prepare("SELECT id, parent_id AS parentId, name FROM question_folders WHERE id = ? AND owner_id = ? AND subject = ? AND stage = ?")
+      .get(folderId, ownerId, scope.subject, scope.stage) as { id: string; parentId: string | null; name: string } | undefined;
     if (!folder) return Response.json({ error: "文件夹不存在" }, { status: 404 });
     const payload = await request.json().catch(() => ({})) as { name?: unknown; parentId?: unknown };
     const name = payload.name === undefined ? folder.name : validName(payload.name);
@@ -27,8 +29,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ folde
     let depth = 0;
     while (current) {
       if (current === folderId) throw new Error("不能把文件夹移动到其子文件夹");
-      const row = sqlite.prepare("SELECT parent_id AS parentId FROM question_folders WHERE id = ? AND owner_id = ?")
-        .get(current, ownerId) as { parentId: string | null } | undefined;
+      const row = sqlite.prepare("SELECT parent_id AS parentId FROM question_folders WHERE id = ? AND owner_id = ? AND subject = ? AND stage = ?")
+        .get(current, ownerId, scope.subject, scope.stage) as { parentId: string | null } | undefined;
       if (!row) throw new Error("上级文件夹不存在");
       current = row.parentId;
       depth += 1;
@@ -45,8 +47,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ folde
     ).get(folderId, ownerId, ownerId) as { depth: number };
     assertQuestionFolderMoveDepth(depth, Number(subtree.depth));
     const duplicate = sqlite.prepare(
-      "SELECT id FROM question_folders WHERE owner_id = ? AND parent_id IS ? AND name = ? COLLATE NOCASE AND id <> ?",
-    ).get(ownerId, parentId, name, folderId);
+      "SELECT id FROM question_folders WHERE owner_id = ? AND subject = ? AND stage = ? AND parent_id IS ? AND name = ? COLLATE NOCASE AND id <> ?",
+    ).get(ownerId, scope.subject, scope.stage, parentId, name, folderId);
     if (duplicate) return Response.json({ error: "同一位置已有同名文件夹" }, { status: 409 });
     const timestamp = now();
     sqlite.prepare("UPDATE question_folders SET name = ?, parent_id = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
@@ -61,9 +63,10 @@ export async function DELETE(request: Request, context: { params: Promise<{ fold
   await ensureDatabase();
   const { folderId } = await context.params;
   const ownerId = requestOwner(request);
+    const scope = requestEducationScope(request);
   try {
     sqliteTransaction((sqlite) => {
-      const folder = sqlite.prepare("SELECT id FROM question_folders WHERE id = ? AND owner_id = ?").get(folderId, ownerId);
+      const folder = sqlite.prepare("SELECT id FROM question_folders WHERE id = ? AND owner_id = ? AND subject = ? AND stage = ?").get(folderId, ownerId, scope.subject, scope.stage);
       if (!folder) throw Object.assign(new Error("文件夹不存在"), { status: 404 });
       const child = sqlite.prepare("SELECT 1 FROM question_folders WHERE parent_id = ? AND owner_id = ? LIMIT 1").get(folderId, ownerId);
       const question = sqlite.prepare(

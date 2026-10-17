@@ -1,3 +1,4 @@
+import { migrateEducationScopes } from "./education-scope-migration";
 import { teachingSkillSchemaSql } from "../lib/teaching-skill-store";
 import { getSqlite } from ".";
 import { createHash } from "node:crypto";
@@ -525,7 +526,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 10;
+export const DATABASE_VERSION = 11;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -623,6 +624,7 @@ function initialize() {
         CREATE INDEX IF NOT EXISTS questions_document_status_idx ON questions(document_id, status);
       `),
     },
+    { version: 11, name: "education-scope-isolation", checksum: "education-scope-isolation-v1", up: migrateEducationScopes },
   ]);
   initialized = true;
 }

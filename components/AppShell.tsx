@@ -1,8 +1,9 @@
 "use client";
+import { educationScopeCookie, normalizeEducationScope, type EducationScope } from "../lib/education-scope";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   BarChart3,
   BookOpen,
@@ -56,28 +57,25 @@ const navigation = [
   { href: "/settings/usage", label: "模型用量", icon: BarChart3 },
 ];
 
-export function AppShell({ children, initialMode }: { children: React.ReactNode; initialMode: TeacherMode }) {
+export function AppShell({ children, initialMode, initialScope }: { children: React.ReactNode; initialMode: TeacherMode; initialScope: EducationScope }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mode, setModeState] = useState<TeacherMode>(initialMode);
   const [modeChanging, setModeChanging] = useState(false);
   const [modeError, setModeError] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [subject, setSubject] = useState("数学");
-  const [stage, setStage] = useState<EducationStage>("middle");
+  const { subject, stage } = initialScope;
+  const [scopeChanging, startScopeTransition] = useTransition();
   const [scopeOpen, setScopeOpen] = useState(false);
   const [subjectOpen, setSubjectOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const savedSubject = window.localStorage.getItem("teacher-db-subject");
-    const savedStage = window.localStorage.getItem("teacher-db-stage") as EducationStage | null;
-    const frame = window.requestAnimationFrame(() => {
-      if (savedSubject && subjects.includes(savedSubject as (typeof subjects)[number])) setSubject(savedSubject);
-      if (educationStages.some((item) => item.value === savedStage)) setStage(savedStage!);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+    if (document.cookie.split(";").some(item => item.trim().startsWith(`${educationScopeCookie}=`))) return;
+    const saved = normalizeEducationScope({ subject: window.localStorage.getItem("teacher-db-subject"), stage: window.localStorage.getItem("teacher-db-stage") });
+    document.cookie = `${educationScopeCookie}=${encodeURIComponent(JSON.stringify(saved))}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    if (saved.subject !== subject || saved.stage !== stage) startScopeTransition(() => router.refresh());
+  }, [router, subject, stage]);
 
   useEffect(() => {
     if (!scopeOpen) return;
@@ -100,12 +98,22 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
     };
   }, [scopeOpen, subjectOpen]);
 
-  const scope = useMemo<EducationScopeValue>(() => ({
-    subject,
-    stage,
-    setSubject: (value) => { setSubject(value); window.localStorage.setItem("teacher-db-subject", value); },
-    setStage: (value) => { setStage(value); window.localStorage.setItem("teacher-db-stage", value); },
-  }), [stage, subject]);
+  const scope = useMemo<EducationScopeValue>(() => {
+    const change = (next: EducationScope) => {
+      if (next.subject === subject && next.stage === stage) return;
+      setScopeOpen(false);
+      setSubjectOpen(false);
+      document.cookie = `${educationScopeCookie}=${encodeURIComponent(JSON.stringify(next))}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      window.localStorage.setItem("teacher-db-subject", next.subject);
+      window.localStorage.setItem("teacher-db-stage", next.stage);
+      startScopeTransition(() => {
+        const destination = pathname.startsWith("/review") ? "/" : pathname.startsWith("/papers/") && pathname !== "/papers/new" ? "/papers" : pathname;
+        if (destination !== pathname || window.location.search) router.replace(destination);
+        router.refresh();
+      });
+    };
+    return { subject, stage, setSubject: value => change({ subject: value, stage }), setStage: value => change({ subject, stage: value }) };
+  }, [stage, subject, pathname, router]);
 
   const modeValue = useMemo<TeacherModeValue>(() => ({
     mode,
@@ -152,7 +160,7 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
             </button>
             {scopeOpen && (
               <div id="education-scope-settings" className="scope-settings">
-                <div className="scope-field-heading"><span>学段</span><small>影响题库、导入与组卷范围</small></div>
+                <div className="scope-field-heading"><span>学段</span><small>工作台、题库、试卷库独立</small></div>
                 <div className="stage-switch" role="group" aria-label="学段">
                   {educationStages.map((item) => (
                     <button
@@ -216,7 +224,7 @@ export function AppShell({ children, initialMode }: { children: React.ReactNode;
           </div>
           </div>
         </aside>
-        <main className="app-main">{children}</main>
+        <main className="app-main" key={`${stage}:${subject}`} aria-busy={scopeChanging}>{scopeChanging ? <p role="status">正在切换教学范围…</p> : children}</main>
       </div>
     </EducationScopeContext.Provider></TeacherModeContext.Provider>
   );

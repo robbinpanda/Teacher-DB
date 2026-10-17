@@ -26,7 +26,7 @@ test('existing v9 databases receive document list indexes without changing saved
     migrate();
     migrate();
     assert.deepEqual(db.prepare('SELECT * FROM app_settings').all(), settings);
-    assert.deepEqual(db.prepare('SELECT * FROM schema_migrations WHERE version < 10 ORDER BY version').all(), ledger);
+    assert.deepEqual(db.prepare('SELECT * FROM schema_migrations WHERE version <> 10 ORDER BY version').all(), ledger);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM schema_migrations WHERE version=10').get().n, 1);
     for (const name of indexes) assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?").get(name));
     const plan = db.prepare("EXPLAIN QUERY PLAN SELECT COUNT(DISTINCT page_number) FROM extraction_runs WHERE document_id=? AND status='complete'").all('paper');

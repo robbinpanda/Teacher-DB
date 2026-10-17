@@ -230,7 +230,7 @@ export function QuestionBank({
         if (selection.kind === "grade" && selection.value) params.set("grade", selection.value);
         if (selection.kind === "region" && selection.value && selection.value !== "未设置地区") params.set("region", selection.value);
         if (selection.kind === "textbook" && selection.value && selection.value !== "未设置教材") params.set("textbook", selection.value);
-        if (!(requestedDocumentId && source === requestedDocumentId)) { params.set("subject", subject); params.set("stage", stage); }
+        params.set("subject", subject); params.set("stage", stage);
         const response = await fetch(`/api/questions?${params}`, { signal: controller.signal });
         const result = await response.json().catch(() => ({})) as { questions?: QuestionWithSource[]; pagination?: Pagination; error?: string };
         if (!response.ok || !result.questions || !result.pagination) throw new Error(result.error ?? "题库查询失败");

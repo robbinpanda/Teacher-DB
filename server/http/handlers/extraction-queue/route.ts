@@ -1,3 +1,4 @@
+import { requestEducationScope } from "../../../../lib/education-scope";
 import { getExtractionQueueSettings, kickExtractionQueue, listDocumentJobs, setExtractionQueueConcurrency, setExtractionQueuePaused } from "../../../../lib/extraction-queue";
 import { MAX_UPLOAD_CONCURRENCY } from "../../../../lib/upload-concurrency";
 import { requestOwner } from "../../../../lib/server";
@@ -8,9 +9,9 @@ import { setAutomaticAiReviewEnabled } from "../../../../lib/ai-review-settings"
 export async function GET(request: Request) {
   const ownerId = requestOwner(request);
   if (new URL(request.url).searchParams.get("summary") === "1") {
-    return Response.json(await getExtractionQueueSettings(ownerId), { headers: { "cache-control": "no-store" } });
+    return Response.json(await getExtractionQueueSettings(ownerId, requestEducationScope(request)), { headers: { "cache-control": "no-store" } });
   }
-  const [jobs, settings] = await Promise.all([listDocumentJobs(ownerId), getExtractionQueueSettings(ownerId)]);
+  const [jobs, settings] = await Promise.all([listDocumentJobs(ownerId), getExtractionQueueSettings(ownerId, requestEducationScope(request))]);
   void kickExtractionQueue();
   return Response.json({ jobs, preparations: listDocumentPreparations(ownerId), ...settings });
 }

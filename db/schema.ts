@@ -25,6 +25,7 @@ export const documents = sqliteTable("documents", {
   updatedAt: text("updated_at").notNull(),
 }, (table) => [
   index("documents_owner_created_idx").on(table.ownerId, table.createdAt),
+  index("documents_education_scope_idx").on(table.ownerId, table.subject, table.grade, table.createdAt),
   index("documents_status_idx").on(table.status),
 ]);
 
@@ -71,11 +72,14 @@ export const questionFolders = sqliteTable("question_folders", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull().default("local-demo"),
   parentId: text("parent_id"),
+  subject: text("subject").notNull().default("数学"),
+  stage: text("stage").notNull().default("middle"),
   name: text("name").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [
   index("question_folders_owner_parent_idx").on(table.ownerId, table.parentId),
+  index("question_folders_scope_idx").on(table.ownerId, table.subject, table.stage, table.parentId),
 ]);
 
 export const questions = sqliteTable("questions", {
@@ -209,11 +213,14 @@ export const paperFolders = sqliteTable("paper_folders", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull().default("local-demo"),
   parentId: text("parent_id"),
+  subject: text("subject").notNull().default("数学"),
+  stage: text("stage").notNull().default("middle"),
   name: text("name").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [
   index("paper_folders_owner_parent_idx").on(table.ownerId, table.parentId),
+  index("paper_folders_scope_idx").on(table.ownerId, table.subject, table.stage, table.parentId),
 ]);
 
 export const papers = sqliteTable("papers", {

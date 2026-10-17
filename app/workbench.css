@@ -287,3 +287,9 @@
   .wb-dialog-footer > span { flex-basis: 100%; }
 }
 @media print { .shell-ui { display: block; }.shell-ui .sidebar { display: none; } }
+
+.wb-import-destination { display: flex; align-items: flex-start; gap: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; color: #1e40af; }
+.wb-import-destination > svg { flex: 0 0 auto; margin-top: 3px; }
+.wb-import-destination span { display: block; font-size: 12px; }
+.wb-import-destination strong { display: block; margin-top: 4px; font-size: 19px; line-height: 1.4; }
+.wb-import-destination p { margin: 8px 0 0; color: #475569; font-size: 12px; line-height: 1.7; }

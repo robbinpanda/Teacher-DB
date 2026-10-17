@@ -3,6 +3,9 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 
 test.use({ extraHTTPHeaders: { 'oai-authenticated-user-id': 'paper-library-browser' } });
+// Match the high-school fixtures for both SSR and API requests.
+test.use({ storageState: { cookies: [{ name: 'teacher-db-scope', value: encodeURIComponent(JSON.stringify({subject:'数学',stage:'high'})), domain: '127.0.0.1', path: '/', expires: -1, httpOnly: false, secure: false, sameSite: 'Lax' }], origins: [] } });
+
 test('两类试卷统一管理，恢复编排不会加入其他题目，保存更新同一作品', async ({ page, request }) => {
   test.setTimeout(90000);
   const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, 'teacher-question-bank.sqlite3'));

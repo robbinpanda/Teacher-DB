@@ -77,8 +77,9 @@ export function stageLabel(stage: EducationStage) {
 
 export function stageFromGrade(grade?: string | null): EducationStage {
   if (!grade) return "middle";
-  if (/小学|一|二|三|四|五|六/.test(grade) && !/初|高/.test(grade)) return "primary";
-  if (/高中|高一|高二|高三/.test(grade)) return "high";
+  if (/高/.test(grade)) return "high";
+  if (/初|中学|七|八|九/.test(grade)) return "middle";
+  if (/小学|一|二|三|四|五|六/.test(grade)) return "primary";
   return "middle";
 }
 

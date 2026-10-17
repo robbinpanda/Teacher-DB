@@ -366,9 +366,9 @@ export function Workbench({ initialPage, importOpen = false }: { importOpen?: bo
               <button className="wb-text-button" type="button" disabled={busy} onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}>取消</button>
             </div>
           </> : <>
-            <span>{activeGroup === "pending_review" ? queueState.automaticAiReviewEnabled ? "仅自动入库无需人工核查的题目" : "AI 复核已关闭，全部题目可一键入库" : queueState.paused ? "识别队列已暂停" : "后台识别队列"}</span>
+            <span>{activeGroup === "pending_review" ? queueState.automaticAiReviewEnabled ? "仅自动入库无需人工核查的题目" : "AI 复核已关闭，全部题目可一键入库" : queueState.paused ? "所有学科的识别队列已暂停" : "识别队列控制（所有学科）"}</span>
             {activeGroup === "pending_review" && <button className="wb-button" type="button" disabled={busy} onClick={() => void approveDocuments(true)}>{batchAction === "approve_all" ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />}{batchAction === "approve_all" ? "全部入库中…" : "一键全部入库"}</button>}
-            {activeGroup === "preprocessing" && <button className="wb-button" type="button" disabled={queueBusy} onClick={() => void controlQueue(queueState.paused ? "resume" : "pause")}>{queueBusy ? <LoaderCircle size={14} className="spin" /> : queueState.paused ? <Play size={14} /> : <Pause size={14} />}{queueState.paused ? "全部开始" : "全部暂停"}</button>}
+            {activeGroup === "preprocessing" && <button className="wb-button" type="button" disabled={queueBusy} onClick={() => void controlQueue(queueState.paused ? "resume" : "pause")}>{queueBusy ? <LoaderCircle size={14} className="spin" /> : queueState.paused ? <Play size={14} /> : <Pause size={14} />}{queueState.paused ? "开始所有学科" : "暂停所有学科"}</button>}
           </>}
         </div>}
         {listError && <p className="wb-notice wb-error" role="alert"><AlertTriangle size={15} />{listError}</p>}

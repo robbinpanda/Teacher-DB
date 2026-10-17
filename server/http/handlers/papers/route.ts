@@ -1,3 +1,4 @@
+import { requestEducationScope, documentScopeSql } from "../../../../lib/education-scope";
 import { getSqlite, sqliteTransaction } from "../../../../db";
 import { ensureDatabase } from "../../../../db/bootstrap";
 import { now, requestOwner } from "../../../../lib/server";
@@ -34,16 +35,22 @@ export async function POST(request: Request) {
   }
   if (!questionIds.length) return Response.json({ error: "请先从题库选择题目" }, { status: 400 });
   const ownerId = requestOwner(request);
+  const scope = requestEducationScope(request);
+  const filter = documentScopeSql(scope);
   const sqlite = getSqlite();
-  const existing = sqlite.prepare("SELECT owner_id AS ownerId FROM papers WHERE id = ?").get(id) as { ownerId: string } | undefined;
+  const existing = sqlite.prepare("SELECT owner_id AS ownerId, settings_json AS settingsJson FROM papers WHERE id = ?").get(id) as { ownerId: string; settingsJson: string } | undefined;
   if (existing && existing.ownerId !== ownerId) return Response.json({ error: "试卷不存在" }, { status: 404 });
 
+  if (existing) {
+    const settings = JSON.parse(existing.settingsJson) as { subject?: string; stage?: string };
+    if (settings.subject !== scope.subject || settings.stage !== scope.stage) return Response.json({ error: "请切换到试卷所属学科和学段后保存" }, { status: 409 });
+  }
   const placeholders = questionIds.map(() => "?").join(",");
   const row = sqlite.prepare(
     `SELECT COUNT(*) AS count FROM questions q JOIN documents d ON d.id = q.document_id
-      WHERE d.owner_id = ? AND q.status = 'approved' AND q.id IN (${placeholders})`,
-  ).get(ownerId, ...questionIds) as { count: number };
-  if (row.count !== questionIds.length) return Response.json({ error: "试卷中包含不存在或未审核的题目" }, { status: 400 });
+      WHERE d.owner_id = ?${filter.sql} AND q.status = 'approved' AND q.id IN (${placeholders})`,
+  ).get(ownerId, ...filter.params, ...questionIds) as { count: number };
+  if (row.count !== questionIds.length) return Response.json({ error: "试卷中包含不属于当前学科、学段或未审核的题目" }, { status: 400 });
 
   const timestamp = now();
   sqliteTransaction((transaction) => {
@@ -52,7 +59,7 @@ export async function POST(request: Request) {
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET title = excluded.title, subtitle = excluded.subtitle,
          settings_json = excluded.settings_json, updated_at = excluded.updated_at`,
-    ).run(id, ownerId, title, payload.subtitle ?? "", JSON.stringify(payload.settings ?? {}), timestamp, timestamp);
+    ).run(id, ownerId, title, payload.subtitle ?? "", JSON.stringify({ ...payload.settings, ...scope }), timestamp, timestamp);
     transaction.prepare("DELETE FROM paper_items WHERE paper_id = ?").run(id);
     const insert = transaction.prepare("INSERT INTO paper_items (paper_id, question_id, position, score) VALUES (?, ?, ?, ?)");
     questionIds.forEach((questionId, position) => {

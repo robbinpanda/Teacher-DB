@@ -1,3 +1,4 @@
+import { documentScopeSql, documentStageSql, type EducationScope } from "./education-scope";
 import "server-only";
 import { selectDocumentWindow, type DocumentListOptions, type DocumentListResult } from "./document-list";
 
@@ -271,14 +272,15 @@ export async function getReviewData(documentId: string, ownerId: string) {
   };
 }
 
-export async function getApprovedQuestions(ownerId: string, ids?: string[]) {
+export async function getApprovedQuestions(ownerId: string, ids?: string[], scope?: EducationScope) {
   if (ids && !ids.length) return [];
   await ensureDatabase();
   const sqlite = getSqlite();
   const idClause = ids?.length ? ` AND q.id IN (${placeholders(ids.length)})` : "";
-  const params = ids?.length ? [ownerId, ...ids] : [ownerId];
+  const filter = documentScopeSql(scope);
+  const params = [ownerId, ...filter.params, ...(ids ?? [])];
   const rows = sqlite.prepare(
-    `${questionSelect} WHERE d.owner_id = ? AND q.status = 'approved'${idClause}
+    `${questionSelect} WHERE d.owner_id = ? AND q.status = 'approved'${filter.sql}${idClause}
       ORDER BY d.created_at DESC, q.page_number, CAST(q.number AS INTEGER), q.number LIMIT 2000`,
   ).all(...params) as QuestionRow[];
   const hydrated = await hydrateQuestions(rows);
@@ -320,11 +322,9 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
   }
   if (options.sourceKind && ["uploaded", "imported", "generated"].includes(options.sourceKind)) { clauses.push("d.source_kind = ?"); params.push(options.sourceKind); }
   if (options.documentId) { clauses.push("d.id = ?"); params.push(options.documentId); }
-  if (options.subject) { clauses.push("d.subject = ?"); params.push(options.subject); }
+  if (options.subject) { clauses.push("COALESCE(NULLIF(d.subject, ''), '数学') = ?"); params.push(options.subject); }
   if (options.grade) { clauses.push("d.grade = ?"); params.push(options.grade); }
-  if (options.stage === "primary") clauses.push("d.grade NOT LIKE '%初%' AND d.grade NOT LIKE '%高%' AND d.grade NOT LIKE '%七%' AND d.grade NOT LIKE '%八%' AND d.grade NOT LIKE '%九%'");
-  if (options.stage === "middle") clauses.push("(d.grade LIKE '%初%' OR d.grade LIKE '%七%' OR d.grade LIKE '%八%' OR d.grade LIKE '%九%')");
-  if (options.stage === "high") clauses.push("(d.grade LIKE '%高一%' OR d.grade LIKE '%高二%' OR d.grade LIKE '%高三%' OR d.grade LIKE '%高中%')");
+  if (options.stage) { clauses.push(`(${documentStageSql()}) = ?`); params.push(options.stage); }
   if (options.year) { clauses.push("d.source_year = ?"); params.push(options.year); }
   if (options.examType) { clauses.push("d.source_exam_type = ?"); params.push(options.examType); }
   if (options.region) { clauses.push("d.source_region = ?"); params.push(options.region); }
@@ -366,51 +366,56 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
   };
 }
 
-export async function getBankData(ownerId: string) {
-  const result = await searchApprovedQuestions(ownerId, { pageSize: 30 });
+export async function getBankData(ownerId: string, scope?: EducationScope) {
+  const result = await searchApprovedQuestions(ownerId, { pageSize: 30, ...scope });
   const sqlite = getSqlite();
+  const filter = documentScopeSql(scope);
+  const params = [ownerId, ...filter.params];
   const stats = sqlite.prepare(
     `SELECT COUNT(q.id) AS total,
             COALESCE(SUM(CASE WHEN q.status = 'approved' THEN 1 ELSE 0 END), 0) AS approved,
             COALESCE(SUM(CASE WHEN q.status = 'approved' AND EXISTS (SELECT 1 FROM question_assets a WHERE a.question_id = q.id) THEN 1 ELSE 0 END), 0) AS withAssets,
-            (SELECT COUNT(*) FROM papers p WHERE p.owner_id = ?) AS papers
-       FROM questions q JOIN documents d ON d.id = q.document_id WHERE d.owner_id = ?`,
-  ).get(ownerId, ownerId) as { total: number; approved: number; withAssets: number; papers: number };
+            0 AS papers
+       FROM questions q JOIN documents d ON d.id = q.document_id WHERE d.owner_id = ?${filter.sql}`,
+  ).get(...params) as { total: number; approved: number; withAssets: number; papers: number };
+  stats.papers = (sqlite.prepare(`SELECT COUNT(*) AS count FROM papers
+    WHERE owner_id = ?${scope ? " AND json_extract(settings_json, '$.subject') = ? AND json_extract(settings_json, '$.stage') = ?" : ""}`)
+    .get(...params) as { count: number }).count;
   const tags = sqlite.prepare(
     `SELECT DISTINCT t.name FROM tags t JOIN question_tags qt ON qt.tag_id = t.id
       JOIN questions q ON q.id = qt.question_id JOIN documents d ON d.id = q.document_id
-      WHERE d.owner_id = ? AND q.status = 'approved' ORDER BY t.name`,
-  ).all(ownerId) as Array<{ name: string }>;
+      WHERE d.owner_id = ?${filter.sql} AND q.status = 'approved' ORDER BY t.name`,
+  ).all(...params) as Array<{ name: string }>;
   const sources = sqlite.prepare(
     `SELECT DISTINCT d.id, d.name, d.source_year AS year, d.source_exam_type AS examType,
             d.source_region AS region, d.source_textbook AS textbook, d.source_school AS school
        FROM documents d JOIN questions q ON q.document_id = d.id
-      WHERE d.owner_id = ? AND q.status = 'approved' ORDER BY d.created_at DESC`,
-  ).all(ownerId) as Array<{ id: string; name: string; year: number | null; examType: string | null; region: string | null; textbook: string | null; school: string | null }>;
+      WHERE d.owner_id = ?${filter.sql} AND q.status = 'approved' ORDER BY d.created_at DESC`,
+  ).all(...params) as Array<{ id: string; name: string; year: number | null; examType: string | null; region: string | null; textbook: string | null; school: string | null }>;
   const folders = sqlite.prepare(
     `SELECT f.id, f.parent_id AS parentId, f.name, f.created_at AS createdAt, f.updated_at AS updatedAt,
-            COUNT(q.id) AS questionCount
+            COUNT(CASE WHEN d.id IS NOT NULL AND q.status = 'approved' THEN q.id END) AS questionCount
        FROM question_folders f
        LEFT JOIN questions q ON q.folder_id = f.id
-       LEFT JOIN documents d ON d.id = q.document_id AND d.owner_id = f.owner_id
-      WHERE f.owner_id = ? GROUP BY f.id ORDER BY f.name COLLATE NOCASE`,
-  ).all(ownerId) as Array<{ id: string; parentId: string | null; name: string; questionCount: number; createdAt: string; updatedAt: string }>;
+       LEFT JOIN documents d ON d.id = q.document_id AND d.owner_id = f.owner_id${filter.sql}
+      WHERE f.owner_id = ?${scope ? ' AND f.subject = ? AND f.stage = ?' : ''} GROUP BY f.id ORDER BY f.name COLLATE NOCASE`,
+  ).all(...filter.params, ...params) as Array<{ id: string; parentId: string | null; name: string; questionCount: number; createdAt: string; updatedAt: string }>;
   const facets = {
     grades: sqlite.prepare(
       `SELECT COALESCE(d.grade, '未设置年级') AS value, COUNT(q.id) AS count
          FROM questions q JOIN documents d ON d.id = q.document_id
-        WHERE d.owner_id = ? AND q.status = 'approved' GROUP BY d.grade ORDER BY value`,
-    ).all(ownerId) as Array<{ value: string; count: number }>,
+        WHERE d.owner_id = ?${filter.sql} AND q.status = 'approved' GROUP BY d.grade ORDER BY value`,
+    ).all(...params) as Array<{ value: string; count: number }>,
     regions: sqlite.prepare(
       `SELECT COALESCE(NULLIF(d.source_region, ''), '未设置地区') AS value, COUNT(q.id) AS count
          FROM questions q JOIN documents d ON d.id = q.document_id
-        WHERE d.owner_id = ? AND q.status = 'approved' GROUP BY d.source_region ORDER BY count DESC, value LIMIT 40`,
-    ).all(ownerId) as Array<{ value: string; count: number }>,
+        WHERE d.owner_id = ?${filter.sql} AND q.status = 'approved' GROUP BY d.source_region ORDER BY count DESC, value LIMIT 40`,
+    ).all(...params) as Array<{ value: string; count: number }>,
     textbooks: sqlite.prepare(
       `SELECT COALESCE(NULLIF(d.source_textbook, ''), '未设置教材') AS value, COUNT(q.id) AS count
          FROM questions q JOIN documents d ON d.id = q.document_id
-        WHERE d.owner_id = ? AND q.status = 'approved' GROUP BY d.source_textbook ORDER BY count DESC, value LIMIT 30`,
-    ).all(ownerId) as Array<{ value: string; count: number }>,
+        WHERE d.owner_id = ?${filter.sql} AND q.status = 'approved' GROUP BY d.source_textbook ORDER BY count DESC, value LIMIT 30`,
+    ).all(...params) as Array<{ value: string; count: number }>,
   };
   const profileRow = sqlite.prepare(
     "SELECT preferred_region AS region, preferred_textbook AS textbook, preferred_grades_json AS gradesJson FROM app_settings WHERE owner_id = ?",

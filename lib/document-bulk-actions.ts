@@ -1,3 +1,4 @@
+import { documentScopeSql, type EducationScope } from "./education-scope.ts";
 import type Database from "better-sqlite3";
 
 export type BulkDeleteMode = "with_questions" | "source_only";
@@ -76,16 +77,18 @@ export function approveAllDocumentsWithoutReview(
   sqlite: Database.Database,
   input: {
     ownerId: string;
+    scope?: EducationScope;
     skipHumanReview?: boolean;
     timestamp: string;
     reviewReadinessError: (documentId: string) => string | null;
   },
 ) {
+  const filter = documentScopeSql(input.scope, "documents");
   const pending = sqlite.prepare(
     `SELECT id, name FROM documents
-      WHERE owner_id = ? AND status = 'reviewing' AND source_removed_at IS NULL
+      WHERE owner_id = ? AND status = 'reviewing' AND source_removed_at IS NULL${filter.sql}
       ORDER BY updated_at DESC, id`,
-  ).all(input.ownerId) as Array<{ id: string; name: string }>;
+  ).all(input.ownerId, ...filter.params) as Array<{ id: string; name: string }>;
   const documents: ReturnType<typeof approveDocumentsWithoutReview>["documents"] = [];
   const skippedDocuments: Array<{ id: string; name: string; reason: string }> = [];
   let changed = 0;

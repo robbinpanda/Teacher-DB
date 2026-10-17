@@ -35,7 +35,7 @@ test('papers past 100 remain visible through tabs, global search and page naviga
         request.onupgradeneeded=()=>request.result.createObjectStore('files',{keyPath:'id'});
         request.onerror=()=>reject(request.error);
         request.onsuccess=()=>{const db=request.result,t=db.transaction('files','readwrite');
-          t.objectStore('files').put({id:'pending-fixture',fileName:'未上传一模.pdf',file:new File(['%PDF-fixture'],'未上传一模.pdf',{type:'application/pdf'}),metadata:{subject:'数学',grade:'高三'}});
+          t.objectStore('files').put({id:'pending-fixture',fileName:'未上传一模.pdf',file:new File(['%PDF-fixture'],'未上传一模.pdf',{type:'application/pdf'}),metadata:{subject:'数学',grade:'九年级'}});
           t.oncomplete=()=>{db.close();resolve();};t.onerror=()=>reject(t.error);};
       });
     });

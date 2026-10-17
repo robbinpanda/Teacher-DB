@@ -1,3 +1,4 @@
+import type { EducationScope } from "../../lib/education-scope";
 import { result } from "../core/result";
 import { getDb, getSqlite, sqliteTransaction } from "../../db";
 import { and, eq } from "drizzle-orm";
@@ -5,7 +6,8 @@ import { ensureDatabase } from "../../db/bootstrap";
 import { documents } from "../../db/schema";
 import { now } from "../../lib/server";
 import { deleteFile, putFile } from "../../lib/file-storage";
-import { findReusableDocument } from "../../lib/document-upload";
+import { findReusableDocument, resolveUploadDestination } from "../../lib/document-upload";
+import { stageFromGrade } from "../../lib/education-taxonomy";
 import { enqueueDocumentPreparation, processorConfigured } from "./document-preparation";
 import { uploadMetadataSchema } from "../../lib/api-contracts";
 import { nameImportedDocument } from "./document-naming";
@@ -19,7 +21,7 @@ function hex(bytes: ArrayBuffer) {
 }
 
 
-export async function uploadDocument(ownerId: string, form: FormData) {
+export async function uploadDocument(ownerId: string, form: FormData, targetScope?: EducationScope) {
   await ensureDatabase();
   const file = form.get("file");
   if (!(file instanceof File)) return result({ error: "缺少文件" }, { status: 400 });
@@ -32,6 +34,15 @@ export async function uploadDocument(ownerId: string, form: FormData) {
   const year = form.get("sourceYear");
   metadata.sourceYear = year === null || year === "" ? null : typeof year === "string" ? Number(year) : year;
   if (!uploadMetadataSchema.safeParse(metadata).success) return result({ error: "试卷信息格式无效或字段过长" }, { status: 400 });
+  if (targetScope) {
+    try {
+      const destination = resolveUploadDestination(targetScope, { subject: metadata.subject, grade: metadata.grade });
+      form.set("subject", destination.subject);
+      form.set("grade", destination.grade);
+    } catch (error) {
+      return result({ error: error instanceof Error ? error.message : "导入目标无效" }, { status: 409 });
+    }
+  }
   const id = crypto.randomUUID();
   const createdAt = now();
   const originalKey = "documents/" + id + "/original/" + file.name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
@@ -49,9 +60,10 @@ export async function uploadDocument(ownerId: string, form: FormData) {
     return result({ error: "文件扩展名是 PDF，但内容不是有效的 PDF 文件" }, { status: 415 });
   }
   const checksum = hex(await crypto.subtle.digest("SHA-256", bytes));
+  const scope = { subject: String(form.get("subject") ?? "") || "数学", stage: stageFromGrade(String(form.get("grade") ?? "")) };
   // A source-only deletion intentionally preserves its questions and checksum.
   // It must not hijack a later upload of the same PDF; that upload gets a new document.
-  const existing = findReusableDocument(getSqlite(), ownerId, checksum);
+  const existing = findReusableDocument(getSqlite(), ownerId, checksum, scope);
   if (existing) {
     if (pageCount === 0) {
       const preparation = await prepareExisting(existing.id, existing.status);
@@ -78,7 +90,7 @@ export async function uploadDocument(ownerId: string, form: FormData) {
   await putFile(originalKey, bytes);
   try {
     const outcome = sqliteTransaction((transaction) => {
-      const racedExisting = findReusableDocument(transaction, ownerId, checksum);
+      const racedExisting = findReusableDocument(transaction, ownerId, checksum, scope);
       if (racedExisting) return { existing: racedExisting } as const;
       transaction.prepare(
         `INSERT INTO documents

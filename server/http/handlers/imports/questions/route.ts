@@ -1,3 +1,5 @@
+import { stageFromGrade } from "../../../../../lib/education-taxonomy";
+import { normalizeEducationScope, requestEducationScope } from "../../../../../lib/education-scope";
 import { getSqlite, sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { deleteFile, putFile } from "../../../../../lib/file-storage";
@@ -75,34 +77,38 @@ export async function POST(request: Request) {
     }
 
     const outcome = sqliteTransaction((sqlite) => {
-      let rootName = `导入 · ${cleanFolderName(questionPackage.title)}`.slice(0, 80);
-      const existingNames = new Set((sqlite.prepare(
-        "SELECT name FROM question_folders WHERE owner_id = ? AND parent_id IS NULL",
-      ).all(ownerId) as Array<{ name: string }>).map((row) => row.name.toLocaleLowerCase("zh-CN")));
-      if (existingNames.has(rootName.toLocaleLowerCase("zh-CN"))) {
-        rootName = `${rootName.slice(0, 65)} · ${timestamp.slice(0, 10)}`;
-      }
-      const rootId = crypto.randomUUID();
-      sqlite.prepare(
-        "INSERT INTO question_folders (id, owner_id, parent_id, name, created_at, updated_at) VALUES (?, ?, NULL, ?, ?, ?)",
-      ).run(rootId, ownerId, rootName, timestamp, timestamp);
+      const rootName = `导入 · ${cleanFolderName(questionPackage.title)}`.slice(0, 80);
+      const roots = new Map<string, string>();
       const folderIds = new Map<string, string>();
+      const questionFolderIds = new Map<string, string>();
+      const currentScope = requestEducationScope(request);
       for (const question of questionPackage.questions) {
-        let parentId = rootId;
-        let pathKey = "";
+        const scope = normalizeEducationScope({ subject: question.source.subject, stage: stageFromGrade(question.source.grade) });
+        const scopeKey = JSON.stringify([scope.subject, scope.stage]);
+        let root = roots.get(scopeKey);
+        if (!root) {
+          root = crypto.randomUUID();
+          const existingNames = new Set((sqlite.prepare("SELECT name FROM question_folders WHERE owner_id = ? AND subject = ? AND stage = ? AND parent_id IS NULL").all(ownerId, scope.subject, scope.stage) as Array<{name: string}>).map(row => row.name));
+          let name = rootName, suffix = 2;
+          while (existingNames.has(name)) name = `${rootName.slice(0, 65)} (${suffix++})`;
+          sqlite.prepare("INSERT INTO question_folders (id, owner_id, parent_id, name, created_at, updated_at, subject, stage) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)").run(root, ownerId, name, timestamp, timestamp, scope.subject, scope.stage);
+          roots.set(scopeKey, root);
+        }
+        let parentId = root;
+        let pathKey = scopeKey;
         for (const rawPart of question.folderPath) {
           const part = cleanFolderName(rawPart);
           pathKey += `/${part}`;
           const known = folderIds.get(pathKey);
           if (known) { parentId = known; continue; }
           const id = crypto.randomUUID();
-          sqlite.prepare(
-            "INSERT INTO question_folders (id, owner_id, parent_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-          ).run(id, ownerId, parentId, part, timestamp, timestamp);
+          sqlite.prepare("INSERT INTO question_folders (id, owner_id, parent_id, name, created_at, updated_at, subject, stage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(id, ownerId, parentId, part, timestamp, timestamp, scope.subject, scope.stage);
           folderIds.set(pathKey, id);
           parentId = id;
         }
+        questionFolderIds.set(question.externalId, parentId);
       }
+      const rootId = roots.get(JSON.stringify([currentScope.subject, currentScope.stage])) ?? null;
 
       for (const [sourceKey, documentId] of documentIds) {
         const question = questionPackage.questions.find((item) => item.source.documentKey === sourceKey)!;
@@ -120,8 +126,7 @@ export async function POST(request: Request) {
 
       for (const question of questionPackage.questions) {
         const id = questionIds.get(question.externalId)!;
-        const pathKey = question.folderPath.map(cleanFolderName).map((part) => `/${part}`).join("");
-        const folderId = pathKey ? folderIds.get(pathKey)! : rootId;
+        const folderId = questionFolderIds.get(question.externalId)!;
         sqlite.prepare(
           `INSERT INTO questions
             (id, document_id, number, type, stem, options_json, answer, analysis, page_number, bbox_json,

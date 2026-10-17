@@ -1,3 +1,4 @@
+import { requestEducationScope } from "../../lib/education-scope";
 import { z } from "zod";
 import * as questions from "../../lib/question-repository";
 import * as school from "../../lib/school-workflow";
@@ -23,16 +24,17 @@ export async function readModel(request: Request) {
   const ownerId = requestOwner(request);
   const idResources = ["review", "paper", "uploaded-paper", "class", "assignment", "paper-print"];
   if (idResources.includes(query.resource) && !query.id) return toResponse(result({ error: "缺少资源编号" }, { status: 400 }));
+  const scope = requestEducationScope(request);
   let data: unknown;
   switch (query.resource) {
-    case "document-page": data = await questions.getDocumentPage(ownerId); break;
-    case "documents": data = await questions.getDocuments(ownerId); break;
-    case "bank": data = await questions.getBankData(ownerId); break;
+    case "document-page": data = await questions.getDocumentPage(ownerId, { scope }); break;
+    case "documents": data = (await questions.getDocumentPage(ownerId, { scope })).documents; break;
+    case "bank": data = await questions.getBankData(ownerId, scope); break;
     case "review": data = await questions.getReviewData(query.id!, ownerId); break;
-    case "approved-questions": data = await questions.getApprovedQuestions(ownerId, query.ids); break;
+    case "approved-questions": data = await questions.getApprovedQuestions(ownerId, query.ids, scope); break;
     case "paper": data = await questions.getPaperData(query.id!, ownerId); break;
     case "uploaded-paper": data = await questions.getUploadedPaperData(query.id!, ownerId); break;
-    case "paper-library": data = await getPaperLibrary(ownerId); break;
+    case "paper-library": data = await getPaperLibrary(ownerId, scope); break;
     case "paper-templates": data = await getPaperTemplates(ownerId, query.subject, query.stage); break;
     case "teacher-mode": data = await school.getTeacherMode(ownerId); break;
     case "classes": data = await school.listTeachingClasses(ownerId); break;

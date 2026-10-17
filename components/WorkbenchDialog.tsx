@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
 /** Native modal keeps focus inside, makes the page inert, and restores trigger focus. */
-export function WorkbenchDialog({ open, titleId, onClose, busy = false, drawer = false, className = "", children }: {
-  open: boolean; titleId: string; onClose: () => void; busy?: boolean; drawer?: boolean; className?: string; children: ReactNode;
+export function WorkbenchDialog({ open, titleId, onClose, busy = false, drawer = false, className = "", children, returnFocusRef }: {
+  open: boolean; titleId: string; onClose: () => void; busy?: boolean; drawer?: boolean; className?: string; children: ReactNode; returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -12,10 +12,11 @@ export function WorkbenchDialog({ open, titleId, onClose, busy = false, drawer =
     if (!open || !dialog) return;
     const previousOverflow = document.body.style.overflow;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const returnFocus = returnFocusRef?.current ?? previousFocus;
     dialog.showModal();
     document.body.style.overflow = "hidden";
-    return () => { dialog.close(); document.body.style.overflow = previousOverflow; previousFocus?.focus({ preventScroll: true }); };
-  }, [open]);
+    return () => { dialog.close(); document.body.style.overflow = previousOverflow; returnFocus?.focus({ preventScroll: true }); };
+  }, [open, returnFocusRef]);
 
   return <dialog ref={ref} className={`wb-dialog${drawer ? " wb-drawer" : ""}${className ? ` ${className}` : ""}`} aria-labelledby={titleId}
     onKeyDown={event => {

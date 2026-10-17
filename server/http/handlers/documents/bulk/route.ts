@@ -1,3 +1,4 @@
+import { requestEducationScope } from "../../../../../lib/education-scope";
 import { sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import {
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
       const outcome = sqliteTransaction((transaction) => {
         const input = {
           ownerId,
+          scope: requestEducationScope(request),
           skipHumanReview: !automaticAiReviewEnabled(ownerId),
           timestamp,
           reviewReadinessError: (documentId: string) => {
