@@ -159,6 +159,8 @@ export function parseVariationReviewContent(input: {
   fallbackTags: string[];
   reviewer: string;
   allowDiagrams?: boolean;
+  /** Revision-only phase: the independent final verification must supply the admission score. */
+  deferScoring?: boolean;
 }) {
   const normalized = input.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   let parsed: unknown;
@@ -179,9 +181,11 @@ export function parseVariationReviewContent(input: {
     }
     const verdict = String(item.verdict);
     if (verdict !== "pass" && verdict !== "revise") throw new Error(`第 ${index} 道题的审校结论无效`);
-    const score = item.score;
-    if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) throw new Error(`第 ${index} 道题的审校分数无效`);
-    if (score < 75) throw new Error(`第 ${index} 道题审校后仅 ${score} 分，未达到 75 分入库线`);
+    const score = input.deferScoring ? null : item.score;
+    if (!input.deferScoring) {
+      if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) throw new Error(`第 ${index} 道题的审校分数无效`);
+      if (score < 75) throw new Error(`第 ${index} 道题审校后仅 ${score} 分，未达到 75 分入库线`);
+    }
     if (!Array.isArray(item.issues) || item.issues.length > 5) throw new Error(`第 ${index} 道题的审校问题列表无效`);
     const issues = item.issues.map((issue) => boundedText(issue, 160, true));
     if (!item.finalVariation) throw new Error(`第 ${index} 道题缺少审校后的最终版本`);
@@ -190,7 +194,7 @@ export function parseVariationReviewContent(input: {
       review: {
         mode: "multi_agent",
         status: verdict === "revise" ? "revised" : "passed",
-        score,
+        score: score as number | null,
         issues,
       },
     });

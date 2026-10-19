@@ -95,7 +95,7 @@ type VariationResult = {
   candidates: VariationCandidate[];
 };
 
-type VariationModelProfile = { id: string; displayName: string; enabled: boolean };
+type VariationModelProfile = { id: string; displayName: string; enabled: boolean; apiKeyMask: string | null };
 
 const defaultSelection: ExplorerSelection = { kind: "all" };
 
@@ -173,6 +173,12 @@ export function QuestionBank({
   const [variationInstructions, setVariationInstructions] = useState("");
   const [variationQualityMode, setVariationQualityMode] = useState<"quick" | "reviewed">("reviewed");
   const [variationDiagramMode, setVariationDiagramMode] = useState<"auto" | "never">("auto");
+  const [variationGeneratorProfileId, setVariationGeneratorProfileId] = useState("");
+  const [variationProfilesLoading, setVariationProfilesLoading] = useState(false);
+  const [variationProfilesError, setVariationProfilesError] = useState("");
+  const [variationProfilesRefresh, setVariationProfilesRefresh] = useState(0);
+  const [variationUncertain, setVariationUncertain] = useState(false);
+  const variationPendingBody = useRef<string | null>(null);
   const [variationReviewerProfileId, setVariationReviewerProfileId] = useState("");
   const [variationProfiles, setVariationProfiles] = useState<VariationModelProfile[]>([]);
   const [variationRequestKey, setVariationRequestKey] = useState("");
@@ -245,14 +251,26 @@ export function QuestionBank({
   useEffect(() => {
     if (!variationTarget) return;
     const controller = new AbortController();
-    void fetch("/api/model-profiles", { signal: controller.signal })
-      .then((response) => response.json())
-      .then((result: { profiles?: VariationModelProfile[] }) => {
-        if (result.profiles) setVariationProfiles(result.profiles.filter((profile) => profile.enabled));
-      })
-      .catch(() => undefined);
+    void (async () => {
+      try {
+        const response = await fetch("/api/model-profiles", { signal: controller.signal });
+        const result = await response.json() as { profiles?: VariationModelProfile[]; selectedProfileId?: string; error?: string };
+        if (!response.ok || !Array.isArray(result.profiles)) throw new Error(result.error ?? "模型列表加载失败");
+        if (controller.signal.aborted) return;
+        const profiles = result.profiles.filter(profile => profile.enabled);
+        setVariationProfiles(profiles);
+        const available = profiles.filter(profile => profile.apiKeyMask);
+        setVariationGeneratorProfileId(current => available.some(profile => profile.id === current) ? current
+          : available.find(profile => profile.id === result.selectedProfileId)?.id ?? available[0]?.id ?? "");
+        setVariationReviewerProfileId(current => available.some(profile => profile.id === current) ? current : "");
+      } catch (error) {
+        if (!controller.signal.aborted) setVariationProfilesError(error instanceof Error ? error.message : "模型列表加载失败");
+      } finally {
+        if (!controller.signal.aborted) setVariationProfilesLoading(false);
+      }
+    })();
     return () => controller.abort();
-  }, [variationTarget]);
+  }, [variationTarget, variationProfilesRefresh]);
 
   function chooseLocation(next: ExplorerSelection) {
     setSelection(next);
@@ -453,6 +471,8 @@ export function QuestionBank({
 
   function resetVariationDialog() {
     setVariationTarget(null);
+    setVariationUncertain(false);
+    variationPendingBody.current = null;
     setVariationFocus("");
     setVariationInstructions("");
     setVariationResult(null);
@@ -464,6 +484,12 @@ export function QuestionBank({
 
   function openVariation(question: QuestionWithSource) {
     setVariationTarget(question);
+    setVariationGeneratorProfileId("");
+    setVariationProfilesError("");
+    setVariationProfiles([]);
+    setVariationProfilesLoading(true);
+    setVariationUncertain(false);
+    variationPendingBody.current = null;
     setVariationResult(null);
     setSelectedVariationIds([]);
     setVariationError("");
@@ -472,39 +498,43 @@ export function QuestionBank({
   }
 
   async function generateVariations() {
-    if (!variationTarget || variationLoading) return;
+    if (!variationTarget || variationLoading || !variationGeneratorProfileId || variationProfilesLoading || variationProfilesError) return;
     setVariationLoading(true);
     setVariationError("");
-    let responseReceived = false;
-    let renewRequestKeyOnFailure = true;
+    let renewRequestKeyOnFailure = false;
     try {
       const requestKey = variationRequestKey || crypto.randomUUID();
       if (!variationRequestKey) setVariationRequestKey(requestKey);
-      const response = await fetch(`/api/questions/${encodeURIComponent(variationTarget.id)}/variations`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          count: variationCount,
-          difficulty: variationDifficulty,
-          focus: variationFocus,
-          instructions: variationInstructions,
-          qualityMode: variationQualityMode,
-          diagramMode: variationDiagramMode,
-          reviewerProfileId: variationQualityMode === "reviewed" ? variationReviewerProfileId || undefined : undefined,
-          idempotencyKey: requestKey,
-        }),
+      const body = variationUncertain && variationPendingBody.current ? variationPendingBody.current : JSON.stringify({
+        count: variationCount,
+        difficulty: variationDifficulty,
+        focus: variationFocus,
+        instructions: variationInstructions,
+        qualityMode: variationQualityMode,
+        diagramMode: variationDiagramMode,
+        profileId: variationGeneratorProfileId,
+        reviewerProfileId: variationQualityMode === "reviewed" ? variationReviewerProfileId || undefined : undefined,
+        idempotencyKey: requestKey,
       });
-      responseReceived = true;
+      variationPendingBody.current = body;
+      const response = await fetch(`/api/questions/${encodeURIComponent(variationTarget.id)}/variations`, {
+        method: "POST", headers: { "content-type": "application/json" }, body,
+      });
       const result = await response.json().catch(() => ({})) as VariationResult & { error?: string };
-      if (response.status === 409 && ["generating", "validating", "reviewing"].includes(result.status)) {
-        renewRequestKeyOnFailure = false;
-      }
+      renewRequestKeyOnFailure = result.status === "failed"
+        || (response.status >= 400 && response.status < 500 && !["generating", "validating", "reviewing"].includes(result.status));
       if (!response.ok || !result.candidates) throw new Error(result.error ?? "变式题生成失败");
+      setVariationUncertain(false);
+      variationPendingBody.current = null;
       setVariationResult(result);
       setSelectedVariationIds(result.candidates.map((candidate) => candidate.id));
     } catch (error) {
       setVariationError(error instanceof Error ? error.message : "变式题生成失败");
-      if (responseReceived && renewRequestKeyOnFailure) setVariationRequestKey(crypto.randomUUID());
+      setVariationUncertain(!renewRequestKeyOnFailure);
+      if (renewRequestKeyOnFailure) {
+        variationPendingBody.current = null;
+        setVariationRequestKey(crypto.randomUUID());
+      }
     } finally {
       setVariationLoading(false);
     }
@@ -765,7 +795,7 @@ export function QuestionBank({
           </header>
           <div className="variation-source"><small>原题</small><p><MathText text={stripLeadingQuestionNumber(variationTarget.stem, variationTarget.number)} /></p></div>
 
-          {!variationResult && !variationLoading && <div className="variation-form">
+          {!variationResult && !variationLoading && <fieldset className="variation-form" disabled={variationUncertain} style={{ border: 0, margin: 0, minWidth: 0 }}>
             <fieldset className="variation-quality wide">
               <legend>质量模式</legend>
               <button type="button" className={variationQualityMode === "reviewed" ? "active" : ""} onClick={() => setVariationQualityMode("reviewed")}><span><b>独立审校</b><em>推荐</em></span><small>生成 Agent 命题，另一个审校修订后再次复核最终版本</small></button>
@@ -774,16 +804,22 @@ export function QuestionBank({
             <label><span>难度</span><select value={variationDifficulty} onChange={(event) => setVariationDifficulty(event.target.value)}><option value="easier">更简单</option><option value="similar">难度相近</option><option value="harder">更有挑战</option><option value="mixed">由易到难</option></select></label>
             <label><span>数量</span><select value={variationCount} onChange={(event) => setVariationCount(Number(event.target.value))}><option value={1}>1 道</option><option value={2}>2 道</option><option value={3}>3 道</option></select></label>
             <label className="wide"><span>题图工具</span><select value={variationDiagramMode} onChange={(event) => setVariationDiagramMode(event.target.value as "auto" | "never")}><option value="auto">按需生成题图（推荐）</option><option value="never">无需题图，改写为纯文字题</option></select><small className="field-help">模型只能调用受控几何图元，软件会安全渲染并随题入库。</small></label>
-            {variationQualityMode === "reviewed" && variationProfiles.length > 0 && <label className="wide"><span>审校模型（可选）</span><select value={variationReviewerProfileId} onChange={(event) => setVariationReviewerProfileId(event.target.value)}><option value="">与生成模型相同，但使用独立上下文</option>{variationProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}</select></label>}
+            <label className="wide"><span>生成模型</span><select aria-label="生成模型" value={variationGeneratorProfileId} disabled={variationProfilesLoading || Boolean(variationProfilesError)} onChange={(event) => setVariationGeneratorProfileId(event.target.value)}>
+              {!variationGeneratorProfileId && <option value="">{variationProfilesLoading ? "正在加载模型…" : "请选择可用模型"}</option>}
+              {variationProfiles.map(profile => <option key={profile.id} value={profile.id} disabled={!profile.apiKeyMask}>{profile.displayName}{!profile.apiKeyMask ? "（未配置密钥）" : ""}</option>)}
+            </select><small className="field-help">用于本次命题规划和候选生成，不改变默认识题模型。</small></label>
+            {variationProfilesError && <div className="wide" role="alert"><p className="form-error">{variationProfilesError}</p><button type="button" className="btn" onClick={() => { setVariationProfilesLoading(true); setVariationProfilesError(""); setVariationProfilesRefresh(value => value + 1); }}>重新加载模型</button></div>}
+            {!variationProfilesLoading && !variationProfilesError && !variationGeneratorProfileId && <p className="wide field-help">暂无可用模型，请先到 <Link href="/settings/models">模型配置</Link> 启用模型并填写 API Key，返回后重新打开生成窗口。</p>}
+            {variationQualityMode === "reviewed" && variationProfiles.length > 0 && <label className="wide"><span>审校模型（可选）</span><select value={variationReviewerProfileId} onChange={(event) => setVariationReviewerProfileId(event.target.value)}><option value="">与生成模型相同，但使用独立上下文</option>{variationProfiles.map((profile) => <option key={profile.id} value={profile.id} disabled={!profile.apiKeyMask}>{profile.displayName}{!profile.apiKeyMask ? "（未配置密钥）" : ""}</option>)}</select><small className="field-help">修订后的最终题目须达到 75 分，且可解性、答案、目标与难度全部通过复核。</small></label>}
             <label className="wide"><span>希望重点改变什么（可选）</span><input maxLength={120} value={variationFocus} onChange={(event) => setVariationFocus(event.target.value)} placeholder="例如：改为实际生活情境，考查逆向思维" /></label>
             <label className="wide"><span>补充要求（可选）</span><textarea maxLength={500} value={variationInstructions} onChange={(event) => setVariationInstructions(event.target.value)} placeholder="例如：数值保持为整数，解析写出关键步骤" /></label>
-          </div>}
+          </fieldset>}
 
           {variationLoading && <div className="variation-workflow-loading" aria-live="polite">
             <LoaderCircle size={28} className="spin" />
             <strong>{variationQualityMode === "reviewed" ? "正在生成并独立审校…" : "正在生成并校验…"}</strong>
             <ol><li className="active"><span>1</span>制定教学目标与候选计划</li><li className="active"><span>2</span>生成候选并检查结构与选项</li><li className={variationQualityMode === "reviewed" ? "active" : "skipped"}><span>3</span>{variationQualityMode === "reviewed" ? "审校修订后再次复核最终版本" : "已选择快速模式"}</li></ol>
-            <p>页面会保留本次请求标识；即使网络短暂中断，重试也不会重复生成。</p>
+            <p>候选生成单次等待上限延长至 3 分钟；模型配置更长时遵循配置（最多 5 分钟），超时或临时连接故障最多自动重试 1 次。最终质量检查仍须全部通过。</p>
           </div>}
 
           {variationResult && <div className="variation-candidate-area">
@@ -805,7 +841,7 @@ export function QuestionBank({
             })}</div>
           </div>}
 
-          {variationError && <p className="form-error">{variationError}</p>}
+          {variationError && <p className="form-error" role="alert">{variationError}{variationUncertain && "。任务状态尚未确认，已保留原请求；请重试获取结果，避免重复生成。"}</p>}
           <footer>
             <p>{variationResult ? `已选 ${selectedVariationIds.length} / ${variationResult.candidates.length} 道；只有点击“采用已选”后才会进入正式题库。` : variationQualityMode === "reviewed" ? "先规划，再生成、审校与最终复核；任一质量门槛失败即停止，仍需教师确认。" : "快速模式成本更低，建议老师更仔细核对答案。"}</p>
             <div>{variationResult ? <>
@@ -813,7 +849,7 @@ export function QuestionBank({
               <button type="button" className="btn btn-primary" disabled={!selectedVariationIds.length || variationAccepting || variationDiscarding} onClick={() => void acceptVariations()}>{variationAccepting ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />} {variationAccepting ? "正在入库…" : `采用已选 (${selectedVariationIds.length})`}</button>
             </> : <>
               <button type="button" className="btn" disabled={variationLoading} onClick={resetVariationDialog}>取消</button>
-              <button type="button" className="btn btn-primary" disabled={variationLoading} onClick={() => void generateVariations()}><WandSparkles size={14} /> 开始生成</button>
+              <button type="button" className="btn btn-primary" disabled={variationLoading || variationProfilesLoading || Boolean(variationProfilesError) || !variationGeneratorProfileId} onClick={() => void generateVariations()}><WandSparkles size={14} /> {variationUncertain ? "重试获取结果" : variationError ? "重新生成" : "开始生成"}</button>
             </>}</div>
           </footer>
         </section>

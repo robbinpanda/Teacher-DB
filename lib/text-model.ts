@@ -8,6 +8,7 @@ import { extractModelTokenUsage, recordModelUsage } from "./model-usage";
 import { ModelCallTrace } from "./model-call-trace";
 import { hasModelThinking, isThinkingSettingError, thinkingDisabledMessage } from "./model-thinking";
 import { ModelCallError } from "./vision-model";
+import { textModelTimeout } from "./variation-retry";
 
 export async function callTextModel(input: {
   ownerId: string;
@@ -21,10 +22,11 @@ export async function callTextModel(input: {
   maxOutputTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  minimumTimeoutMs?: number;
 }) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const controller = new AbortController();
-  const timeoutMs = Math.min(profile.timeoutMs, input.timeoutMs ?? profile.timeoutMs);
+  const timeoutMs = textModelTimeout(profile.timeoutMs, input.timeoutMs, input.minimumTimeoutMs);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let trace: ModelCallTrace | undefined;
   let failure: unknown;
@@ -64,7 +66,10 @@ export async function callTextModel(input: {
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1000);
       if (isThinkingSettingError(detail)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false, response.status);
-      throw new Error(`模型 ${profile.displayName} 通过 ${MODEL_PROTOCOL_LABELS[request.protocol]} 返回 HTTP ${response.status}：${detail}`);
+      const retryAfter = response.headers.get("retry-after");
+      const retryAfterMs = retryAfter === null ? undefined : Number.isFinite(Number(retryAfter)) ? Math.max(0, Number(retryAfter) * 1000) : Math.max(0, Date.parse(retryAfter) - Date.now());
+      throw new ModelCallError(`模型 ${profile.displayName} 通过 ${MODEL_PROTOCOL_LABELS[request.protocol]} 返回 HTTP ${response.status}：${detail}`,
+        "http_error", [408, 429, 500, 502, 503, 504].includes(response.status), response.status, retryAfterMs);
     }
     const result = await response.json() as unknown;
     const content = extractVisionResponseText(request.protocol, result);
@@ -83,8 +88,9 @@ export async function callTextModel(input: {
   } catch (error) {
     failure = error;
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`模型调用超过 ${Math.round(timeoutMs / 1000)} 秒，已安全中止`);
+      throw new ModelCallError(`模型调用超过 ${Math.round(timeoutMs / 1000)} 秒，已安全中止`, "timeout", true, 504);
     }
+    if (error instanceof TypeError && /fetch failed|terminated/i.test(error.message)) throw new ModelCallError("模型连接中断，请稍后重试", "network_error", true, 502);
     throw error;
   } finally {
     clearTimeout(timer);

@@ -13,6 +13,9 @@ const baseUrl = `http://127.0.0.1:${appPort}`;
 const dataDir = mkdtempSync(path.join(tmpdir(), "jianti-variation-e2e-"));
 const serveOnly = process.argv.includes("--serve");
 let modelCalls = 0;
+let scenario = "pass";
+let generationAttempts = 0;
+const usedModels = [];
 
 const generatorVariations = [
   { stem: "若 x=2，则 x+2 等于多少？", type: "single", options: [{ key: "A", content: "3" }, { key: "B", content: "4" }], answer: "B", analysis: "代入得 2+2=4。", tags: ["函数"], changeNote: "改变数值" },
@@ -28,13 +31,23 @@ const modelServer = createServer((request, response) => {
     modelCalls += 1;
     const payload = JSON.parse(body);
     const userText = JSON.stringify(payload.messages ?? payload.input ?? "");
+    usedModels.push(payload.model);
+    const isGeneration = userText.includes("请生成 3 道候选变式题");
+    if (isGeneration) {
+      generationAttempts++;
+      if ((scenario === "retry" && generationAttempts === 1) || scenario === "unavailable" || scenario === "unauthorized") {
+        response.writeHead(scenario === "unauthorized" ? 401 : 503, { "content-type": "application/json", "retry-after": "0" });
+        response.end(JSON.stringify({ error: "simulated provider failure" }));
+        return;
+      }
+    }
     const content = userText.includes('逐题核查可解性')
-      ? JSON.stringify({ checks: [1, 2].map(index => ({ index, solvable: true, answerCorrect: true, objectiveAligned: true, difficultyAligned: true, explanation: "代入验证正确" })) })
+      ? JSON.stringify({ checks: [1, 2].map(index => ({ index, score: scenario === "low-score" ? 74 : scenario === "missing-score" ? undefined : 92 - index, solvable: true, answerCorrect: scenario !== "wrong-answer", objectiveAligned: true, difficultyAligned: true, explanation: "代入验证正确" })) })
       : userText.includes('规划 3 道变式')
       ? JSON.stringify({ objective: "代入求值", prerequisites: "整数运算", difficultyRationale: "一步代入", misconception: "运算次序", changes: ["改变数值", "改变运算", "逆向"] })
       : userText.includes("独立审校与修订 Agent")
-      ? JSON.stringify({ reviews: generatorVariations.slice(0, 2).map((variation, index) => ({ index: index + 1, verdict: index === 1 ? "revise" : "pass", score: 92 - index, issues: index === 1 ? ["已复算答案并规范解析"] : [], finalVariation: variation })) })
-      : JSON.stringify({ variations: generatorVariations });
+      ? JSON.stringify({ reviews: generatorVariations.slice(0, 2).map((variation, index) => ({ index: index + 1, verdict: index === 1 ? "revise" : "pass", score: 0, issues: index === 1 ? ["已复算答案并规范解析"] : [], finalVariation: variation })) })
+      : JSON.stringify({ variations: generatorVariations.map((q, i) => i === 0 ? { ...q, answer: "A" } : q) });
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ choices: [{ message: { content }, finish_reason: "stop" }], usage: { prompt_tokens: 100, completion_tokens: 80 } }));
   });
@@ -86,11 +99,17 @@ try {
     .run(timestamp, timestamp);
   sqlite.close();
 
-  await jsonRequest("/api/model-profiles", {
+  const reviewer = await jsonRequest("/api/model-profiles", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ displayName: "本地审校模型", provider: "openai-chat-completions", baseUrl: `http://127.0.0.1:${modelPort}/v1`, model: "fake", apiKey: "fake-key-123", select: true }),
+    body: JSON.stringify({ displayName: "本地审校模型", provider: "openai-chat-completions", baseUrl: `http://127.0.0.1:${modelPort}/v1`, model: "fake-reviewer", apiKey: "fake-key-123", select: true }),
   });
+
+  const generator = await jsonRequest("/api/model-profiles", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ displayName: "本地生成模型", provider: "openai-chat-completions", baseUrl: `http://127.0.0.1:${modelPort}/v1`, model: "fake-generator", apiKey: "fake-key-123", select: false }),
+  });
+  const modelSelection = { profileId: generator.profile.id, reviewerProfileId: reviewer.profile.id };
 
   if (serveOnly) {
     console.log(`variation workflow fixture ready: ${baseUrl}/bank`);
@@ -104,18 +123,22 @@ try {
     const generated = await jsonRequest("/api/questions/source-question/variations", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ count: 2, difficulty: "similar", qualityMode: "reviewed", idempotencyKey }),
+    body: JSON.stringify({ count: 2, difficulty: "similar", qualityMode: "reviewed", ...modelSelection, idempotencyKey }),
   });
   assert.equal(generated.status, "awaiting_teacher");
   assert.equal(generated.candidates.length, 2);
   assert.equal(modelCalls, 4);
+  assert.deepEqual(usedModels, ["fake-generator", "fake-generator", "fake-reviewer", "fake-reviewer"]);
+  assert.equal(generated.candidates[0].question.answer, "B", "审校必须修正生成稿中的错误答案");
+  assert.equal(generated.candidates[0].review.score, 91, "仅采用独立最终评分，不能沿用修订轮 0 分");
+  assert.equal((await jsonRequest("/api/model-profiles")).selectedProfileId, reviewer.profile.id, "单次选择不得修改全局默认模型");
 
-  const beforeAcceptance = await jsonRequest("/api/questions?pageSize=20");
+  const beforeAcceptance = await jsonRequest("/api/questions?pageSize=20&subject=数学&stage=high");
   assert.equal(beforeAcceptance.pagination.total, 1, "候选题不得提前进入正式题库");
   const replay = await jsonRequest("/api/questions/source-question/variations", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ count: 2, difficulty: "similar", qualityMode: "reviewed", idempotencyKey }),
+    body: JSON.stringify({ count: 2, difficulty: "similar", qualityMode: "reviewed", ...modelSelection, idempotencyKey }),
   });
   assert.equal(replay.cached, true);
   assert.equal(modelCalls, 4, "幂等重放不得再次调用模型");
@@ -129,9 +152,59 @@ try {
   assert.equal(accepted.questions[0].needsHumanReview, false);
   assert.equal(accepted.questions[0].parentQuestionId, "source-question");
   assert.equal(accepted.questions[0].variationReview.mode, "multi_agent");
-  const afterAcceptance = await jsonRequest("/api/questions?pageSize=20");
+  const afterAcceptance = await jsonRequest("/api/questions?pageSize=20&subject=数学&stage=high");
   assert.equal(afterAcceptance.pagination.total, 2);
-    console.log("variation workflow e2e: ok");
+
+  const db = new Database(path.join(dataDir, "teacher-question-bank.sqlite3"));
+  const generate = () => fetch(baseUrl + "/api/questions/source-question/variations", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ count: 2, difficulty: "similar", qualityMode: "reviewed", ...modelSelection, idempotencyKey: crypto.randomUUID() }),
+  });
+  for (const failure of ["low-score", "missing-score", "wrong-answer", "unavailable", "unauthorized"]) {
+    scenario = failure; generationAttempts = 0;
+    const before = modelCalls;
+    const response = await generate();
+    const result = await response.json();
+    assert.equal(response.ok, false, failure);
+    assert.equal(result.status, "failed", failure);
+    assert.equal(db.prepare("SELECT count(*) AS n FROM variation_candidates WHERE run_id=?").get(result.runId).n, 0, "失败不能保存候选题");
+    assert.equal(modelCalls - before, failure === "unavailable" ? 3 : failure === "unauthorized" ? 2 : 4, "只重试暂时传输失败");
+    if (failure === "unavailable") assert.match(result.error, /候选生成失败.*已自动重试 1 次/);
+    if (failure === "low-score") assert.match(result.error, /75/);
+  }
+  scenario = "retry"; generationAttempts = 0;
+  const beforeRetry = modelCalls;
+  const retryResponse = await generate();
+  const recovered = await retryResponse.json();
+  assert.equal(retryResponse.status, 201, JSON.stringify(recovered));
+  assert.equal(modelCalls - beforeRetry, 5);
+  assert.equal(generationAttempts, 2);
+  assert.equal(recovered.candidates[0].review.score, 91);
+  // Recheck the quality boundary when promoting, including persisted record corruption.
+  const candidate = recovered.candidates[0];
+  db.prepare("UPDATE variation_candidates SET review_json=? WHERE id=?").run(JSON.stringify({ ...candidate.review, score: 74 }), candidate.id);
+  const promote = () => fetch(baseUrl + `/api/variation-runs/${recovered.runId}/accept`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ candidateIds: [candidate.id] }),
+  });
+  assert.equal((await promote()).ok, false, "入库时仍拒绝低分");
+  db.prepare("UPDATE variation_candidates SET review_json=? WHERE id=?").run(JSON.stringify(candidate.review), candidate.id);
+  const summary = JSON.parse(db.prepare("SELECT result_json FROM variation_runs WHERE id=?").get(recovered.runId).result_json);
+  summary.verification[0].answerCorrect = false;
+  db.prepare("UPDATE variation_runs SET result_json=? WHERE id=?").run(JSON.stringify(summary), recovered.runId);
+  assert.equal((await promote()).ok, false, "高分也不能绕过答案检查");
+  assert.equal((await jsonRequest("/api/questions?pageSize=20&subject=数学&stage=high")).pagination.total, 2, "所有失败都不改变正式题库");
+  const beforeInvalid = modelCalls;
+  for (const profileId of ["missing-profile", 123, ""]) {
+    const response = await fetch(baseUrl + "/api/questions/source-question/variations", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ count: 2, qualityMode: "reviewed", profileId, idempotencyKey: crypto.randomUUID() }),
+    });
+    assert.equal(response.ok, false);
+  }
+  assert.equal(modelCalls, beforeInvalid, "无效模型不能偷偷回退到默认模型");
+  db.close();
+  console.log("variation workflow e2e: scoring, quality gates, transient retries, explicit models, admission and idempotency: ok");
+
   }
 } finally {
   await stopIsolatedProcess(nextProcess);

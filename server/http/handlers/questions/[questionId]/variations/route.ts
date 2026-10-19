@@ -123,6 +123,12 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     if (diagramMode !== "auto" && diagramMode !== "never") throw new Error("题图模式无效");
     const focus = boundedText(payload.focus, 120);
     const instructions = boundedText(payload.instructions, 500);
+    for (const key of ["profileId", "reviewerProfileId"] as const) {
+      const value = payload[key];
+      if (value !== undefined && (typeof value !== "string" || !value.trim() || value.length > 100)) {
+        return Response.json({ error: "所选模型标识无效，请重新选择模型" }, { status: 400 });
+      }
+    }
     const profileId = typeof payload.profileId === "string" && payload.profileId.length <= 100 ? payload.profileId : undefined;
     const reviewerProfileId = typeof payload.reviewerProfileId === "string" && payload.reviewerProfileId.length <= 100
       ? payload.reviewerProfileId
@@ -161,6 +167,7 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     }
     const completedAt = now();
     const summary = {
+      scoringVersion: 2,
       skillSnapshot: outcome.skillSnapshot,
       plan: outcome.plan,
       verification: outcome.verification,
@@ -200,6 +207,6 @@ export async function POST(request: Request, context: { params: Promise<{ questi
     if (runId) getSqlite().prepare(
       "UPDATE variation_runs SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ? AND owner_id = ?",
     ).run(message.slice(0, 1000), now(), now(), runId, ownerId);
-    return Response.json({ error: message, runId: runId || undefined }, { status: errorStatus(error) });
+    return Response.json({ error: message, runId: runId || undefined, status: runId ? "failed" : undefined }, { status: errorStatus(error) });
   }
 }

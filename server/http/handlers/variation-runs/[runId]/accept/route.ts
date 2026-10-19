@@ -10,6 +10,7 @@ import { variationSourceContentHash, variationSourceSnapshotHash } from "../../.
 import { deleteFile, putFile } from "../../../../../../lib/file-storage";
 import { renderQuestionDiagramPng } from "../../../../../../lib/question-diagram-renderer";
 import { isVariationQuestion } from "../../../../../../lib/question-provenance";
+import { parseVariationVerification } from "../../../../../../lib/variation-plan";
 
 
 type RunRow = {
@@ -19,6 +20,7 @@ type RunRow = {
   status: string;
   qualityMode: string;
   difficulty: string;
+  resultJson: string | null;
 };
 
 type CandidateRow = {
@@ -89,6 +91,9 @@ function parseReview(value: string): VariationReview {
     || !Array.isArray(review?.issues)) {
     throw new Error("候选题审校记录无效，请重新生成");
   }
+  if (mode === "multi_agent" && (typeof score !== "number" || score < 75 || status === "rules_passed")) {
+    throw new Error("候选题未达到 75 分入库线，请重新生成");
+  }
   return {
     mode,
     status: status as VariationReview["status"],
@@ -110,7 +115,7 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
     const sqlite = getSqlite();
     const run = sqlite.prepare(
       `SELECT id, source_question_id AS sourceQuestionId, source_snapshot_hash AS sourceSnapshotHash,
-              status, quality_mode AS qualityMode, difficulty
+              status, quality_mode AS qualityMode, difficulty, result_json AS resultJson
          FROM variation_runs WHERE id = ? AND owner_id = ?`,
     ).get(runId, ownerId) as RunRow | undefined;
     if (!run) return Response.json({ error: "变式题生成记录不存在" }, { status: 404 });
@@ -145,6 +150,16 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
       fallbackTags: source.tags,
     });
     const reviews = selectedRows.map((candidate) => parseReview(candidate!.reviewJson));
+    if (run.qualityMode === "reviewed") {
+      if (reviews.some(review => review.mode !== "multi_agent")) throw new Error("独立审校记录缺失，请重新生成");
+      const workflow = JSON.parse(run.resultJson ?? "{}");
+      if (workflow.scoringVersion === 2) {
+        const verified = parseVariationVerification(JSON.stringify({ checks: workflow.verification }), candidates.length);
+        if (selectedRows.some((candidate, index) => verified[candidate!.ordinal - 1]?.score !== reviews[index].score)) {
+          throw new Error("最终评分与候选题记录不一致，请重新生成");
+        }
+      }
+    }
     const timestamp = now();
     const documentId = crypto.randomUUID();
     const promotedIds = variations.map(() => crypto.randomUUID());
