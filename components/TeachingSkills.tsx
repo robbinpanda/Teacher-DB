@@ -26,7 +26,7 @@ export function TeachingSkills() {
   const [grade, setGrade] = useState("九年级");
   const canLeaveRef = useRef<() => boolean>(() => true);
   return <div className="school-page skill-page">
-    <header className="school-page-header"><div><h1>教学 Skills</h1><p>把常用试卷的识别经验，保存成可复用的方案。</p></div></header>
+    <header className="school-page-header"><div><h1>识题规则</h1><p>把常用试卷的识别经验，保存成可复用的方案。</p></div></header>
     <div className="skill-scope skill-library-scope"><label>学科<select value={subject} onChange={e => { if (canLeaveRef.current()) setSubject(e.target.value); }}>{subjects.map(s => <option key={s}>{s}</option>)}</select></label><label>年级<select value={grade} onChange={e => { if (canLeaveRef.current()) setGrade(e.target.value); }}>{skillGrades.map(g => <option key={g}>{g}</option>)}</select></label><span>每个学科、年级可启用一个个人方案</span></div>
     <SkillWorkbench key={`${subject}/${grade}`} subject={subject} grade={grade} canLeaveRef={canLeaveRef} />
   </div>;

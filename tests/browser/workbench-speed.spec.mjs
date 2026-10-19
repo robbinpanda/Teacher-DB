@@ -2,6 +2,12 @@ import { test, expect } from '@playwright/test';
 
 test('overview follows processing/review/bank order and displays monitored speed', async ({page}) => {
   let rate=0.5;
+  // An empty library now shows onboarding; speed belongs to the populated workbench.
+  await page.route('**/api/documents?*', route => route.fulfill({json:{
+    documents: [], pagination: {page:1,pageSize:50,total:1,totalPages:1},
+    counts: {all:1,preprocessing:1,pending_review:0,reviewed:0},
+    stats: {processing:1,pendingQuestions:0,approvedQuestions:0},
+  }}));
   await page.route('**/api/extraction-queue?summary=1',route=>route.fulfill({json:{
     concurrency:10,activeCount:10,queuedCount:2,paused:false,
     speed:{questionsPerSecond:rate,completedQuestions:rate*10,windowSeconds:10,sampledAt:new Date().toISOString()},

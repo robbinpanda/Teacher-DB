@@ -27,6 +27,39 @@ function papers() {
   return { db, items, close() { for (const item of items) db.prepare("DELETE FROM documents WHERE id=?").run(item.id); db.close(); } };
 }
 
+test("空库引导与常见笔记本尺寸下的导入首屏", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "oai-authenticated-user-id": "ui-empty-library" });
+  await page.route("**/api/model-profiles", route => route.fulfill({ json: {
+    profiles: [{ id: "ready", displayName: "已配置的识别模型", model: "fixture", apiKeyMask: "configured" }], selectedProfileId: "ready",
+  } }));
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 720 });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "把手里的试卷，变成自己的题库" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "工作概况" })).toHaveCount(0);
+    await expect(page.getByRole("searchbox", { name: "搜索试卷名称" })).toHaveCount(0);
+    await expect(page.getByRole("form", { name: "试卷分页" })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `tmp/ui-welcome-${width}.png`, fullPage: true });
+    const trigger = page.getByRole("button", { name: "导入第一份试卷" });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "导入试卷" });
+    await expect(dialog.getByLabel("选择识别模型")).toHaveValue("ready");
+    await expect(dialog.getByLabel("同时处理试卷数")).not.toBeVisible();
+    if (width === 1280) {
+      for (const locator of [dialog.getByLabel("年级", { exact: true }), dialog.getByLabel("选择识别模型"), dialog.locator(".wb-drop-zone")]) {
+        const box = await locator.boundingBox();
+        const footer = await dialog.locator(".wb-dialog-footer").boundingBox();
+        expect(box.y).toBeGreaterThan(0);
+        expect(box.y + box.height).toBeLessThanOrEqual(footer.y);
+      }
+    }
+    await page.screenshot({ path: `tmp/ui-import-${width}.png` });
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+  }
+});
+
 test("桌面表格布局、统计筛选、搜索排序与手机局部滚动", async ({ page }) => {
   const fixture = papers();
   const errors = [];
@@ -56,7 +89,7 @@ test("桌面表格布局、统计筛选、搜索排序与手机局部滚动", as
       await page.screenshot({ path: `tmp/workbench-refactor-${width}.png`, fullPage: true });
       if (width === 390) {
         await page.getByRole("button", { name: "展开导航" }).click();
-        await expect(page.getByRole("navigation", { name: "主导航" }).getByRole("link", { name: "教学 Skills" })).toBeVisible();
+        await expect(page.getByRole("navigation", { name: "主导航" }).getByRole("link", { name: "识题规则" })).toBeVisible();
         await page.getByRole("button", { name: "收起导航" }).click();
       }
     }
@@ -104,6 +137,7 @@ test("导入抽屉保留配置、文件暂存校验、拖放和焦点恢复", as
   await expect.poll(() => selected).toBe("two");
   await expect(dialog.getByText(/当前模型尚未配置 API Key/)).toBeVisible();
   await expect(dialog.getByRole("link", { name: "管理模型" })).toHaveAttribute("href", "/settings/models");
+  await dialog.locator(".wb-import-advanced summary").click();
   await expect(dialog.getByRole("link", { name: "查看与定制" })).toHaveAttribute("href", "/settings/skills");
   await dialog.getByLabel("同时处理试卷数").fill("0");
   await dialog.getByRole("button", { name: "应用", exact: true }).click();
@@ -267,7 +301,7 @@ test("五份原卷交给后台后清空，删除试卷再打开不残留", async
     await page.getByRole("button", { name: "批量删除", exact: true }).click();
     await page.getByRole("button", { name: /同步删除试卷和题目/ }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "试卷管理 0 份" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "把手里的试卷，变成自己的题库" })).toBeVisible();
     await page.getByRole("button", { name: "导入试卷", exact: true }).click();
     await expect(dialog.locator(".wb-upload-tasks")).toHaveCount(0);
     await expect(dialog.locator(".wb-file-selection")).toHaveCount(0);

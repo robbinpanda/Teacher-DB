@@ -36,11 +36,7 @@ import {
   chinaRegions,
   gradesByStage,
   textbookEditions,
-  educationStages,
-  subjects,
   stageLabel,
-  type EducationStage,
-  type EducationSubject,
 } from "../lib/education-taxonomy";
 import type { BankFacet, QuestionFolder, QuestionType, QuestionWithSource, TeacherProfile, VariationReview } from "../lib/types";
 import type { ValidatedVariation } from "../lib/question-variations";
@@ -126,7 +122,7 @@ export function QuestionBank({
   facets: { grades: BankFacet[]; regions: BankFacet[]; textbooks: BankFacet[] };
   initialProfile: TeacherProfile;
 }) {
-  const { subject, stage, setSubject, setStage } = useEducationScope();
+  const { subject, stage } = useEducationScope();
   const basket = useQuestionBasket(ownerId, subject, stage);
   const basketIds = new Set(basket.items.map(question => question.id));
   const basketPanel = useRef<HTMLElement>(null);
@@ -627,7 +623,7 @@ export function QuestionBank({
   return (
     <div className="page-shell bank-page bank-explorer-page">
       <header className="bank-page-header">
-        <div className="bank-title-row"><h1>题库</h1><p className="resource-intro">按知识点找题，边浏览边加入选题篮。</p></div>
+        <div className="bank-title-row"><h1>题库 <span className="bank-scope-label">{stageLabel(stage)} · {subject}</span></h1><p className="resource-intro">按知识点找题，加入选题篮即可组卷。教学范围在导航中切换。</p></div>
         <div className="bank-header-actions"><Link className="btn btn-primary" href="/?import=1">导入试卷题目</Link>
           <input ref={importInput} type="file" accept=".jianti" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importPackage(file); }} />
           <button type="button" className="btn" disabled={importing} onClick={() => importInput.current?.click()}>{importing ? <LoaderCircle size={15} className="spin" /> : <Upload size={15} />} 导入共享包</button>
@@ -678,14 +674,12 @@ export function QuestionBank({
           <section className="bank-toolbar explorer-toolbar" aria-label="筛选题目">
             <div className="bank-search-row">
               <label className="search-box"><Search size={17} /><input value={query} onChange={event => { setQuery(event.target.value); setPage(1); }} placeholder="搜索题干、答案、知识点或来源" />{query && <button type="button" onClick={() => { setQuery(""); setPage(1); }} aria-label="清空搜索"><X size={14} /></button>}</label>
-              <div className="bank-scope-controls"><select aria-label="学段" value={stage} onChange={event => { setStage(event.target.value as EducationStage); clearFilters(); }}>{educationStages.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select aria-label="学科" value={subject} onChange={event => { setSubject(event.target.value as EducationSubject); clearFilters(); }}>{subjects.map(item => <option key={item}>{item}</option>)}</select></div>
               <button className="clear-filter" disabled={!activeFilterCount} type="button" onClick={clearFilters}>重置筛选{activeFilterCount ? ` (${activeFilterCount})` : ""}</button>
             </div>
-            <div className="bank-filter-row"><span>题型</span><div className="bank-type-options" role="group" aria-label="筛选题型">{[["all", "全部"], ...Object.entries(typeLabels)].map(([value, label]) => <button type="button" key={value} aria-pressed={type === value} onClick={() => { setType(value as "all" | QuestionType); setPage(1); }}>{label}</button>)}</div></div>
-            <div className="bank-filter-row bank-source-row"><span>范围</span>
+            <div className="bank-filter-row bank-source-row"><span>题型</span><div className="bank-type-options" role="group" aria-label="筛选题型">{[["all", "全部"], ...Object.entries(typeLabels)].map(([value, label]) => <button type="button" key={value} aria-pressed={type === value} onClick={() => { setType(value as "all" | QuestionType); setPage(1); }}>{label}</button>)}</div>
               <label><span className="sr-only">年级</span><select aria-label="筛选年级" value={gradeFilter} onChange={event => { setGradeFilter(event.target.value); setPage(1); }}><option value="">全部年级</option>{bankFacets.grades.filter(f => f.value !== "未设置年级").map(f => <option key={f.value}>{f.value}</option>)}</select></label>
-              <label className="bank-source-picker"><span className="sr-only">来源试卷</span><select aria-label="来源试卷" value={source} onChange={event => { setSource(event.target.value); setPage(1); }}><option value="全部">全部来源试卷</option>{bankSources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-              <details className="bank-more-filters"><summary><SlidersHorizontal size={14} />更多筛选{originFilter || regionFilter || textbookFilter || yearFilter || schoolFilter || examFilter ? " · 已应用" : ""}</summary><div>
+              <details className="bank-more-filters"><summary><SlidersHorizontal size={14} />更多筛选{source !== "全部" || originFilter || regionFilter || textbookFilter || yearFilter || schoolFilter || examFilter ? " · 已应用" : ""}</summary><div>
+                <label>来源试卷<select aria-label="来源试卷" value={source} onChange={event => { setSource(event.target.value); setPage(1); }}><option value="全部">全部来源试卷</option>{bankSources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 <label>题目来源<select aria-label="题目来源类型" value={originFilter} onChange={event => { setOriginFilter(event.target.value); setPage(1); }}><option value="">全部个人资源</option><option value="uploaded">上传原卷识别</option><option value="imported">共享包导入副本</option><option value="generated">AI 变式</option></select></label>
                 {bankFacets.regions.some(f => f.value !== "未设置地区") && <label>地区<select aria-label="筛选地区" value={regionFilter} onChange={event => { setRegionFilter(event.target.value); setPage(1); }}><option value="">全部地区</option>{bankFacets.regions.filter(f => f.value !== "未设置地区").map(f => <option key={f.value}>{f.value}</option>)}</select></label>}
                 {!!years.length && <label>年份<select aria-label="筛选年份" value={yearFilter} onChange={event => { setYearFilter(event.target.value); setPage(1); }}><option value="">全部年份</option>{years.map(year => <option key={year}>{year}</option>)}</select></label>}
@@ -738,7 +732,7 @@ export function QuestionBank({
                 </article>;
               })}
             </div>
-            {!questions.length && !loading && !searchError && <div className="empty-state explorer-empty"><FolderOpen size={42} /><h2>{activeFilterCount ? "没有匹配的题目" : selection.kind === "folder" || selection.kind === "unfiled" ? "当前文件夹没有题目" : bankStats.approved ? "当前学科、学段没有已入库题目" : "我的题库还没有已入库题目"}</h2><p>{activeFilterCount ? "清除部分条件后重新查找；来源试卷中尚未审核的题目不会出现在题库。" : "上传试卷并完成审核后，题目会出现在这里。也可以导入共享包积累个人题目。"}</p>{activeFilterCount > 0 && <button className="btn btn-primary" type="button" onClick={clearFilters}>清除筛选</button>}</div>}
+            {!questions.length && !loading && !searchError && <div className="empty-state explorer-empty"><FolderOpen size={42} /><h2>{activeFilterCount ? "没有匹配的题目" : selection.kind === "folder" || selection.kind === "unfiled" ? "当前文件夹没有题目" : bankStats.approved ? "当前学科、学段没有已入库题目" : "我的题库还没有已入库题目"}</h2><p>{activeFilterCount ? "清除部分条件后重新查找；来源试卷中尚未审核的题目不会出现在题库。" : "上传试卷并完成审核后，题目会出现在这里。也可以导入共享包积累个人题目。"}</p>{activeFilterCount > 0 && <button className="btn btn-primary" type="button" onClick={clearFilters}>清除筛选</button>}{!activeFilterCount && <Link className="btn btn-primary" href="/?import=1"><Upload size={15} />导入试卷题目</Link>}</div>}
             {pagination.pageCount > 1 && <nav className="bank-pagination" aria-label="题库分页"><button type="button" disabled={pagination.page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={14} /> 上一页</button><span>第 {pagination.page} / {pagination.pageCount} 页</span><button type="button" disabled={pagination.page >= pagination.pageCount || loading} onClick={() => setPage((value) => Math.min(pagination.pageCount, value + 1))}>下一页 <ChevronRight size={14} /></button></nav>}
           </div>
         </main>

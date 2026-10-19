@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { AlertTriangle, Check, FileStack, FileX2, ListChecks, LoaderCircle, Pause, Play, ScanText, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, FileStack, FileX2, ListChecks, LoaderCircle, Pause, Play, ScanText, Search, Trash2, UploadCloud, X } from "lucide-react";
 import type { DocumentListResult } from "../lib/document-list";
 import type { SourceDocument } from "../lib/types";
 import type { ExtractionSpeed } from "../lib/extraction-speed";
@@ -26,6 +26,7 @@ type QueueControlState = {
 
 export function Workbench({ initialPage, importOpen = false }: { importOpen?: boolean; initialPage: DocumentListResult }) {
   const router = useRouter();
+  const [importDialogOpen, setImportDialogOpen] = useState(importOpen);
   const [documents, setDocuments] = useState(initialPage.documents);
   const [metadata, setMetadata] = useState(initialPage);
   const [page, setPage] = useState(1);
@@ -331,6 +332,7 @@ export function Workbench({ initialPage, importOpen = false }: { importOpen?: bo
   const nextReview = documents.find(document => document.status === "reviewing" && document.approvedCount < document.questionCount)
     ?? documents.find(document => document.status === "reviewing");
   const busy = Boolean(batchAction || deletingMode);
+  const isEmptyLibrary = metadata.counts.all === 0 && metadata.stats.approvedQuestions === 0 && !search.trim() && activeGroup === "all" && !listError;
 
   return <div className="workbench">
     <header className="wb-header">
@@ -339,10 +341,22 @@ export function Workbench({ initialPage, importOpen = false }: { importOpen?: bo
         <AutomaticAiReviewToggle />
         <Link className="wb-button wb-quiet" href="/bank"><FileStack size={16} />打开题库</Link>
         {nextReview && <Link className="wb-button" href={`/review/${nextReview.id}`}><ScanText size={16} />继续审核</Link>}
-        <UploadWorkbench initiallyOpen={importOpen} />
+        <UploadWorkbench open={importDialogOpen} onOpenChange={setImportDialogOpen} />
       </div>
     </header>
-    <WorkbenchOverview stats={metadata.stats} speed={speed} onSelect={selectGroup} />
+    {isEmptyLibrary && <section className="wb-welcome" aria-labelledby="welcome-title">
+      <span className="wb-welcome-icon"><UploadCloud size={28} aria-hidden="true" /></span>
+      <p className="wb-welcome-eyebrow">从一份试卷开始</p>
+      <h2 id="welcome-title">把手里的试卷，变成自己的题库</h2>
+      <p>导入 PDF，让 AI 整理题目，再由你确认入库。备课、找题和组卷，都从这里开始。</p>
+      <button type="button" className="wb-button wb-primary" onClick={() => setImportDialogOpen(true)}><UploadCloud size={17} />导入第一份试卷</button>
+      <ol className="wb-welcome-steps">
+        <li><b>1</b><div><strong>导入试卷</strong><span>支持批量选择或拖放 PDF</span></div></li>
+        <li><b>2</b><div><strong>AI 识别</strong><span>自动整理题干、答案与解析</span></div></li>
+        <li><b>3</b><div><strong>确认入库</strong><span>检查后保存，随时选题组卷</span></div></li>
+      </ol>
+    </section>}
+    {!isEmptyLibrary && <><WorkbenchOverview stats={metadata.stats} speed={speed} onSelect={selectGroup} />
     <section className="wb-library" aria-labelledby="papers-heading">
       <div className="wb-library-heading"><h2 id="papers-heading">试卷管理 <span>{metadata.counts.all.toLocaleString("zh-CN")} 份</span></h2>{refreshing && <span className="wb-sync"><LoaderCircle size={13} className="spin" />同步中</span>}</div>
       <div className="wb-toolbar">
@@ -377,7 +391,7 @@ export function Workbench({ initialPage, importOpen = false }: { importOpen?: bo
         {batchWarning && <p className="wb-notice wb-error document-bulk-warning" role="alert"><AlertTriangle size={15} />{batchWarning}</p>}
         {activeDocuments.length ? <DocumentTable documents={activeDocuments} selectionMode={selectionMode} selectedIds={selectedIds} retryingIds={retryingIds} busy={busy} onToggle={toggleDocument} onDelete={document => { setTarget(document); setError(""); }} onRetry={document => void retryDocument(document)} /> :
           <div className="wb-empty document-group-empty"><FileStack size={28} /><h3>{search.trim() ? "没有匹配的试卷" : activeGroupMeta.empty}</h3><p>{search.trim() ? "试试其他名称，或清除搜索条件。" : documents.length ? "可切换其他状态查看试卷。" : "支持批量上传 PDF，识别完成后即可审核。"}</p>{search.trim() && <button type="button" className="wb-button" onClick={() => setSearch("")}>清除搜索</button>}</div>}
-        <form className="wb-pagination" aria-label="试卷分页" onSubmit={event => {
+        {metadata.pagination.total > 0 && <form className="wb-pagination" aria-label="试卷分页" onSubmit={event => {
           event.preventDefault();
           const value = Number(new FormData(event.currentTarget).get("page"));
           if (Number.isInteger(value) && value > 0) { setPage(Math.min(value, metadata.pagination.totalPages)); setSelectedIds(new Set()); }
@@ -388,9 +402,9 @@ export function Workbench({ initialPage, importOpen = false }: { importOpen?: bo
           <button type="button" className="wb-button" disabled={busy || page >= metadata.pagination.totalPages} onClick={() => { setPage(page + 1); setSelectedIds(new Set()); }}>下一页</button>
           <label>跳至 <input key={metadata.pagination.page} aria-label="跳转页码" name="page" type="number" min="1" max={metadata.pagination.totalPages} defaultValue={metadata.pagination.page} /></label>
           <button className="wb-button" disabled={busy} type="submit">跳转</button>
-        </form>
+        </form>}
       </section>
-    </section>
+    </section></>}
     <WorkbenchDialog open={Boolean(target || batchDeleteOpen)} titleId="delete-document-title" busy={Boolean(deletingMode)} onClose={closeDeleteDialog}>
       <header className="wb-dialog-header"><h2 id="delete-document-title">{target ? "删除试卷" : `批量删除 ${selectedDocuments.length} 份试卷`}</h2><button type="button" className="wb-icon-button" aria-label="关闭" disabled={Boolean(deletingMode)} onClick={closeDeleteDialog}><X size={18} /></button></header>
       <div className="wb-dialog-body"><p className="wb-delete-name">{target ? target.name : selectedDocuments.slice(0, 3).map(document => document.name).join("、") + (selectedDocuments.length > 3 ? ` 等 ${selectedDocuments.length} 份` : "")}</p>

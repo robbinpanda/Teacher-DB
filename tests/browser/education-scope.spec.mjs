@@ -56,10 +56,13 @@ test('switching subjects and stages isolates all three libraries and survives re
     await page.reload();
     await check(scopes[2]);
     await page.getByRole('link', {name:'题库',exact:true}).click();
-    await page.getByRole('combobox',{name:'学科',exact:true}).selectOption('数学');
+    await page.locator('.scope-trigger').click();
+    await page.locator('.subject-trigger').click();
+    await page.getByRole('option',{name:'数学',exact:true}).click();
     await expect(page.locator('.scope-trigger')).toContainText('小学 · 数学');
     await expect(page.locator('.question-card')).toHaveCount(0);
-    await page.getByRole('combobox',{name:'学段',exact:true}).selectOption('middle');
+    await page.locator('.scope-trigger').click();
+    await page.locator('.stage-switch').getByRole('button',{name:'初中',exact:true}).click();
     await expect(page.locator('.question-card')).toHaveCount(1);
     await expect(page.locator('.question-card')).toContainText('初中数学独立题目');
     await page.screenshot({path:'tmp/education-scope-browser.png',fullPage:true});

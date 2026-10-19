@@ -42,7 +42,7 @@ test('真实选题：知识点和来源筛选、独立批量选择、持久篮�
   await card(1).getByRole('checkbox').check();
   await page.getByLabel('筛选知识点').fill('二次');
   await expect(bulk).toContainText('已选 1 道题');
-  for (const width of [1440,1920]) {
+  for (const width of [1440,1920,390]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => window.scrollTo(0,0));
     await page.screenshot({path:`tmp/discovery-filter-selection-${width}.png`,animations:'disabled'});
@@ -75,9 +75,13 @@ test('真实选题：知识点和来源筛选、独立批量选择、持久篮�
   await expect(trigger(2)).toBeVisible();
   await page.reload();
   await expect(trigger(2)).toBeVisible();
-  await page.getByRole('combobox', {name:'学科',exact:true}).selectOption('英语');
+  await page.locator('.scope-trigger').click();
+  await page.locator('.subject-trigger').click();
+  await page.getByRole('option', {name:'英语',exact:true}).click();
   await expect(trigger(0)).toBeVisible();
-  await page.getByRole('combobox', {name:'学科',exact:true}).selectOption('数学');
+  await page.locator('.scope-trigger').click();
+  await page.locator('.subject-trigger').click();
+  await page.getByRole('option', {name:'数学',exact:true}).click();
   await expect(trigger(2)).toBeVisible();
   await trigger(2).click();
   const basket = page.getByRole('dialog', {name:'选题篮 · 2 道题'});

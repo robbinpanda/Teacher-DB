@@ -1,7 +1,7 @@
 /* Shared shell and workbench tokens. Other feature pages retain their own layouts. */
 .shell-ui {
   --ink: #172b25;
-  --muted: #687a72;
+  --muted: #566b60;
   --line: #e4eae6;
   --green: #176b50;
   --green-dark: #12563f;
@@ -18,27 +18,27 @@
 .shell-ui .brand { display: flex; gap: 10px; margin: 0; padding: 0 8px 24px; }
 .shell-ui .brand-mark { width: 32px; height: 32px; border-radius: 8px; background: #daebbc; box-shadow: none; }
 .shell-ui .brand strong { font-size: 18px; letter-spacing: .03em; }
-.shell-ui .brand small { font-size: 10px; color: #91aba1; letter-spacing: 0; }
+.shell-ui .brand small { font-size: 12px; color: #b0c7bc; letter-spacing: 0; }
 .shell-navigation { display: flex; flex: 1; flex-direction: column; }
 .shell-menu-toggle { display: none; }
 .shell-ui .education-switcher { display: block; margin: 0 0 12px; }
 .shell-ui .scope-trigger { min-height: 54px; padding: 8px 10px; border: 1px solid #34564a; border-radius: 8px; background: transparent; box-shadow: none; }
-.shell-ui .scope-trigger small { font-size: 11px; color: #91aba1; }
+.shell-ui .scope-trigger small { font-size: 12px; color: #b0c7bc; }
 .shell-ui .scope-trigger strong { margin-top: 2px; font-size: 13px; font-weight: 500; }
 .shell-ui .scope-trigger i { width: 24px; height: 24px; background: transparent; }
 .shell-ui .scope-settings { border-radius: 8px; box-shadow: 0 4px 16px #102c2314; }
 .shell-ui .teacher-mode-switch { width: auto; margin: 0 0 24px; padding: 3px; gap: 2px; border-radius: 6px; border: 1px solid #34564a; background: transparent; }
-.shell-ui .teacher-mode-switch button { padding: 6px 0; font-size: 11px; color: #9bb3a9; border-radius: 4px; }
+.shell-ui .teacher-mode-switch button { padding: 6px 0; font-size: 12px; color: #c0d1c8; border-radius: 4px; }
 .shell-ui .teacher-mode-switch button.active { background: #305348; color: #f2f6f3; box-shadow: none; font-weight: 600; }
-.shell-ui .nav-kicker { display: block; margin: 0 10px 8px; color: #819d91; font-size: 11px; font-weight: 500; letter-spacing: .04em; }
+.shell-ui .nav-kicker { display: block; margin: 0 10px 8px; color: #b0c7bc; font-size: 12px; font-weight: 500; letter-spacing: .04em; }
 .shell-ui .side-nav { display: grid; gap: 4px; overflow: visible; }
-.shell-ui .side-nav a { display: flex; min-height: 40px; padding: 0 10px; gap: 10px; border-radius: 6px; color: #a7bdb3; font-size: 13px; font-weight: 500; }
+.shell-ui .side-nav a { display: flex; min-height: 40px; padding: 0 10px; gap: 10px; border-radius: 6px; color: #c0d1c8; font-size: 14px; font-weight: 500; }
 .shell-ui .side-nav a i { width: 18px; height: 18px; border-radius: 0; background: transparent; color: inherit; }
 .shell-ui .side-nav a span { display: inline; }
 .shell-ui .side-nav a.active { color: #164331; background: #e5efe8; box-shadow: none; font-weight: 600; }
 .shell-ui .side-nav a.active i { background: transparent; color: inherit; }
 .shell-ui .side-nav a:hover:not(.active) { background: #23483c; color: white; }
-.shell-ui .sidebar-footnote { display: block; padding: 24px 10px 0; margin-top: auto; color: #819d91; font-size: 11px; }
+.shell-ui .sidebar-footnote { display: block; padding: 24px 10px 0; margin-top: auto; color: #b0c7bc; font-size: 12px; }
 .shell-mode-error { color: #f5cfb4; font-size: 12px; }
 
 /* Workbench has one surface for the paper table, rather than nested cards. */
@@ -146,7 +146,7 @@
 .wb-empty p { margin: 0 0 8px; font-size: 12px; }
 
 /* Native dialog: focus trap, Escape, inert background and one scrolling body. */
-.wb-dialog { --line: #e4eae6; --ink: #172b25; --muted: #687a72; --green: #176b50; --green-dark: #12563f; --wb-hover: #f1f6f3; width: min(480px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); font-size: 14px; box-shadow: 0 16px 56px #102c2326; overflow: hidden; }
+.wb-dialog { --line: #e4eae6; --ink: #172b25; --muted: #566b60; --green: #176b50; --green-dark: #12563f; --wb-hover: #f1f6f3; width: min(480px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); font-size: 14px; box-shadow: 0 16px 56px #102c2326; overflow: hidden; }
 .wb-dialog[open] { display: flex; flex-direction: column; }
 .wb-dialog::backdrop { background: #10251d55; }
 .wb-dialog.wb-drawer { width: min(496px, 100vw); height: 100dvh; max-height: 100dvh; margin: 0 0 0 auto; border: 0; border-left: 1px solid var(--line); border-radius: 0; }
@@ -203,38 +203,38 @@
 .wb-dialog .wb-notice { margin: 16px 0 0; }
 .wb-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
-/* Import is a spacious workspace, with persistent actions and one scrolling body. */
-.wb-dialog.wb-import-dialog { width: min(1440px, calc(100vw - 80px)); height: min(960px, calc(100dvh - 64px)); max-height: calc(100dvh - 64px); border-radius: 18px; }
-.wb-import-dialog .wb-dialog-header { padding: 26px 32px; }
-.wb-import-dialog .wb-dialog-header h2 { font-size: 24px; }
+/* Keep the essential import choices above the fold; advanced settings expand on demand. */
+.wb-dialog.wb-import-dialog { width: min(1040px, calc(100vw - 48px)); height: auto; max-height: calc(100dvh - 64px); border-radius: 18px; }
+.wb-import-dialog .wb-dialog-header { padding: 20px 24px; }
+.wb-import-dialog .wb-dialog-header h2 { font-size: 22px; }
 .wb-import-dialog .wb-dialog-header p { font-size: 13px; }
-.wb-import-dialog .wb-dialog-footer { padding: 20px 32px; }
+.wb-import-dialog .wb-dialog-footer { padding: 16px 24px; }
 .wb-import-dialog .wb-dialog-footer .wb-button { min-height: 42px; padding-inline: 20px; font-size: 14px; }
-.wb-import-layout { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); flex: 1; align-items: start; gap: 32px; padding: 28px 32px; background: #f7f9f8; }
-.wb-import-settings, .wb-import-files { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-.wb-import-files { align-self: stretch; display: flex; flex-direction: column; }
-.wb-import-section-heading { margin-bottom: 24px; }
+.wb-import-layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); flex: 1; align-items: start; gap: 20px; padding: 20px 24px; background: #f7f9f8; }
+.wb-import-settings, .wb-import-files { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.wb-import-files { align-self: start; display: flex; flex-direction: column; }
+.wb-import-section-heading { margin-bottom: 14px; }
 .wb-import-section-heading h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.wb-import-section-heading p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.wb-import-section-heading p { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
 .wb-import-settings .wb-concurrency { margin-bottom: 0; }
 .wb-import-dialog .wb-field { font-size: 14px; }
 .wb-import-dialog .wb-field :is(select, input[type="number"]) { height: 44px; font-size: 14px; }
 .wb-import-upload { flex: 1; }
-.wb-import-dialog .wb-drop-zone { flex: 1; min-height: 280px; gap: 12px; padding: 32px 20px; border-radius: 12px; }
-.wb-import-dialog .wb-drop-zone > svg { width: 40px; height: 40px; margin-bottom: 8px; }
+.wb-import-dialog .wb-drop-zone { flex: none; min-height: 180px; gap: 8px; padding: 24px 16px; border-radius: 12px; }
+.wb-import-dialog .wb-drop-zone > svg { width: 32px; height: 32px; margin-bottom: 4px; }
 .wb-import-dialog .wb-drop-zone strong { font-size: 16px; }
 .wb-import-dialog .wb-drop-zone > span { font-size: 13px; }
 .wb-import-dialog .wb-file-selection li { padding: 12px; }
 .wb-import-dialog .wb-file-selection li > span { font-size: 13px; }
 
 @media (max-width: 1100px) {
-  .wb-import-layout { grid-template-columns: minmax(300px, .9fr) minmax(0, 1fr); gap: 20px; padding: 24px; }
+  .wb-import-layout { grid-template-columns: minmax(280px, .85fr) minmax(0, 1fr); gap: 16px; padding: 20px; }
   .wb-import-settings, .wb-import-files { padding: 20px; }
 }
 @media (max-width: 900px) {
   .wb-dialog.wb-import-dialog { width: min(720px, calc(100vw - 32px)); height: calc(100dvh - 32px); max-height: calc(100dvh - 32px); }
   .wb-import-layout { grid-template-columns: minmax(0, 1fr); }
-  .wb-import-dialog .wb-drop-zone { min-height: 220px; }
+  .wb-import-dialog .wb-drop-zone { min-height: 160px; }
 }
 @media (max-width: 600px) {
   .wb-dialog.wb-import-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
@@ -288,8 +288,52 @@
 }
 @media print { .shell-ui { display: block; }.shell-ui .sidebar { display: none; } }
 
-.wb-import-destination { display: flex; align-items: flex-start; gap: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; color: #1e40af; }
+.wb-import-destination { display: flex; align-items: flex-start; gap: 10px; padding: 12px; margin-bottom: 16px; border: 1px solid #cfe1d5; border-radius: 8px; background: #f0f6f2; color: #12563f; }
 .wb-import-destination > svg { flex: 0 0 auto; margin-top: 3px; }
 .wb-import-destination span { display: block; font-size: 12px; }
-.wb-import-destination strong { display: block; margin-top: 4px; font-size: 19px; line-height: 1.4; }
-.wb-import-destination p { margin: 8px 0 0; color: #475569; font-size: 12px; line-height: 1.7; }
+.wb-import-destination strong { display: block; margin-top: 4px; font-size: 16px; line-height: 1.4; }
+.wb-import-destination p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+/* Navigation groups keep daily teaching actions ahead of configuration. */
+.shell-ui .nav-group { display: grid; gap: 4px; }
+.shell-ui .nav-group + .nav-group { margin-top: 20px; padding-top: 18px; border-top: 1px solid #34564a; }
+.shell-ui .nav-group .nav-kicker { margin-bottom: 4px; }
+.shell-ui :is(a, button, input, select, summary):focus-visible { outline: 2px solid #43876b; outline-offset: 3px; }
+.shell-ui .sidebar :is(a, button):focus-visible { outline-color: #daebbc; }
+
+.wb-welcome { padding: 40px 32px 28px; border: 1px solid var(--line); border-radius: 14px; background: white; text-align: center; }
+.wb-welcome-icon { display: inline-flex; padding: 16px; border-radius: 16px; background: #edf5f0; color: var(--green); }
+.wb-welcome-eyebrow { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--green); }
+.wb-welcome h2 { margin: 0; font-size: 26px; line-height: 1.5; font-weight: 600; }
+.wb-welcome > p:not(.wb-welcome-eyebrow) { max-width: 480px; margin: 12px auto 24px; color: var(--muted); line-height: 1.8; }
+.wb-welcome > .wb-button { min-height: 44px; padding-inline: 20px; font-size: 15px; }
+.wb-welcome-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 36px 0 0; padding: 24px 0 0; border-top: 1px solid var(--line); list-style: none; text-align: left; }
+.wb-welcome-steps li { display: flex; align-items: flex-start; gap: 12px; }
+.wb-welcome-steps b { display: grid; place-items: center; flex: 0 0 30px; height: 30px; border-radius: 50%; background: #edf5f0; color: var(--green); }
+.wb-welcome-steps strong, .wb-welcome-steps span { display: block; }
+.wb-welcome-steps span { margin-top: 5px; font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+.wb-import-dialog .wb-import-fields { gap: 14px; margin-bottom: 16px; }
+.wb-import-dialog :is(.wb-field-hint, .wb-field-error, .wb-field-heading a, .wb-dialog-footer > span) { font-size: 13px; line-height: 1.6; }
+.wb-import-advanced { border-top: 1px solid var(--line); padding-top: 12px; }
+.wb-import-advanced summary { cursor: pointer; color: var(--green); font-weight: 600; font-size: 14px; }
+.wb-import-advanced summary span { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.wb-import-advanced > .wb-field { margin-top: 16px; }
+.wb-import-dialog .wb-file-selection ul { max-height: 180px; }
+
+/* Improve editor controls without changing the printed paper typography. */
+.paper-builder :is(.paper-topbar small, .paper-save-state, .paper-summary span, .paper-order-title b, .paper-settings .edit-field > span, .paper-settings .template-studio-trigger small) { font-size: 12px; }
+.paper-builder :is(.paper-order-title, .paper-settings .edit-field input, .paper-settings .edit-field select, .paper-settings .template-studio-trigger strong) { font-size: 14px; }
+.paper-builder .paper-empty-state p { font-size: 14px; }
+.paper-builder .template-studio-trigger small { color: var(--muted); white-space: normal; }
+@media (max-width: 900px) {
+  .shell-ui .side-nav { margin-left: 0; }
+  .wb-import-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .wb-welcome { padding: 28px 20px; }
+  .wb-welcome h2 { font-size: 22px; }
+  .wb-welcome-steps { grid-template-columns: 1fr; gap: 20px; margin-top: 28px; }
+  .wb-import-dialog .wb-dialog-header { padding: 16px; }
+  .wb-import-dialog .wb-dialog-footer { padding: 12px 16px; }
+}

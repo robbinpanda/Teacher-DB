@@ -58,18 +58,16 @@ async function renderPdf(
   }
 }
 
-export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
+export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
   const [recoverable, setRecoverable] = useState<PendingUpload[]>([]);
   const { subject, stage } = useEducationScope();
   useEffect(() => { void readPendingUploads().then(items => setRecoverable(items.filter(item => item.metadata.subject === subject && stageFromGrade(item.metadata.grade) === stage))).catch(() => undefined); }, [subject, stage]);
-  const [open, setOpen] = useState(initiallyOpen);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const concurrencyRef = useRef(DEFAULT_UPLOAD_CONCURRENCY);
   const concurrencyDraftDirtyRef = useRef(false);
   const batchControllerRef = useRef<{ setConcurrency: (value: unknown) => void } | null>(null);
@@ -403,19 +401,18 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
   return <>
     {recoverable.length > 0 && !batchActive && <button className="wb-button" type="button" onClick={() => { setOpen(true); void resumePendingUploads(); }}>恢复未完成导入（{recoverable.length}）</button>}
     {uploadInBrowser && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}><LoaderCircle size={14} className="spin" />正在导入 · {tasks.length}</button>}
-    <button ref={triggerRef} type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
-    <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" returnFocusRef={triggerRef} onClose={() => setOpen(false)}>
+    <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
+    <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" onClose={() => setOpen(false)}>
       <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>批量上传 PDF，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
       <div className="wb-dialog-body wb-import-layout">
         <section className="wb-import-settings" aria-labelledby="import-settings-title">
           <section className="wb-import-destination" aria-label="目标题库">
-            <LibraryBig size={22} aria-hidden="true" /><div><span>目标题库</span><strong>{targetBank}</strong><p>本批试卷自动归入此题库。要更换目标，请关闭窗口后在侧栏切换学科或学段。</p></div>
+            <LibraryBig size={20} aria-hidden="true" /><div><span>目标题库</span><strong>{targetBank}</strong><p>如需更换，请关闭窗口后切换导航中的教学范围。</p></div>
           </section>
-          <div className="wb-import-section-heading"><h3 id="import-settings-title">识别设置</h3><p>选择当前学段内的年级与识别方式</p></div>
+          <div className="wb-import-section-heading"><h3 id="import-settings-title">识别设置</h3></div>
         <fieldset className="wb-import-fields" disabled={uploadInBrowser}>
           <legend className="wb-sr-only">试卷信息</legend>
           <div className="wb-field"><label htmlFor="import-grade">年级</label><select id="import-grade" value={effectiveGrade} onChange={event => setUploadGrade(event.target.value)}>{gradesByStage[stage].map(grade => <option key={grade}>{grade}</option>)}</select></div>
-          <div className="wb-field"><div className="wb-field-heading"><span>教学 Skill</span><Link href="/settings/skills">查看与定制</Link></div><div className="wb-field-note">自动使用当前年级、学科已启用的个人 Skill；未设置时使用默认规则。{teachingProfile.textbook && <span>教材：{teachingProfile.textbook}</span>}</div></div>
           <div className="wb-field"><div className="wb-field-heading"><label htmlFor="import-model">识别模型</label><Link href="/settings/models">管理模型</Link></div>
             <select id="import-model" aria-label="选择识别模型" value={selectedProfileId} disabled={modelLoading || modelSaving || modelProfiles.length === 0} onChange={event => void selectModel(event.target.value)}>
               <option value="" disabled>{modelLoading ? "正在读取模型…" : modelProfiles.length ? "请选择识别模型" : "暂无可用模型"}</option>
@@ -425,13 +422,17 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
             {unconfiguredModel && <p className="wb-field-hint">{selectedModel ? "当前模型尚未配置 API Key。" : modelProfiles.length ? "尚未选择识别模型。" : "尚未配置识别模型。"}可先上传并保存原卷，配置模型后在试卷详情继续识别。</p>}
           </div>
         </fieldset>
+        <details className="wb-import-advanced">
+          <summary>高级设置<span>识题规则 · 并行数量</span></summary>
+          <div className="wb-field"><div className="wb-field-heading"><span>识题规则</span><Link href="/settings/skills">查看与定制</Link></div><p className="wb-field-hint">自动使用当前年级、学科已启用的个人规则；未设置时使用默认规则。{teachingProfile.textbook && `教材：${teachingProfile.textbook}`}</p></div>
         <div className="wb-field wb-concurrency"><div className="wb-field-heading"><label htmlFor="import-concurrency">并行试卷数</label><span>已应用 {appliedConcurrency} 份</span></div>
           <div className="wb-input-action"><input id="import-concurrency" aria-label="同时处理试卷数" type="number" inputMode="numeric" min="1" max={MAX_UPLOAD_CONCURRENCY} value={concurrencyDraft} onChange={event => { concurrencyDraftDirtyRef.current = true; setConcurrencyDraft(event.target.value); setConcurrencyFeedback(""); }} onKeyDown={event => { if (event.key === "Enter") void applyConcurrency(); }} /><button type="button" className="wb-button" disabled={concurrencySaving} onClick={() => void applyConcurrency()}>{concurrencySaving ? "应用中…" : "应用"}</button></div>
-          <p className="wb-field-hint">后台同时识别的试卷上限，支持 1–{MAX_UPLOAD_CONCURRENCY} 份。浏览器上传和分页最多同时 2 份，避免内存耗尽。</p>
+          <p className="wb-field-hint">同时识别 1–{MAX_UPLOAD_CONCURRENCY} 份试卷。模型限额较低时，请调小数量。</p>
           {concurrencyFeedback && <p role="status" className={concurrencyError ? "wb-field-error" : "wb-field-hint"}>{concurrencyFeedback}</p>}
           {queuePaused && <p className="wb-field-hint" title={queuePauseReason}>识别队列已暂停，可在“待处理”列表中继续。</p>}
           {(queueCounts.active > 0 || queueCounts.queued > 0) && <p className="wb-field-hint">处理中 {queueCounts.active} 份 · 等待 {queueCounts.queued} 份</p>}
         </div>
+        </details>
         </section>
         <section className="wb-import-files" aria-labelledby="import-files-title">
           <div className="wb-import-section-heading"><h3 id="import-files-title">试卷文件</h3><p>批量添加试卷，确认文件后开始导入</p></div>
@@ -441,7 +442,7 @@ export function UploadWorkbench({ initiallyOpen = false }: { initiallyOpen?: boo
             <UploadCloud size={26} /><strong>点击选择或拖放 PDF</strong><span>支持多选，每批最多 {MAX_IMPORT_BATCH_SIZE} 份</span>
           </button>
           {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
-          <p className="wb-field-hint">默认由 MiMo 2.6 Flash 根据文件名整理为“年份＋一模/二模＋区域”或“年份＋学校＋期中/期末/月考/周考”。缺失信息留空，其他类型保留原名。</p>
+          <p className="wb-field-hint">单份文件最大 100 MB。试卷名称会自动整理，识别进度可在工作台查看。</p>
           {selectedFiles.length > 0 && <div className="wb-file-selection"><div><strong>已选 {selectedFiles.length} 份</strong><button className="wb-text-button" type="button" disabled={uploadInBrowser} onClick={() => setSelectedFiles([])}>清空</button></div><ul>{selectedFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><FileText size={16} /><span title={file.name}>{file.name}<small>{file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(file.size / 1024))} KB`}</small></span><button type="button" className="wb-icon-button" aria-label={`移除 ${file.name}`} disabled={uploadInBrowser} onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}><X size={15} /></button></li>)}</ul></div>}
         </div>
         {importNotice && <p className="wb-field-hint" role="status">{importNotice}</p>}

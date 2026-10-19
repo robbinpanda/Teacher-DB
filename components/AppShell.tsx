@@ -52,7 +52,7 @@ const navigation = [
   { href: "/papers", label: "试卷库", icon: FolderOpen },
   { href: "/classes", label: "班级学生", icon: Users, schoolOnly: true },
   { href: "/assignments", label: "作业批改", icon: ClipboardCheck, schoolOnly: true },
-  { href: "/settings/skills", label: "教学 Skills", icon: BookOpen },
+  { href: "/settings/skills", label: "识题规则", icon: BookOpen },
   { href: "/settings/models", label: "模型配置", icon: SlidersHorizontal },
   { href: "/settings/usage", label: "模型用量", icon: BarChart3 },
 ];
@@ -206,9 +206,10 @@ export function AppShell({ children, initialMode, initialScope }: { children: Re
             <button type="button" aria-pressed={mode === "school"} className={mode === "school" ? "active" : ""} disabled={modeChanging} onClick={() => void modeValue.setMode("school")}>学校教师</button>
           </div>
           {modeError && <p className="shell-mode-error" role="alert">{modeError}</p>}
-          <span className="nav-kicker">工作空间</span>
           <nav className="side-nav" aria-label="主导航">
-            {navigation.filter((item) => !item.schoolOnly || mode === "school").map(({ href, label, icon: Icon }) => {
+            {[{ label: "教学工作", settings: false }, { label: "设置与用量", settings: true }].map(group => <div className="nav-group" key={group.label}>
+            <span className="nav-kicker">{group.label}</span>
+            {navigation.filter((item) => (!item.schoolOnly || mode === "school") && item.href.startsWith("/settings/") === group.settings).map(({ href, label, icon: Icon }) => {
               const active = href === "/"
                 ? pathname === "/" || pathname.startsWith("/review")
                 : href === "/papers/new"
@@ -218,6 +219,7 @@ export function AppShell({ children, initialMode, initialScope }: { children: Re
                     : pathname.startsWith(href);
               return <Link key={href} href={href} className={active ? "active" : ""} aria-current={active ? "page" : undefined} onClick={() => setMobileNavOpen(false)}><i><Icon size={18} /></i><span>{label}</span></Link>;
             })}
+            </div>)}
           </nav>
           <div className="sidebar-footnote">
             {mode === "school" ? "出题 · 批改 · 教学分析" : "从原卷到题库"}

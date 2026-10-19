@@ -299,11 +299,11 @@
 .bank-explorer-page .knowledge-navigator :is(nav > button,.knowledge-all) { display:block; width:100%; border:0; background:transparent; border-radius:6px; padding:9px 10px; text-align:left; font-size:13px; line-height:1.5; color:#586e62; cursor:pointer; overflow-wrap:anywhere; }
 .bank-explorer-page .knowledge-navigator button[aria-pressed="true"] { color:var(--green-dark); background:#e8f1ec; font-weight:600; }
 .bank-explorer-page .knowledge-navigator nav { max-height:580px; overflow:auto; margin:4px 0 12px; }
-.bank-explorer-page .knowledge-navigator :is(small,p) { color:var(--muted); font-size:11px; line-height:1.7; }
+.bank-explorer-page .knowledge-navigator :is(small,p) { color:var(--muted); font-size:13px; line-height:1.7; }
 .bank-explorer-page .bank-browse-pane .bank-folder-pane { width:auto; min-width:0; min-height:0; padding:16px 12px; border:0; border-top:1px solid var(--resource-border); background:transparent; }
 .bank-explorer-page .bank-toolbar.explorer-toolbar { display:block; padding:16px 20px 12px; border-radius:0 12px 0 0; z-index:8; }
 .bank-explorer-page .bank-search-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
-.bank-explorer-page .bank-search-row .search-box { flex:1; min-width:160px; max-width:520px; height:38px; }
+.bank-explorer-page .bank-search-row .search-box { flex:1; min-width:160px; max-width:none; height:40px; }
 .bank-explorer-page .bank-search-row .clear-filter { margin-left:auto; white-space:nowrap; font-size:12px; }
 .bank-explorer-page .bank-search-row .clear-filter:disabled { opacity:.4; cursor:default; }
 .bank-explorer-page .bank-scope-controls { display:flex; align-items:center; gap:6px; }
@@ -320,14 +320,14 @@
 .bank-explorer-page .bank-applied-filters { margin:10px 0 0; align-items:center; gap:6px; padding-top:10px; border-top:1px solid #edf1ee; font-size:12px; }
 .bank-explorer-page .bank-applied-filters > span { color:var(--muted); margin-right:4px; }
 .bank-explorer-page .bank-applied-filters button { display:inline-flex; align-items:center; gap:6px; border:1px solid #dce7e0; border-radius:5px; padding:4px 7px; background:#f5f9f6; color:#4f6f5d; font-size:12px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
-.bank-explorer-page .bank-list-tools > span { font-size:11px; }
+.bank-explorer-page .bank-list-tools > span { font-size:12px; }
 .bank-explorer-page .bank-list-tools select { border:0; background:transparent; color:var(--muted); font-size:12px; }
 .bank-explorer-page .resource-bulkbar { gap:8px; }
 .bank-explorer-page .question-card { padding:20px 8px; gap:8px 12px; }
 .bank-explorer-page .question-card-main { min-width:0; }
 .bank-explorer-page .question-meta .question-tag { border:0; background:#f0f5f2; color:#537564; padding:3px 6px; border-radius:4px; font-size:11px; cursor:pointer; }
 .bank-explorer-page .question-stem { font-size:15px; line-height:1.85; }
-.bank-explorer-page .question-source-line { grid-column:2; display:flex; align-items:center; gap:8px; min-width:0; padding:4px 0; color:#829188; font-size:11px; }
+.bank-explorer-page .question-source-line { grid-column:2; display:flex; align-items:center; gap:8px; min-width:0; padding:4px 0; color:#566b60; font-size:12px; }
 .bank-explorer-page .question-source-line button { max-width:80%; text-align:left; color:inherit; font-size:inherit; border:0; background:none; padding:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; }
 .bank-explorer-page .question-source-line button:hover { color:var(--green); text-decoration:underline; }
 .bank-explorer-page .question-source-line small { white-space:nowrap; }
@@ -367,3 +367,11 @@
   .bank-explorer-page .bank-source-row > label select { max-width:100%; }
   .bank-explorer-page .question-actions { gap:4px; }
 }
+
+.bank-explorer-page .bank-scope-label { display: inline-block; vertical-align: middle; margin-left: 10px; padding: 5px 10px; border-radius: 6px; background: #e8f1ec; color: var(--green-dark); font-size: 13px; font-weight: 500; letter-spacing: 0; }
+.bank-explorer-page .bank-filter-row { gap: 8px; }
+.bank-explorer-page .bank-more-filters > div { width: min(300px, calc(100vw - 64px)); right: 0; left: auto; }
+.bank-explorer-page .bank-more-filters select { max-width: 100%; }
+.bank-explorer-page .bank-search-row .search-box input { font-size: 14px; }
+.bank-explorer-page .knowledge-search input, .bank-explorer-page .bank-list-tools select { font-size: 13px; }
+.bank-explorer-page .explorer-empty p { font-size: 14px; line-height: 1.8; }
