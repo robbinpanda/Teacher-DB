@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { MathText } from "./MathText";
 import { ClassificationBatches } from "./ClassificationBatches";
+import { QuestionStructureNotice } from './QuestionStructureNotice';
 import { difficultyLabels, questionCompetencies, questionMethods, type KnowledgeNode } from "../lib/knowledge-catalog";
 import type { QuestionClassification } from "../lib/question-classification";
 import type { RetrievalHit } from "../lib/knowledge-retrieval";
@@ -22,6 +23,7 @@ export function KnowledgeWorkbench({ scopeQuery, nodes, profileId,sources=[] }: 
   const [knowledgeId, setKnowledgeId] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [confirmedOnly, setConfirmedOnly] = useState(false);
+  const [structure,setStructure]=useState<'any'|'blocked'|'eligible'>('any');
   const [result, setResult] = useState<SearchResult | null>(null);
   const [method,setMethod]=useState(""),[competency,setCompetency]=useState(""),[type,setType]=useState(""),[documentId,setDocumentId]=useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -33,7 +35,7 @@ export function KnowledgeWorkbench({ scopeQuery, nodes, profileId,sources=[] }: 
     try { await action(); } catch (caught) { setError(caught instanceof Error ? caught.message : "操作失败"); } finally { setBusy(false); }
   }
   async function search(offset=0) {
-    setResult(await studioRequest(`/api/knowledge?${scopeQuery}`, "POST", { query, knowledgeIds: knowledgeId ? [knowledgeId] : undefined, difficulty: difficulty ? Number(difficulty) : undefined, confirmedOnly, methods:method?[method]:undefined,competencies:competency?[competency]:undefined,types:type?[type]:undefined,documentIds:documentId?[documentId]:undefined,limit:50,offset }));
+    setResult(await studioRequest(`/api/knowledge?${scopeQuery}`, "POST", { query, knowledgeIds: knowledgeId ? [knowledgeId] : undefined, difficulty: difficulty ? Number(difficulty) : undefined, confirmedOnly, structure, methods:method?[method]:undefined,competencies:competency?[competency]:undefined,types:type?[type]:undefined,documentIds:documentId?[documentId]:undefined,limit:50,offset }));
   }
   async function open(id: string) {
     const current = await studioRequest<Detail>(`/api/questions/${encodeURIComponent(id)}/classification?${scopeQuery}`);
@@ -55,6 +57,7 @@ export function KnowledgeWorkbench({ scopeQuery, nodes, profileId,sources=[] }: 
       <label>题型<select value={type} onChange={event=>setType(event.target.value)}><option value="">不限</option><option value="single">单选</option><option value="multiple">多选</option><option value="fill">填空</option><option value="answer">解答</option></select></label>
       <label>来源资料<select value={documentId} onChange={event=>setDocumentId(event.target.value)}><option value="">当前范围全部资料</option>{sources.map(source=><option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
       <label className="studio-check"><input type="checkbox" checked={confirmedOnly} onChange={event => setConfirmedOnly(event.target.checked)} />仅教师确认标签</label>
+      <label>题目结构<select value={structure} onChange={event=>setStructure(event.target.value as typeof structure)}><option value="any">全部</option><option value="blocked">结构需修复</option><option value="eligible">无明确结构错误</option></select></label>
       <button className="btn btn-primary" disabled={busy}>检索</button>
     </form>
     {error && <p role="alert" className="studio-error">{error}</p>}{notice && <p role="status">{notice}</p>}
@@ -64,12 +67,14 @@ export function KnowledgeWorkbench({ scopeQuery, nodes, profileId,sources=[] }: 
     <div className="studio-results">{result?.hits.map(hit => <article key={hit.id}>
       <header><label><input type="checkbox" aria-label={`选择题目 ${hit.id}`} checked={selected.includes(hit.id)} disabled={!selected.includes(hit.id)&&selected.length>=200} onChange={event => setSelected(current => event.target.checked ? [...current, hit.id] : current.filter(id => id !== hit.id))} /> {hit.documentName}</label><span>{hit.classification ? `${difficultyLabels[hit.classification.difficulty]} · ${hit.classificationStatus === "confirmed" ? "已确认" : "模型建议"}` : hit.classificationStatus === "stale" ? "标签已过期" : "待标注"}</span></header>
       <MathText text={hit.stem} /><ul>{hit.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
+      {hit.structureIssues?.some(issue=>issue.severity==='error') && <QuestionStructureNotice issues={hit.structureIssues} documentId={hit.documentId} questionId={hit.id}/>}
       <button className="btn" disabled={busy} onClick={() => void operate(() => open(hit.id))}>查看题目与标签</button>
     </article>)}</div>
     {result?.total === 0 && <div className="studio-empty">没有符合条件的题目。可以取消“仅教师确认”、调整难度，或先导入相关资料。</div>}
     {detail && <div className="studio-detail" role="region" aria-label="题目标注">
       <header><h2>核对题目与标签</h2><button className="btn" disabled={busy} onClick={() => { setDetail(null); setDraft(null); }}>关闭</button></header>
-      <MathText text={detail.question.stem} />{detail.question.options?.map(option => <p key={option.key}>{option.key}. <MathText text={option.content} /></p>)}
+      <QuestionStructureNotice issues={detail.structureIssues} documentId={detail.documentId} questionId={detail.id}/>
+      <MathText text={detail.question.stem} />{detail.question.options?.map((option,index) => <p key={`${index}:${option.key}`}>{option.key}. <MathText text={option.content} /></p>)}
       {detail.question.assets.filter(asset => asset.url).map(asset => <Image key={asset.id} src={asset.url!} alt={asset.label} width={asset.width ?? 800} height={asset.height ?? 600} unoptimized style={{ width: "auto", height: "auto" }} />)}
       <p><strong>答案：</strong><MathText text={detail.question.answer} /></p><p><strong>解析：</strong><MathText text={detail.question.analysis} /></p>
       <button className="btn" disabled={busy || !profileId || detail.classificationStatus === "confirmed"} onClick={() => void operate(async () => {

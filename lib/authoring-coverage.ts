@@ -3,6 +3,7 @@ import type { AuthoringChapter } from "./authoring-content.ts";
 import type { EducationScope } from "./education-scope.ts";
 import { expandKnowledgeIds, knowledgeCatalog } from "./knowledge-catalog.ts";
 import { questionIdentityKey } from "./question-identity.ts";
+import { hasQuestionStructureErrors } from "./question-structure.ts";
 
 /** Maximum matching: a shared question cannot satisfy two quotas. Reassign broad slots to protect narrow ones. */
 export function allocateUniqueQuestions(groups: Array<{ count: number; candidates: Array<{ id: string; key: string }> }>) {
@@ -29,7 +30,7 @@ export function allocateUniqueQuestions(groups: Array<{ count: number; candidate
 type Role = "example" | "practice" | "assessment";
 type Count = { planned: number; selected: number; adopted: number; difficulties: number[] };
 export type WorkCoverageRow = { id: string; label: string; written: boolean; adoptedKnowledge: boolean; roles: Record<Role, Count>; complete: boolean };
-export type WorkCoverage = { rows: WorkCoverageRow[]; plannedQuestions: number; selectedQuestions: number; adoptedQuestions: number; staleQuestionIds: string[]; duplicateQuestionIds: string[]; ready: boolean };
+export type WorkCoverage = { rows: WorkCoverageRow[]; plannedQuestions: number; selectedQuestions: number; adoptedQuestions: number; staleQuestionIds: string[]; duplicateQuestionIds: string[]; structureProblemQuestionIds?:string[]; ready: boolean };
 
 /** Evidence comes from saved content and explicit teacher adoption, never from a heading alone. */
 export function inspectWorkCoverage(plan: AuthoringPlan, request: AuthoringRequest, chapters: AuthoringChapter[], scope: EducationScope, staleQuestionIds: string[] = []): WorkCoverage {
@@ -40,6 +41,7 @@ export function inspectWorkCoverage(plan: AuthoringPlan, request: AuthoringReque
   const rows: WorkCoverageRow[] = catalog.filter(node => targetIds.has(node.id)).map(node => ({ id: node.id, label: node.label, written: false, adoptedKnowledge: false,
     roles: { example: emptyCount(), practice: emptyCount(), assessment: emptyCount() }, complete: false }));
   const seenIds = new Set<string>(), seenStems = new Set<string>(), duplicates: string[] = [];
+  const structureProblems = new Set<string>();
   let plannedQuestions = 0, selectedQuestions = 0, adoptedQuestions = 0;
   for (const chapterPlan of plan.chapters) {
     const chapter = chapters.find(chapter => chapter.plan.id === chapterPlan.id), content = chapter?.content;
@@ -60,6 +62,7 @@ export function inspectWorkCoverage(plan: AuthoringPlan, request: AuthoringReque
       for (const item of content?.items.filter(item => item.slotIndex === slotIndex) ?? []) {
         const question = content!.questions.find(question => question.id === item.questionId);
         if (!question || stale.has(item.questionId)) continue;
+        if (hasQuestionStructureErrors(question)) { structureProblems.add(question.id); continue; }
         const stem = questionIdentityKey(question);
         if (seenIds.has(question.id) || seenStems.has(stem)) { duplicates.push(question.id); continue; }
         seenIds.add(question.id); seenStems.add(stem); selectedQuestions++;
@@ -78,6 +81,6 @@ export function inspectWorkCoverage(plan: AuthoringPlan, request: AuthoringReque
       (educational ? row.adoptedKnowledge && row.roles.example.planned > 0 && row.roles.practice.planned > 0 : roles.some(role => row.roles[role].planned > 0));
     for (const role of roles) row.roles[role].difficulties.sort((a, b) => a - b);
   }
-  return { rows, plannedQuestions, selectedQuestions, adoptedQuestions, staleQuestionIds: [...stale], duplicateQuestionIds: duplicates,
+  return { rows, plannedQuestions, selectedQuestions, adoptedQuestions, staleQuestionIds: [...stale], duplicateQuestionIds: duplicates, structureProblemQuestionIds:[...structureProblems],
     ready: rows.length > 0 && rows.every(row => row.complete) && !stale.size && !duplicates.length && adoptedQuestions === plannedQuestions && chapters.length === plan.chapters.length && chapters.every(chapter => chapter.status === "approved" && !chapter.content?.gaps.length) };
 }

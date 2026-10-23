@@ -5,10 +5,12 @@ import { requestOwner } from "../../../../lib/server";
 import { requestEducationScope } from "../../../../lib/education-scope";
 import { knowledgeCatalog, knowledgeCatalogVersion, curriculumSource, questionMethods, questionCompetencies } from "../../../../lib/knowledge-catalog";
 import { loadRetrievalRows, rankQuestions } from "../../../../lib/knowledge-retrieval";
+import { MAX_AUTHORING_SOURCES } from "../../../../lib/authoring-plan";
 
 const searchSchema = z.object({
   query: z.string().max(300).optional(), knowledgeIds: z.array(z.string().max(150)).max(30).optional(),
-  documentIds: z.array(z.string().min(1).max(100)).max(100).optional(), types: z.array(z.enum(["single","multiple","fill","answer"])).max(4).optional(),
+  documentIds: z.array(z.string().min(1).max(100)).max(MAX_AUTHORING_SOURCES).optional(), types: z.array(z.enum(["single","multiple","fill","answer"])).max(4).optional(),
+  structure: z.enum(['any','blocked','eligible']).optional(),
   difficulty: z.number().int().min(1).max(5).optional(), confirmedOnly: z.boolean().optional(), match: z.enum(["any","all"]).optional(),
   excludeIds: z.array(z.string().max(100)).max(1000).optional(), limit: z.number().int().min(1).max(100).optional(),
   methods: z.array(z.enum(questionMethods)).max(6).optional(), competencies: z.array(z.enum(questionCompetencies)).max(5).optional(),

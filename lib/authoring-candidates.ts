@@ -26,19 +26,27 @@ export function diversifyCandidates(hits: RetrievalHit[], keyFor: (hit: Retrieva
 }
 
 export function chapterCandidateLists(rows:RetrievalRow[],scope:EducationScope,slots:Slot[]) {
+  return chapterCandidateInventory(rows,scope,slots).lists;
+}
+export function chapterCandidateInventory(rows:RetrievalRow[],scope:EducationScope,slots:Slot[]) {
   const cache = new Map<string,RetrievalHit[]>();
   const identities = new Map(rows.map(row => [row.id, questionIdentityKey(row)]));
-  return slots.map(slot=>{
+  const structureExclusions: Array<{slotIndex:number;count:number}> = [];
+  const lists = slots.map((slot,slotIndex)=>{
     const key=JSON.stringify([slot.knowledgeIds,slot.type]);
     let hits=cache.get(key);
     if(!hits){hits=matchQuestions(rows,scope,{knowledgeIds:slot.knowledgeIds,match:'all',types:slot.type==='any'?undefined:[slot.type]}).hits;cache.set(key,hits);}
     // A valid assessed difficulty cannot be overridden by the unfiltered fallback.
     // Stale/unknown labels remain candidates for explicit model/teacher judgement.
-    return diversifyCandidates(hits.filter(hit=>!hit.classification || hit.classification.difficulty===slot.difficulty), hit => identities.get(hit.id)!);
+    const matching = hits.filter(hit=>!hit.classification || hit.classification.difficulty===slot.difficulty);
+    const blocked = matching.filter(hit=>hit.structureIssues?.some(issue=>issue.severity==='error'));
+    if(blocked.length)structureExclusions.push({slotIndex,count:blocked.length});
+    return diversifyCandidates(matching.filter(hit=>!hit.structureIssues?.some(issue=>issue.severity==='error')), hit => identities.get(hit.id)!);
   });
+  return {lists,structureExclusions};
 }
 
-export type SelectionAudit = { rounds:number; traceIds:string[]; slots:Array<{slotIndex:number;eligible:number;compared:number;remaining:number}> };
+export type SelectionAudit = { rounds:number; traceIds:string[]; slots:Array<{slotIndex:number;eligible:number;compared:number;remaining:number}>; structureExclusions?:Array<{slotIndex:number;count:number}> };
 export const selectionCheckpointSchema=z.object({
   version:z.literal(1), positions:z.array(z.number().int().nonnegative()).max(30), sizes:z.array(z.number().int().nonnegative()).max(30),
   seen:z.array(z.array(z.string().min(1).max(100))).max(30), rounds:z.number().int().nonnegative(), traceIds:z.array(z.string()), finished:z.boolean(),

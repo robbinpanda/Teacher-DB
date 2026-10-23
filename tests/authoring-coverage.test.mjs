@@ -53,3 +53,9 @@ test('整份作品采用后同题干不同选项或题图仍计为不同题，�
   assert.equal(inspectWorkCoverage(plan,request,values,scope).ready,false);
  }
 });
+
+test('旧作品里结构缺失的题不能只凭已采用状态继续充当有效覆盖',()=>{
+ const values=chapters();Object.assign(values[0].content.questions[0],{type:'single',answer:'A',options:[]});
+ const coverage=inspectWorkCoverage(plan,request,values,scope);
+ assert.equal(coverage.ready,false);assert.equal(coverage.selectedQuestions,3);assert.deepEqual(coverage.structureProblemQuestionIds,['q0']);
+});

@@ -13,6 +13,7 @@ import { getAuthoringDocument } from "../server/services/authoring-output.ts";
 import { readModel } from "../server/http/read-models.ts";
 import { createPaperExportToken } from "../lib/paper-export-token.ts";
 import { fingerprintRow, loadRetrievalRows } from "../lib/knowledge-retrieval.ts";
+import { getApprovedQuestions } from "../lib/question-repository.ts";
 
 await ensureDatabase();
 const db = getSqlite(), scope = { subject: "数学", stage: "high" as const }, now = new Date().toISOString();
@@ -287,5 +288,29 @@ try {
   assert.equal(identityPrint.chapters.flatMap(chapter=>chapter.content!.questions).length,4);
   const figures=identityPrint.chapters.flatMap(chapter=>chapter.content!.questions).filter(question=>question.id==='identity-c'||question.id==='identity-d');
   assert.equal(figures.length,2);assert.notEqual(figures[0].assets[0].url,figures[1].assets[0].url,'both distinct figures survive print preparation');
-  console.log("chapter workflow passed: selection, answer review, identity-aware cross-chapter filtering and supply, teacher edits, recovery, publication, source freshness and leases");
+  // A pre-existing approved question can still have unusable option labels.
+  for (const planned of plan.chapters) for (const item of planned.slots) item.type='any';
+  db.prepare("UPDATE questions SET type='single',options_json=?,answer='A' WHERE id='identity-copy'").run(JSON.stringify([{key:'A',content:'π'},{key:'A',content:'2π'}]));
+  const structural=await create('handout','identity-doc');
+  assert.ok(inspectAuthoringCoverage('teacher',scope,structural.id).flatMap(c=>c.slots).every(s=>s.structureBlockedCount===1));
+  await kickAuthoringChapters();await kickAuthoringChapters();
+  const usable=read(structural.id),structureChapter=usable.chapters[0];
+  assert.ok(usable.chapters.every(c=>c.status==='complete'));
+  assert.ok(usable.chapters.every(c=>c.content!.selectionAudit!.structureExclusions!.every(s=>s.count===1)));
+  const badItems=structureChapter.content!.items.map((item,index)=>index===0?{...item,questionId:'identity-copy'}:item);
+  await assert.rejects(()=>editAuthoringChapter('teacher',scope,usable.id,structureChapter.id,structureChapter.revision,{...structureChapter.content,items:badItems}),/选项编号重复/);
+  // Simulate a legacy snapshot whose source fingerprint still matches. It must
+  // not be adopted/exported, but replacing its broken question must be possible.
+  const broken={...structureChapter.content!,items:badItems,questions:await getApprovedQuestions('teacher',badItems.map(item=>item.questionId),scope)};
+  broken.questionFingerprints=Object.fromEntries(loadRetrievalRows(db,'teacher',scope,['identity-doc'],badItems.map(item=>item.questionId)).map(row=>[row.id,fingerprintRow(row,scope)]));
+  db.prepare("UPDATE authoring_chapters SET content_json=? WHERE id=?").run(JSON.stringify(broken),structureChapter.id);
+  assert.throws(()=>approveAuthoringChapter('teacher',scope,usable.id,structureChapter.id,structureChapter.revision,''),/选项编号重复/);
+  db.prepare("UPDATE authoring_chapters SET status='approved' WHERE project_id=?").run(usable.id);
+  db.prepare("UPDATE authoring_projects SET status='completed' WHERE id=?").run(usable.id);
+  assert.throws(()=>readyAuthoringProject('teacher',scope,usable.id),/选项编号重复/);
+  const repaired=await editAuthoringChapter('teacher',scope,usable.id,structureChapter.id,structureChapter.revision,structureChapter.content);
+  assert.equal(repaired.chapters[0].status,'needs_review');
+  assert.deepEqual(repaired.workCoverage!.structureProblemQuestionIds,[]);
+  assert.equal(repaired.chapters[0].content!.review.passed,false,'replacement requires a new review');
+  console.log("chapter workflow passed: selection, answer review, structure exclusion and legacy repair, identity-aware cross-chapter filtering and supply, teacher edits, recovery, publication, source freshness and leases");
 } finally { globalThis.fetch = originalFetch; db.close(); }

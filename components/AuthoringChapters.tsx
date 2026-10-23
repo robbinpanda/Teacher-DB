@@ -8,6 +8,8 @@ import { studioRequest } from "./KnowledgeWorkbench";
 import type { AuthoringChapter, SavedChapterContent, AuthoringChapterVersion } from "../lib/authoring-content";
 import type { RetrievalHit } from "../lib/knowledge-retrieval";
 import type { QuestionWithSource } from "../lib/types";
+import { inspectQuestionStructure } from '../lib/question-structure';
+import { QuestionStructureNotice } from './QuestionStructureNotice';
 
 const labels: Record<AuthoringChapter["status"], string> = { pending: "等待处理", running: "正在选题、编写与审校", complete: "模型未发现问题，待核对", needs_review: "有缺口或审校问题", failed: "处理失败", approved: "教师已采用" };
 export function AuthoringChapters({ projectId, projectRevision, projectStatus, chapters, scopeQuery, documentIds, onUpdate, onDirty }: {
@@ -46,7 +48,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
     setLookup({ slot, replace });
     const target = chapter.plan.slots[slot];
     const result = await studioRequest<{ hits: RetrievalHit[] }>(`/api/knowledge?${scopeQuery}`, "POST", { query, knowledgeIds: target.knowledgeIds, match: "all", types: target.type === "any" ? undefined : [target.type],
-      documentIds: documentIds.length ? documentIds : undefined, excludeIds: draft?.items.map(item => item.questionId), limit: 30 });
+      documentIds: documentIds.length ? documentIds : undefined, excludeIds: draft?.items.map(item => item.questionId), structure:'eligible', limit: 30 });
     setHits(result.hits);
   }
   return <article className="studio-chapter-content">
@@ -84,6 +86,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
       })}</details>}
       {!draft.review.passed && <div className="studio-error"><strong>待核对的问题</strong><ul>{draft.review.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></div>}
       {draft.selectionAudit && <details><summary>自动选题比较记录（{draft.selectionAudit.rounds} 批）</summary><p>只对已展示给模型的候选做了比较；题量满足后停止补查。教师修改内容不会改写这次记录。</p><ul>{draft.selectionAudit.slots.map(slot => <li key={slot.slotIndex}>第 {slot.slotIndex + 1} 组：符合检索条件 {slot.eligible} 道，已比较 {slot.compared} 道，尚未比较 {slot.remaining} 道。</li>)}</ul></details>}
+      {!!draft.selectionAudit?.structureExclusions?.length && <div className="studio-gap" aria-label="自动选题排除的结构问题"><p>以下候选存在选项或答案结构问题，本次未自动选用。可在“精准选题与标注”中筛选“结构需修复”，打开原题核对。</p><ul>{draft.selectionAudit.structureExclusions.map(item=><li key={item.slotIndex}>第 {item.slotIndex+1} 组排除 {item.count} 道（各组独立统计）。</li>)}</ul></div>}
       {!!draft.review.suggestions?.length && <details className="studio-review-suggestions"><summary>可选教学建议（不影响审校结论）</summary><ul>{draft.review.suggestions.map((suggestion,index)=><li key={index}><MathText text={suggestion}/></li>)}</ul></details>}
       {editing ? <label>导入说明<textarea value={draft.introduction} onChange={event => edit({ ...draft, introduction: event.target.value })} /></label> : <p><MathText text={draft.introduction} /></p>}
       {draft.knowledge.map((knowledge, index) => <section className="studio-knowledge-body" key={knowledge.id}>
@@ -97,7 +100,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
         const question = draft.questions.find(question => question.id === item.questionId), slot = chapter.plan.slots[item.slotIndex];
         return <section className="studio-selected-question" key={`${index}:${item.questionId}`}>
           <h4>{slot.role === "example" ? "例题" : slot.role === "practice" ? "练习" : "检测"} {index + 1}</h4>
-          {question && <><p><MathText text={question.stem} /></p>{question.options?.map(option => <p key={option.key}>{option.key}. <MathText text={option.content} /></p>)}
+          {question && <><QuestionStructureNotice issues={inspectQuestionStructure(question)} documentId={question.source.documentId} questionId={question.id}/><p><MathText text={question.stem} /></p>{question.options?.map((option,index) => <p key={`${index}:${option.key}`}>{option.key}. <MathText text={option.content} /></p>)}
             {question.assets.filter(asset => asset.url).map(asset => <Image key={asset.id} src={asset.url!} alt={asset.label} width={asset.width ?? 600} height={asset.height ?? 400} unoptimized style={{ width: "auto", height: "auto", maxWidth: "100%", maxHeight: 400 }} />)}
             <small>来源：{question.source.documentName} · 原第 {question.number} 题</small><p><strong>题库答案：</strong><MathText text={question.answer} /></p></>}
           {editing ? <><label>选题理由<textarea value={item.selectionReason} onChange={event => edit({ ...draft, items: draft.items.map((entry, i) => i === index ? { ...entry, selectionReason: event.target.value } : entry) })} /></label><label>讲解与方法总结<textarea rows={6} value={item.teachingExplanation} onChange={event => edit({ ...draft, items: draft.items.map((entry, i) => i === index ? { ...entry, teachingExplanation: event.target.value } : entry) })} /></label><button className="btn" disabled={busy} onClick={() => void operate(() => findQuestions(item.slotIndex, index))}>替换这道题</button></>
@@ -106,7 +109,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
       })}
       {editing && draft.gaps.map(gap => <button className="btn" disabled={busy} key={gap.slotIndex} onClick={() => void operate(() => findQuestions(gap.slotIndex, null))}>为第 {gap.slotIndex + 1} 组补题</button>)}
       {editing && lookup && <div className="studio-replacement"><h4>选择替换或补充题目</h4><label>补充关键词<input value={query} onChange={event => setQuery(event.target.value)} /></label><button className="btn" disabled={busy} onClick={() => void operate(() => findQuestions(lookup.slot, lookup.replace))}>查找候选</button>
-        {hits.length === 0 && <p>指定资料中没有找到候选，请导入相关题目后重新生成本章。</p>}
+        {hits.length === 0 && <p>指定资料中没有找到结构可用的候选。可以调整关键词，或在“精准选题与标注”中检查并修复原题。</p>}
         {hits.map(hit => <article key={hit.id}><MathText text={hit.stem} /><p>{hit.documentName}</p><button className="btn" disabled={busy} onClick={() => void operate(async () => {
           const result = await studioRequest<{ question: QuestionWithSource }>(`/api/questions/${hit.id}/classification?${scopeQuery}`);
           const replacement = { slotIndex: lookup.slot, questionId: hit.id, selectionReason: "", teachingExplanation: result.question.analysis };

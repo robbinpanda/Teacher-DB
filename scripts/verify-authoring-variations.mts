@@ -34,9 +34,13 @@ globalThis.fetch=async(_url,init)=>{
 async function create(){const p=await createAuthoringProject("teacher",scope,request);return controlWholePaperVariation("teacher",scope,p.id,p.revision,"generate");}
 let project=await create();
 assert.deepEqual(project.variation!.items.map(i=>[i.number,i.score]),[["3",5],["6",10]]);
-db.prepare("UPDATE questions SET type='multiple',answer='B' WHERE id='q1'").run();
+db.prepare("UPDATE questions SET type='single',answer='B' WHERE id='q1'").run();
+await assert.rejects(()=>createAuthoringProject('teacher',scope,request),/结构需修复.*不足两个/);
+db.prepare("UPDATE questions SET options_json=? WHERE id='q1'").run(JSON.stringify([{key:'A',content:'1'},{key:'A',content:'2'}]));
+await assert.rejects(()=>createAuthoringProject('teacher',scope,request),/结构需修复.*编号重复/);
+db.prepare("UPDATE questions SET type='multiple',answer='B',options_json=? WHERE id='q1'").run(JSON.stringify([{key:'A',content:'1'},{key:'B',content:'2'}]));
 await assert.rejects(()=>createAuthoringProject("teacher",scope,request),/题型与答案个数/);
-db.prepare("UPDATE questions SET type='fill',answer='2' WHERE id='q1'").run();
+db.prepare("UPDATE questions SET type='fill',answer='2',options_json=NULL WHERE id='q1'").run();
 await assert.rejects(()=>createAuthoringProject("other",scope,request),/不存在/);
 await assert.rejects(()=>createAuthoringProject("teacher",{...scope,stage:"middle"},request),/学科/);
 await controlWholePaperVariation("teacher",scope,project.id,project.revision,"pause");

@@ -7,6 +7,7 @@ export function AuthoringCoverage({ coverage, educational }: { coverage: WorkCov
     <p>“已选”来自已保存的正文，“教师采用”表示老师已核对该章。难度是大纲中的教学目标；本表不把章节标题或关键词命中当作已完成覆盖。</p>
     {!!coverage.staleQuestionIds.length && <p className="studio-error">{coverage.staleQuestionIds.length} 道引用题目已变化或不可用，已从有效覆盖中移除，请修订对应章节。</p>}
     {!!coverage.duplicateQuestionIds.length && <p className="studio-error">发现 {coverage.duplicateQuestionIds.length} 道重复题，未重复计算覆盖，请替换后重新核对。</p>}
+    {!!coverage.structureProblemQuestionIds?.length && <p className="studio-error">{coverage.structureProblemQuestionIds.length} 道引用题目存在结构问题，未计入有效覆盖；请打开对应章节修复原题或换题。</p>}
     <div className="studio-coverage-table"><table><thead><tr><th>考点与核对状态</th>{educational && <th>知识讲解</th>}<th>例题：已选/计划</th><th>练习：已选/计划</th><th>检测：已选/计划</th></tr></thead>
       <tbody>{coverage.rows.map(row => <tr key={row.id}><th scope="row">{row.label}<small>{row.complete ? "已完成核对" : "尚未完成"}</small></th>{educational && <td>{row.adoptedKnowledge ? "教师已采用" : row.written ? "已编写，待核对" : "尚未编写"}</td>}
         {(["example", "practice", "assessment"] as const).map(role => <td key={role}>{row.roles[role].selected}/{row.roles[role].planned}<small>教师采用 {row.roles[role].adopted} 题</small>{!!row.roles[role].difficulties.length && <small>目标：{row.roles[role].difficulties.map(level => difficultyLabels[level]).join(" → ")}</small>}</td>)}

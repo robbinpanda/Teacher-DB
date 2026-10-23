@@ -130,7 +130,7 @@ export function inspectAuthoringCoverage(ownerId: string, scope: EducationScope,
     const result = cached.get(key) ?? matchQuestions(rows, scope, { knowledgeIds: slot.knowledgeIds, match: "all", types: slot.type === "any" ? undefined : [slot.type] });
     cached.set(key, result);
     const counts = result.difficultyCounts.find(count => count.difficulty === slot.difficulty)!;
-    const eligible = result.hits.filter(hit => hit.classification?.difficulty === slot.difficulty && slot.knowledgeIds.every(id => expandKnowledgeIds([id], catalog).some(id => hit.matchedKnowledgeIds.includes(id))));
+    const eligible = result.hits.filter(hit => !hit.structureIssues?.some(issue=>issue.severity==='error') && hit.classification?.difficulty === slot.difficulty && slot.knowledgeIds.every(id => expandKnowledgeIds([id], catalog).some(id => hit.matchedKnowledgeIds.includes(id))));
     return { slot, result, counts, eligible };
   }));
   const allocate = (confirmed: boolean) => allocateUniqueQuestions(matching.map(({ slot, eligible }) => ({ count: slot.count,
@@ -138,7 +138,7 @@ export function inspectAuthoringCoverage(ownerId: string, scope: EducationScope,
   const confirmed = allocate(true), classified = allocate(false); let index = 0;
   return project.plan.chapters.map(chapter => ({ id: chapter.id, title: chapter.title, slots: chapter.slots.map(() => {
     const at = index++, { slot, result, counts } = matching[at];
-    return { ...slot, candidateCount: result.total, difficultyMatchedCount: counts.classified, confirmedCount: counts.confirmed,
+    return { ...slot, candidateCount: result.total, structureBlockedCount: result.hits.filter(hit=>hit.structureIssues?.some(issue=>issue.severity==='error')).length, difficultyMatchedCount: counts.classified, confirmedCount: counts.confirmed,
       allocatedConfirmedCount: confirmed[at].length, allocatedClassifiedCount: classified[at].length,
       shortage: Math.max(0, slot.count - confirmed[at].length), taggedShortage: Math.max(0, slot.count - classified[at].length), candidates: result.hits.slice(0, 12) };
   }) }));

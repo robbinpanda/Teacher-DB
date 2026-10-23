@@ -758,11 +758,15 @@ export function ReviewWorkspace({
           <ReviewContentField disabled={reviewBusy} label="题干" editing={editingContent === "stem"} onEdit={() => setEditingContent("stem")} onDone={() => setEditingContent(null)} preview={<MathText text={active.stem || "暂无题干，点击补充"} />}>
             <textarea aria-label="题干 LaTeX" rows={6} value={active.stem} onChange={(event) => patchActive({ stem: event.target.value })} />
           </ReviewContentField>
-          {["single", "multiple"].includes(active.type) && <ReviewContentField disabled={reviewBusy} label="选项" editing={editingContent === "options"} onEdit={() => setEditingContent("options")} onDone={() => setEditingContent(null)} preview={<div className="review-option-preview">{(active.options ?? []).map(option => <div key={option.key}><b>{option.key}.</b><MathText text={option.content || "待补充"} /></div>)}</div>}>
+          {["single", "multiple"].includes(active.type) && <ReviewContentField disabled={reviewBusy} label="选项" editing={editingContent === "options"} onEdit={() => setEditingContent("options")} onDone={() => setEditingContent(null)} preview={<div className="review-option-preview">{(active.options ?? []).map((option,index) => <div key={index}><b>{option.key}.</b><MathText text={option.content || "待补充"} /></div>)}</div>}>
             <div className="option-editor">
-
+              <small>编号、内容均可编辑；请与原卷及答案保持一致。</small>
               {(active.options ?? []).map((option, index) => (
-                <label key={option.key}><b>{option.key}</b><input value={option.content} onChange={(event) => patchActive({ options: active.options?.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item) })} /></label>
+                <div className="option-editor-row" key={index}>
+                  <input aria-label={`第 ${index+1} 个选项编号`} maxLength={20} value={option.key} onChange={(event) => patchActive({ options: active.options?.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item) })}/>
+                  <input aria-label={`第 ${index+1} 个选项内容`} value={option.content} onChange={(event) => patchActive({ options: active.options?.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item) })}/>
+                  <button type="button" className="icon-btn" aria-label={`删除第 ${index+1} 个选项`} onClick={()=>patchActive({options:active.options?.filter((_,itemIndex)=>itemIndex!==index)})}><X size={14}/></button>
+                </div>
               ))}
               <button type="button" className="btn btn-small" onClick={() => patchActive({ options: [...(active.options ?? []), { key: String.fromCharCode(65 + (active.options?.length ?? 0)), content: "" }] })}><Plus size={12} /> 添加选项</button>
             </div>

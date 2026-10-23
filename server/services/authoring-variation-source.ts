@@ -7,6 +7,7 @@ import { normalizePaperSettings, scoreForQuestion } from "../../lib/paper-templa
 import { variationSourceSnapshotHash } from "../../lib/variation-workflow";
 import { isVariationQuestion } from "../../lib/question-provenance";
 import { getSqlite } from "../../db";
+import { inspectQuestionStructure } from "../../lib/question-structure";
 
 export async function prepareWholePaperSource(owner: string, scope: EducationScope, request: AuthoringRequest): Promise<WholePaperSource> {
   const source = request.sourcePaperKind === "uploaded" ? await getUploadedPaperData(request.sourcePaperId!, owner) : await getPaperData(request.sourcePaperId!, owner);
@@ -16,6 +17,8 @@ export async function prepareWholePaperSource(owner: string, scope: EducationSco
   if (approved.length !== source.questions.length || approved.some(q => q.needsHumanReview)) throw new Error("原卷包含未核对或其他学科学段的题目，请先完成原卷审核");
   if (approved.some(isVariationQuestion)) throw new Error("原卷包含已有 AI 变式题，请选择原始试卷，避免多次改写导致考点漂移");
   for (const question of approved) {
+    const errors=inspectQuestionStructure(question).filter(issue=>issue.severity==='error');
+    if(errors.length)throw new Error(`原第 ${question.number} 题结构需修复：${errors.map(issue=>issue.message).join(' ')}请先核对原题后再创建变式卷。`);
     const answer = question.answer.replace(/[\s,，、;；]/g, "");
     if (/^[A-H]+$/.test(answer) && (question.type === "multiple" && answer.length < 2 || question.type === "single" && answer.length !== 1)) {
       throw new Error(`原第 ${question.number} 题的题型与答案个数不一致，请先核对原题的单选/多选分类后再创建变式卷`);

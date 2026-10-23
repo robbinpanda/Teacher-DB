@@ -3,6 +3,7 @@ import { documentScopeSql, type EducationScope } from "./education-scope.ts";
 import { classificationFingerprint, parseClassification, type QuestionClassification } from "./question-classification.ts";
 import { expandKnowledgeIds, knowledgeCatalog, resolveKnowledgeTerms } from "./knowledge-catalog.ts";
 import { questionOptionText, trigonometryDiscoveryClues } from "./trigonometry-discovery.ts";
+import { inspectQuestionStructure, type QuestionStructureIssue } from "./question-structure.ts";
 
 export type RetrievalRow = {
   id: string; type: string; stem: string; optionsJson: string | null; answer: string; analysis: string;
@@ -14,16 +15,19 @@ export type RetrievalOptions = {
   documentIds?: string[]; types?: string[]; difficulty?: number; confirmedOnly?: boolean;
   methods?: string[]; competencies?: string[];
   excludeIds?: string[]; limit?: number; offset?: number;
+  structure?: 'any' | 'blocked' | 'eligible';
 };
 export type RetrievalHit = {
   id: string; type: string; stem: string; documentId: string; documentName: string; grade: string;
   score: number; reasons: string[]; classification: QuestionClassification | null;
   classificationStatus: "confirmed" | "suggested" | "stale" | "unclassified";
   matchedKnowledgeIds: string[]; evidenceKind: "confirmed" | "suggested" | "legacy" | "keyword";
+  structureIssues?: QuestionStructureIssue[];
 };
+function parsedJson(value: string | null) { try { return JSON.parse(value ?? '[]'); } catch { return { invalidJson: value }; } }
 export function fingerprintRow(row: RetrievalRow, scope: EducationScope) {
-  return classificationFingerprint({ stem: row.stem, options: JSON.parse(row.optionsJson ?? "[]"), answer: row.answer,
-    analysis: row.analysis, assets: JSON.parse(row.assetsJson), ...scope });
+  return classificationFingerprint({ stem: row.stem, options: parsedJson(row.optionsJson), answer: row.answer,
+    analysis: row.analysis, assets: parsedJson(row.assetsJson), ...scope });
 }
 
 export function loadRetrievalRows(sqlite: Database.Database, ownerId: string, scope: EducationScope, documentIds?: string[], questionIds?: string[]) {
@@ -58,6 +62,8 @@ export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, opti
   const hits: RetrievalHit[] = [];
   for (const row of rows) {
     if (excluded.has(row.id) || options.types?.length && !options.types.includes(row.type)) continue;
+    const structureIssues = inspectQuestionStructure(row), blocked = structureIssues.some(issue => issue.severity === 'error');
+    if (options.structure === 'blocked' && !blocked || options.structure === 'eligible' && blocked) continue;
     let classification: QuestionClassification | null = null;
     let status: RetrievalHit["classificationStatus"] = row.classificationJson ? "stale" : "unclassified";
     if (row.classificationJson && row.classificationFingerprint === fingerprintRow(row, scope)) {
@@ -66,7 +72,8 @@ export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, opti
     }
     if (options.confirmedOnly && status !== "confirmed" || options.difficulty !== undefined && classification?.difficulty !== options.difficulty) continue;
     if (options.methods?.some(method => !classification?.methods.includes(method as QuestionClassification["methods"][number])) || options.competencies?.some(competency => !classification?.competencies.includes(competency as QuestionClassification["competencies"][number]))) continue;
-    const tags = JSON.parse(row.tagsJson) as string[];
+    const rawTags: unknown = parsedJson(row.tagsJson);
+    const tags = Array.isArray(rawTags) ? rawTags.filter((tag): tag is string => typeof tag === 'string') : [];
     const exactIds = new Set(classification?.knowledge.map(item => item.id) ?? []);
     // Legacy strings may aid discovery, but never count as a confirmed knowledge assessment.
     const legacyIds = new Set(nodes.filter(node => tags.some(tag => node.label === tag || node.aliases.includes(tag))).map(node => node.id));
@@ -123,11 +130,11 @@ export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, opti
     if (options.methods?.length) reasons.push(`解题方法：${options.methods.join("、")}（${status === "confirmed" ? "教师确认" : "模型建议"}）`);
     if (options.competencies?.length) reasons.push(`考查能力：${options.competencies.join("、")}（${status === "confirmed" ? "教师确认" : "模型建议"}）`);
     hits.push({ id: row.id, type: row.type, stem: row.stem, documentId: row.documentId, documentName: row.documentName, grade: row.grade,
-      score, reasons, classification, classificationStatus: status, matchedKnowledgeIds: [...matched], evidenceKind });
+      score, reasons, classification, classificationStatus: status, matchedKnowledgeIds: [...matched], evidenceKind, structureIssues });
   }
   hits.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   const difficultyCounts = [1, 2, 3, 4, 5].map(difficulty => {
-    const classified = hits.filter(hit => hit.classification?.difficulty === difficulty && groups.every(group => hit.matchedKnowledgeIds.some(id => group.has(id))));
+    const classified = hits.filter(hit => !hit.structureIssues?.some(issue => issue.severity === 'error') && hit.classification?.difficulty === difficulty && groups.every(group => hit.matchedKnowledgeIds.some(id => group.has(id))));
     return { difficulty, classified: classified.length, confirmed: classified.filter(hit => hit.classificationStatus === "confirmed").length };
   });
   return { total: hits.length, scanned: rows.length, difficultyCounts, hits, requestedKnowledgeIds: requested };
