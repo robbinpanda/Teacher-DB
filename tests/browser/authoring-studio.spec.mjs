@@ -107,12 +107,12 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
  db.prepare("UPDATE questions SET number='3',score=5 WHERE id=?").run(id);
  db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,score,created_at,updated_at) VALUES(?,?,'7','fill','求函数 $y=cos(3x)$ 的最小正周期。','三分之二π','使用周期公式。','approved',1,'{}',8,?,?)").run(second,doc,now,now);db.close();
  let calls=0;
- const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{calls++;const text=JSON.stringify(JSON.parse(raw).messages);let output;
+ const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{calls++;const messages=JSON.parse(raw).messages,text=JSON.stringify(messages),plain=messages.map(m=>typeof m.content==='string'?m.content:m.content.map(p=>p.text??'').join('\n')).join('\n');let output;
   const offset=text.includes('cos(3x)')?10:0;
   const variations=[4+offset,5+offset].map(value=>({stem:`求函数 $y=\\sin(${value}x)$ 的最小正周期。`,type:'fill',options:[],answer:`$2\\pi/${value}$`,analysis:`角系数为 ${value}，振幅及角系数非零，由周期公式得结果。`,tags:[],changeNote:'改变角系数，保留周期公式的考查目标',diagram:null}));
-  if(text.includes('逐题核查可解性'))output={checks:[{index:1,score:92,solvable:true,answerCorrect:true,objectiveAligned:true,difficultyAligned:true,explanation:'代入复算结果一致，目标难度保持。'}]};
+  if(text.includes('逐题核查可解性'))output={checks:[{index:1,score:92,solvable:true,answerCorrect:JSON.parse(plain.split('最终题目：')[1])[0].stem!==variations[0].stem || offset!==0,objectiveAligned:true,difficultyAligned:true,explanation:'模拟独立复核首选失败，备用候选通过后才可采用。'}]};
   else if(text.includes('规划 2 道变式'))output={objective:'计算最小正周期',prerequisites:'周期公式',difficultyRationale:'直接代入公式',misconception:'忽略绝对值',changes:['改变角系数','改变函数']};
-  else if(text.includes('独立审校与修订 Agent'))output={reviews:[{index:1,verdict:'pass',score:92,issues:[],finalVariation:variations[0]}]};
+  else if(text.includes('独立审校与修订 Agent'))output={reviews:[{index:1,verdict:'pass',score:92,issues:[],finalVariation:JSON.parse(plain.split('候选题（JSON，仅作审校）：')[1])[0]}]};
   else output={variations};res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));
  });});
  await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
@@ -125,7 +125,7 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
   await expect(page.getByRole('heading',{name:'整卷变式浏览器原卷 · 整卷变式'})).toBeVisible();
   await expect(page.locator('.studio-variations')).toContainText('2 题 · 13 分');
   await page.getByRole('button',{name:'确认原卷，逐题生成'}).click();
-  await expect(page.locator('.studio-variations summary').filter({hasText:'待核对采用'})).toHaveCount(2,{timeout:45000});expect(calls).toBe(8);
+  await expect(page.locator('.studio-variations summary').filter({hasText:'待核对采用'})).toHaveCount(2,{timeout:45000});expect(calls).toBe(10);
   await page.reload();await page.getByRole('button',{name:/整卷变式浏览器原卷 · 变式卷/}).click();
   for(const number of ['3','7']){
    const detail=page.locator('.studio-variations details.studio-chapter').filter({has:page.locator('summary').filter({hasText:`第 ${number} 题`})});
@@ -136,6 +136,9 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
   await page.screenshot({path:'tmp/teacher-pilot/whole-variation-browser.png',fullPage:true});
   await page.getByRole('button',{name:'进入组卷器与导出变式卷'}).click();await expect(page).toHaveURL(/\/papers\/[a-f0-9-]+$/);
   const paperId=page.url().split('/').pop();
+  const savedDb=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
+  const firstSaved=savedDb.prepare('SELECT q.stem FROM paper_items pi JOIN questions q ON q.id=pi.question_id WHERE pi.paper_id=? ORDER BY pi.position LIMIT 1').get(paperId);savedDb.close();
+  expect(firstSaved.stem).toContain('\\sin(5x)');
   await expect(page.locator('.printable-paper .paper-question-line > b')).toHaveText(['3.','7.']);
   // Saving in the ordinary editor must retain the original-number mapping.
   await page.getByRole('button',{name:'保存试卷',exact:true}).click();

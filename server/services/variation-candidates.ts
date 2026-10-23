@@ -177,6 +177,7 @@ export async function generateVariationCandidates(ownerId: string, questionId: s
       generator: outcome.generator,
       reviewer: outcome.reviewer,
       rejectedCandidateCount: outcome.rejectedCandidates.length,
+      rejectedCandidates: outcome.rejectedCandidates,
       passed: outcome.reviews.filter((review) => review.status === "passed").length,
       revised: outcome.reviews.filter((review) => review.status === "revised").length,
       rulesPassed: outcome.reviews.filter((review) => review.status === "rules_passed").length,

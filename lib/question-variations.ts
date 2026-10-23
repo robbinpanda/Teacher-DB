@@ -146,7 +146,7 @@ export function parseVariationCandidatePool(input: {
   if (accepted.length < input.targetCount) {
     throw new Error(`生成 Agent 返回 ${accepted.length} 道合格候选，少于要求的 ${input.targetCount} 道。${rejected.slice(0, 2).join("；")}`);
   }
-  return { variations: accepted.slice(0, input.targetCount), rejected };
+  return { variations: accepted.slice(0, input.targetCount), alternates: accepted.slice(input.targetCount), rejected };
 }
 
 export function parseVariationReviewContent(input: {

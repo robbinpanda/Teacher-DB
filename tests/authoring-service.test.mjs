@@ -2,6 +2,13 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync,mkdirSync } from 'node:fs';
 import path from 'node:path';
+test('变式备用候选经独立审校补位，保留评分与采用门槛，拒绝重复且网络失败停止',()=>{
+ mkdirSync('tmp',{recursive:true});
+ const directory=mkdtempSync(path.resolve('tmp/variation-alternates-'));
+ execFileSync(process.execPath,['--import','./server/register.mjs','--import','tsx','scripts/verify-variation-alternates.mts'],{
+  env:{...process.env,JIANTI_DATA_DIR:directory,JIANTI_DEPLOYMENT_MODE:'local'},stdio:'pipe',windowsHide:true,timeout:60000,
+ });
+});
 test('历史恢复同时恢复计划正文，保留暂停与其他章节，拒绝过期来源及冲突',()=>{
  mkdirSync('tmp',{recursive:true});
  const directory=mkdtempSync(path.resolve('tmp/authoring-history-'));
