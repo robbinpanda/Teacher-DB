@@ -2,6 +2,7 @@ import { startHeartbeat } from "./runtime";
 import { kickExtractionQueue } from "../lib/extraction-queue";
 import { kickDocumentPreparation } from "./services/document-preparation";
 import { kickAuthoringPlanning } from "./services/authoring";
+import { kickAuthoringChapters } from "./services/authoring-chapters";
 
 process.env.JIANTI_PROCESS_ROLE = "worker";
 const stopHeartbeat = await startHeartbeat("worker");
@@ -12,7 +13,7 @@ function tick() {
   if (stopping) return;
   if (!authoring) {
     authoring = true;
-    void kickAuthoringPlanning().catch(error => console.error("[worker] authoring failed", error)).finally(() => { authoring = false; });
+    void (async () => { await kickAuthoringPlanning(); await kickAuthoringChapters(); })().catch(error => console.error("[worker] authoring failed", error)).finally(() => { authoring = false; });
   }
   if (!extracting) {
     extracting = true;

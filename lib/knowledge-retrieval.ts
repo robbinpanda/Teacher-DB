@@ -91,7 +91,7 @@ export function rankQuestions(rows: RetrievalRow[], scope: EducationScope, optio
       return false;
     });
     if (groups.length && !(options.match === "all" ? groupMatches.every(Boolean) : groupMatches.some(Boolean))) continue;
-    if (!groups.length && terms.length) {
+    if ((!groups.length || options.knowledgeIds?.length) && terms.length) {
       const haystack = `${text}\n${tags.join(" ")}`;
       if (!terms.every(term => haystack.includes(term))) continue;
       score += terms.length * 8; reasons.push(`文字命中：${terms.join("、")}（待核对）`);

@@ -527,7 +527,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 11;
+export const DATABASE_VERSION = 13;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -627,6 +627,12 @@ function initialize() {
     },
     { version: 11, name: "education-scope-isolation", checksum: "education-scope-isolation-v1", up: migrateEducationScopes },
     { version: 12, name: "teacher-authoring", checksum: "teacher-authoring-v1", up: installAuthoringSchema },
+    { version: 13, name: "authoring-chapter-revisions", checksum: "authoring-chapter-revisions-v1", up: sqlite => sqlite.exec(`
+      ALTER TABLE authoring_chapters ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE authoring_chapters ADD COLUMN job_kind TEXT NOT NULL DEFAULT 'generate';
+      ALTER TABLE authoring_projects ADD COLUMN paper_id TEXT REFERENCES papers(id) ON DELETE SET NULL;
+      CREATE INDEX authoring_chapters_queue_idx ON authoring_chapters(status, lease_expires_at, project_id, position);
+    `) },
   ]);
   initialized = true;
 }

@@ -134,7 +134,7 @@ export function AppShell({ children, initialMode, initialScope }: { children: Re
     },
   }), [mode, modeChanging, pathname, router]);
 
-  if (/^\/papers\/[^/]+\/print$/.test(pathname) || /^\/assignments\/[^/]+\/answer-sheet$/.test(pathname)) return <>{children}</>;
+  if (/^\/(?:papers|studio)\/[^/]+\/print$/.test(pathname) || /^\/assignments\/[^/]+\/answer-sheet$/.test(pathname)) return <>{children}</>;
 
   return (
     <TeacherModeContext.Provider value={modeValue}><EducationScopeContext.Provider value={scope}>

@@ -4,6 +4,7 @@ import { ensureDatabase } from "../../../../../db/bootstrap";
 import { requestOwner } from "../../../../../lib/server";
 import { requestEducationScope } from "../../../../../lib/education-scope";
 import { readAuthoringProject, saveAuthoringPlan, inspectAuthoringCoverage } from "../../../../services/authoring";
+import { controlAuthoringProject, publishAuthoringPaper } from "../../../../services/authoring-chapters";
 
 type Context = { params: Promise<{ projectId: string }> };
 export async function GET(request: Request, context: Context) {
@@ -26,11 +27,21 @@ export async function PATCH(request: Request, context: Context) {
 }
 export async function POST(request: Request, context: Context) {
   await ensureDatabase();
-  const data = z.object({ action: z.literal("retry") }).strict().safeParse(await request.json().catch(() => null));
+  const data = z.union([
+    z.object({ action: z.literal("retry") }).strict(),
+    z.object({ action: z.literal("publish") }).strict(),
+    z.object({ action: z.enum(["generate", "pause", "resume"]), revision: z.number().int().min(1) }).strict(),
+  ]).safeParse(await request.json().catch(() => null));
   if (!data.success) return Response.json({ error: "操作无效" }, { status: 400 });
   const owner = requestOwner(request), scope = requestEducationScope(request), id = (await context.params).projectId;
   const project = readAuthoringProject(owner, scope, id);
   if (!project) return Response.json({ error: "作品不存在" }, { status: 404 });
+  if (data.data.action !== "retry") {
+    try {
+      if (data.data.action === "publish") return Response.json(publishAuthoringPaper(owner, scope, id));
+      return Response.json({ project: await controlAuthoringProject(owner, scope, id, data.data.revision, data.data.action) });
+    } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "操作失败" }, { status: 409 }); }
+  }
   const changed = getSqlite().prepare("UPDATE authoring_projects SET status='queued',error=NULL,revision=revision+1,updated_at=? WHERE id=? AND owner_id=? AND status='failed'")
     .run(new Date().toISOString(), id, owner);
   if (!changed.changes) return Response.json({ error: "任务正在运行或已完成，不需要重复生成" }, { status: 409 });

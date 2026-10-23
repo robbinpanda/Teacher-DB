@@ -50,8 +50,8 @@ class ApiController {
         // owner's general API, files, or other paper resources.
         if (!(error instanceof AuthenticationError) || url.pathname !== "/api/view" || request.method !== "POST") throw error;
         const query = await request.clone().json().catch(() => null);
-        const claims = query?.resource === "paper-print" && typeof query.id === "string" && typeof query.token === "string"
-          ? verifyPaperExportToken(query.token, query.id) : null;
+        const claims = ["paper-print", "authoring-print"].includes(query?.resource) && typeof query.id === "string" && typeof query.token === "string"
+          ? verifyPaperExportToken(query.token, query.resource === "authoring-print" ? `authoring:${query.id}` : query.id) : null;
         if (!claims) throw error;
         tenant = { ownerId: claims.ownerId, authentication: "jwt" as const };
       }

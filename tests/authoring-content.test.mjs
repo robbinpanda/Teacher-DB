@@ -22,3 +22,12 @@ test('审校不能跳过题目或知识点；任一不通过均保留具体问�
  assert.throws(()=>validateChapterReview({...review,questions:review.questions.slice(0,1)},content),/逐项/);
  assert.equal(validateChapterReview({...review,questions:[{...review.questions[0],explanationCorrect:false},review.questions[1]]},content).passed,false);
 });
+
+ test('学科核查必须全部覆盖、引用原文，不能用笼统通过掩盖错误',()=>{
+  const checks=[{id:'period.constant',requirement:'核验振幅与角系数非零条件'}];
+  const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'})),checks:[{id:'period.constant',passed:false,evidence:content.knowledge[0].formulas[0].conditions,reason:'需要结合原定义域核对退化为常函数时的最小正周期。'}]};
+  assert.equal(validateChapterReview(review,content,checks).passed,false);
+  assert.equal(validateChapterReview({...review,checks:[{...review.checks[0],evidence:`'${review.checks[0].evidence}'`}]},content,checks).passed,false);
+  assert.throws(()=>validateChapterReview({...review,checks:[]},content,checks),/学科核查/);
+  assert.throws(()=>validateChapterReview({...review,checks:[{...review.checks[0],evidence:'本章中不存在的句子'}]},content,checks),/逐字引用/);
+ });

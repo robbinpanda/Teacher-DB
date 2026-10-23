@@ -38,3 +38,6 @@ export const getTeachingClass = (ownerId: string, id: string): ReturnType<typeof
 export const listAssignments = (ownerId: string): ReturnType<typeof School.listAssignments> => query("assignments", ownerId);
 export const getAssignmentDetail = (ownerId: string, id: string): ReturnType<typeof School.getAssignmentDetail> => query("assignment", ownerId, { id });
 export const getPaperPrintDataForToken = (id: string, token?: string): ReturnType<typeof Questions.getPaperPrintData> => query("paper-print", "local-demo", { id, token });
+
+export const getAuthoringDocument = (id: string, ownerId: string, scope: { subject: string; stage: string }): Promise<import("../server/services/authoring-output").AuthoringDocument | null> => query("authoring-document", ownerId, { id, ...scope });
+export const getAuthoringDocumentForToken = (id: string, token?: string): Promise<import("../server/services/authoring-output").AuthoringDocument | null> => query("authoring-print", "local-demo", { id, token });

@@ -9,6 +9,7 @@ import { loadRetrievalRows, rankQuestions } from "../../lib/knowledge-retrieval"
 import { callTextModel } from "../../lib/text-model";
 import { resolveModelProfile } from "../../lib/model-profiles";
 import { getPaperData, getUploadedPaperData } from "../../lib/question-repository";
+import type { AuthoringChapter, SavedChapterContent } from "../../lib/authoring-content";
 
 async function variationSource(ownerId: string, scope: EducationScope, request: AuthoringRequest) {
   if (request.kind !== "variation") return null;
@@ -19,14 +20,18 @@ async function variationSource(ownerId: string, scope: EducationScope, request: 
   return { id: source.id, title: source.title, questions: source.questions.map(question => ({ id: question.id, number: question.number, type: question.type, stem: question.stem, tags: question.tags })) };
 }
 
-type ProjectRow = { id: string; owner_id: string; subject: string; stage: EducationScope["stage"]; kind: AuthoringRequest["kind"]; title: string; request_json: string; plan_json: string | null; status: string; revision: number; error: string | null; created_at: string; updated_at: string };
+type ProjectRow = { id: string; owner_id: string; subject: string; stage: EducationScope["stage"]; kind: AuthoringRequest["kind"]; title: string; request_json: string; plan_json: string | null; status: string; revision: number; error: string | null; created_at: string; updated_at: string; paper_id: string | null };
 export function readAuthoringProject(ownerId: string, scope: EducationScope, id: string) {
   const sqlite = getSqlite();
   const row = sqlite.prepare("SELECT * FROM authoring_projects WHERE id=? AND owner_id=? AND subject=? AND stage=?").get(id, ownerId, scope.subject, scope.stage) as ProjectRow | undefined;
   if (!row) return null;
   const plan = row.plan_json ? JSON.parse(row.plan_json) as AuthoringPlan : null;
-  return { id: row.id, title: row.title, kind: row.kind, status: row.status, revision: row.revision, error: row.error,
-    createdAt: row.created_at, updatedAt: row.updated_at, request: JSON.parse(row.request_json) as AuthoringRequest, plan, summary: plan ? planSummary(plan) : null };
+  const chapters = (sqlite.prepare("SELECT * FROM authoring_chapters WHERE project_id=? ORDER BY position").all(id) as Array<{ id: string; position: number; plan_json: string; content_json: string | null; status: AuthoringChapter["status"]; revision: number; attempt: number; error: string | null }>).map(chapter => ({
+    id: chapter.id, position: chapter.position, plan: JSON.parse(chapter.plan_json), content: chapter.content_json ? JSON.parse(chapter.content_json) as SavedChapterContent : null,
+    status: chapter.status, revision: chapter.revision, attempt: chapter.attempt, error: chapter.error,
+  })) as AuthoringChapter[];
+  return { id: row.id, title: row.title, subject: row.subject, stage: row.stage, kind: row.kind, status: row.status, revision: row.revision, error: row.error,
+    createdAt: row.created_at, updatedAt: row.updated_at, request: JSON.parse(row.request_json) as AuthoringRequest, plan, chapters, paperId: row.paper_id, summary: plan ? planSummary(plan) : null };
 }
 export async function createAuthoringProject(ownerId: string, scope: EducationScope, value: unknown) {
   await ensureDatabase();

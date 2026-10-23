@@ -52,6 +52,7 @@ export function validateAuthoringPlan(value: unknown, scope: EducationScope, req
   if (new Set(plan.chapters.map(chapter => chapter.id)).size !== plan.chapters.length) throw new Error("章节编号重复");
   let total = 0;
   for (const chapter of plan.chapters) {
+    if (chapter.slots.reduce((sum, slot) => sum + slot.count, 0) > 30) throw new Error(`“${chapter.title}”超过 30 题，请按知识点拆成多个章节，便于充分讲解与审校`);
     const all = [...chapter.knowledgeIds, ...chapter.prerequisites, ...chapter.slots.flatMap(slot => slot.knowledgeIds)];
     if (all.some(id => !valid.has(id))) throw new Error(`“${chapter.title}”包含目录外知识点`);
     if (new Set(chapter.knowledgeIds).size !== chapter.knowledgeIds.length) throw new Error(`“${chapter.title}”知识点重复`);

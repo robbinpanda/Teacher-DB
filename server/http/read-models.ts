@@ -1,3 +1,4 @@
+import { getAuthoringDocument } from "../services/authoring-output";
 import { requestEducationScope } from "../../lib/education-scope";
 import { z } from "zod";
 import * as questions from "../../lib/question-repository";
@@ -9,7 +10,7 @@ import { requestOwner } from "../../lib/server";
 import { result, toResponse } from "../core/result";
 
 const querySchema = z.object({
-  resource: z.enum(["document-page", "documents", "bank", "review", "approved-questions", "paper", "uploaded-paper", "paper-library", "paper-templates", "teacher-mode", "classes", "class", "assignments", "assignment", "paper-print"]),
+  resource: z.enum(["document-page", "documents", "bank", "review", "approved-questions", "paper", "uploaded-paper", "paper-library", "paper-templates", "teacher-mode", "classes", "class", "assignments", "assignment", "paper-print", "authoring-document", "authoring-print"]),
   id: z.string().min(1).max(100).optional(),
   token: z.string().max(2000).optional(),
   ids: z.array(z.string().min(1).max(100)).max(2000).optional(),
@@ -22,7 +23,7 @@ export async function readModel(request: Request) {
   if (!payload.success) return toResponse(result({ error: "页面数据请求格式无效" }, { status: 400 }));
   const query = payload.data;
   const ownerId = requestOwner(request);
-  const idResources = ["review", "paper", "uploaded-paper", "class", "assignment", "paper-print"];
+  const idResources = ["review", "paper", "uploaded-paper", "class", "assignment", "paper-print", "authoring-document", "authoring-print"];
   if (idResources.includes(query.resource) && !query.id) return toResponse(result({ error: "缺少资源编号" }, { status: 400 }));
   const scope = requestEducationScope(request);
   let data: unknown;
@@ -41,6 +42,14 @@ export async function readModel(request: Request) {
     case "class": data = await school.getTeachingClass(ownerId, query.id!); break;
     case "assignments": data = await school.listAssignments(ownerId); break;
     case "assignment": data = await school.getAssignmentDetail(ownerId, query.id!); break;
+    case "authoring-document": data = await getAuthoringDocument(ownerId, query.id!, query.subject && query.stage ? { subject: query.subject, stage: query.stage } : scope); break;
+    case "authoring-print": {
+      const claims = verifyPaperExportToken(query.token, `authoring:${query.id!}`);
+      if (!claims) return toResponse(result({ error: "打印授权无效或已过期" }, { status: 404 }));
+      try { data = await getAuthoringDocument(claims.ownerId, query.id!, undefined, true); }
+      catch (error) { return toResponse(result({ error: error instanceof Error ? error.message : "作品尚不能导出" }, { status: 409 })); }
+      break;
+    }
     case "paper-print": {
       const claims = verifyPaperExportToken(query.token, query.id!);
       if (!claims) return toResponse(result({ error: "打印授权无效或已过期" }, { status: 404 }));

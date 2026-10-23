@@ -2,6 +2,8 @@ import { test,expect } from '@playwright/test';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { createServer } from 'node:http';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 test.use({extraHTTPHeaders:{'oai-authenticated-user-id':'studio-test'}});
 const scope='subject='+encodeURIComponent('数学')+'&stage=high';
@@ -54,5 +56,57 @@ test('自然语言规划通过后台模型调用持久化，可刷新恢复、�
   const conflict=await request.patch(`/api/authoring/${saved.id}?${scope}`,{data:{revision:before.project.revision,plan}});expect(conflict.status()).toBe(409);
   const foreign=await request.get(`/api/authoring/${saved.id}?${scope}`,{headers:{'oai-authenticated-user-id':'other'}});expect(foreign.status()).toBe(404);
   await page.screenshot({path:'tmp/teacher-pilot/plan-browser.png',fullPage:true});
+ }finally{await new Promise(resolve=>model.close(resolve));}
+});
+
+test('逐章编写、教师修改采用和学生教师两版实际PDF完整可用',async({page,context,request})=>{
+ test.setTimeout(150000);
+ const first=await prepare(context),second=await prepare(context);
+ const db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
+ db.prepare("UPDATE questions SET type='answer',stem='求函数 $y=sin(3x)$ 的最小正周期，并说明计算依据。',answer='练习专用答案标记',analysis='用角系数的绝对值计算，得到最小正周期为三分之二π。' WHERE id=?").run(second.id);db.close();
+ const slot={role:'example',knowledgeIds:[period],difficulty:2,type:'fill',count:1,score:0,purpose:'理解周期公式并正确代入'};
+ const plan={title:'完整周期讲义浏览器验证',audience:'高三基础班',approach:'概念理解、例题示范、独立练习逐步提高。',estimatedMinutes:45,assumptions:[],chapters:[{id:'period',title:'周期概念与计算',objectives:['准确计算最小正周期并说明依据'],knowledgeIds:[period],prerequisites:[],teachingNotes:'说明角系数非零条件以及绝对值的意义。',slots:[slot,{...slot,role:'practice',type:'answer'}]}]};
+ const lesson={id:period,title:'最小正周期及其计算',explanation:'周期函数的函数值按固定间隔重复，最小正周期是所有正周期中的最小值。研究周期时必须明确自变量的变化范围，并确认恒等关系对定义域内所有自变量成立。正弦函数的角系数会改变变化速度，因此需要使用角系数的绝对值计算周期，不能忽略非零条件。',formulas:[{latex:'T=2\\pi/|\\omega|',conditions:'振幅和角系数均不为零。'}],method:'先识别函数类型和角系数，再判断非零条件，将角系数的绝对值代入周期公式并检查结果。',misconceptions:[{mistake:'直接使用负的角系数。',correction:'周期必须取正值，所以要使用角系数的绝对值。'}]};
+ const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{
+  const input=JSON.parse(raw),system=input.messages.find(m=>m.role==='system').content,user=input.messages.find(m=>m.role==='user').content;
+  const data=JSON.parse(typeof user==='string'?user:user.find(p=>p.type==='text').text);let output;
+  if(system.includes('输出 JSON {items:'))output={items:[{slotIndex:0,questionId:first.id,selectionReason:'通过识别角系数和代入公式示范基本方法。'},{slotIndex:1,questionId:second.id,selectionReason:'更换角系数后让学生独立说明推导依据。'}],gaps:[]};
+  else if(system.includes('独立审校教师'))output={checks:(data.checks??[]).map(c=>({id:c.id,passed:true,evidence:data.content.introduction,reason:"已逐项核对该学科要求和对应内容。"})),knowledge:data.content.knowledge.map(k=>({id:k.id,correct:true,complete:true,reason:'公式使用条件明确，概念和方法完整。'})),questions:data.content.items.map(q=>({id:q.questionId,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'逐题核对条件、难度和推导，符合本章要求。'}))};
+  else if(system.includes('校本教辅编辑'))output={...data.selection,knowledge:[lesson],introduction:'本章从周期定义出发，通过例题示范后安排独立练习。',items:data.selection.items.map(q=>({...q,teachingExplanation:'首先确认函数为正弦函数，振幅及角系数均不为零，再识别角系数。利用最小正周期等于二π除以角系数绝对值的公式，代入得到结果。最后将周期平移代入函数，验证前后函数值相同，并注意周期必须取正值。'})),conclusion:'本章掌握周期公式的条件，能够识别角系数并完成计算。'};
+  else output=plan;
+  res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));
+ });});
+ await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
+ try{
+  const configured=await (await request.post('/api/model-profiles',{data:{displayName:`完整讲义-${crypto.randomUUID()}`,provider:'openai-compatible',baseUrl:`http://127.0.0.1:${model.address().port}/v1`,model:'mock',apiKey:'test-only',select:true}})).json();
+  const created=await (await request.post(`/api/authoring?${scope}`,{data:{kind:'handout',instruction:'生成一章三角函数周期讲义，含知识讲解、一例一练。',documentIds:[first.doc,second.doc],profileId:configured.profile.id}})).json();
+  const id=created.project.id;
+  await expect.poll(async()=> (await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project.status,{timeout:30000}).toBe('planned');
+  await page.goto('/studio');await page.getByRole('button',{name:new RegExp(plan.title)}).click();
+  await page.getByRole('button',{name:'确认大纲，逐章生成'}).click();
+  await expect(page.getByRole('button',{name:'已核对，采用本章'})).toBeEnabled({timeout:45000});
+  await expect(page.locator('.studio-selected-question')).toHaveCount(2);
+  const early=await request.get(`/api/authoring/${id}/pdf?${scope}`);expect(early.status()).toBe(409);
+  await page.getByRole('button',{name:'修改正文与选题'}).click();
+  await page.getByRole('textbox',{name:'本章小结',exact:true}).fill('教师补充说明：检查角系数和振幅均非零，再求最小正周期。');
+  await page.getByRole('button',{name:'保存本章修改'}).click();
+  await expect(page.getByRole('button',{name:'已核对，采用本章'})).toBeDisabled();
+  await page.getByLabel(/人工核对说明/).fill('已经逐项检查公式条件、例题和练习的推导，确认正确。');
+  await page.getByRole('button',{name:'已核对，采用本章'}).click();
+  await expect(page.getByRole('link',{name:'学生版 PDF',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'预览整份作品'}).click();
+  await expect(page.locator('.authoring-document')).toHaveAttribute('data-pagination-ready','true');
+  await expect(page.locator('.authoring-document')).toContainText('教师补充说明');
+  await expect(page.locator('.authoring-document')).not.toContainText('练习专用答案标记');
+  expect(await page.locator('.authoring-writing-space').evaluate(e=>e.getBoundingClientRect().height)).toBeGreaterThan(499);
+  await mkdir('tmp/teacher-pilot',{recursive:true});await page.screenshot({path:'tmp/teacher-pilot/chapter-preview.png',fullPage:true});
+  for(const answers of [false,true]){
+   const response=await request.get(`/api/authoring/${id}/pdf?${scope}&answers=${answers?'1':'0'}`,{timeout:120000});expect(response.status()).toBe(200);
+   const bytes=await response.body();await writeFile(`tmp/teacher-pilot/handout-${answers?'teacher':'student'}.pdf`,bytes);
+   const task=getDocument({data:new Uint8Array(bytes)}),pdf=await task.promise;let full='';
+   for(let p=1;p<=pdf.numPages;p++){const text=(await (await pdf.getPage(p)).getTextContent()).items.map(i=>i.str).join('');expect(text.length).toBeGreaterThan(4);full+=text;}
+   expect(full).toContain('教师补充说明');expect(full.includes('练习专用答案标记')).toBe(answers);expect(full).not.toContain('返回备课工作台');await task.destroy();
+  }
+  expect((await request.get(`/api/authoring/${id}/pdf?${scope}`,{headers:{'oai-authenticated-user-id':'other'}})).status()).toBe(404);
  }finally{await new Promise(resolve=>model.close(resolve));}
 });

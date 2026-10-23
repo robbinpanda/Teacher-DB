@@ -63,3 +63,8 @@ test('SQLite 查询覆盖 2000 条以外的题目，同时强制租户、审核�
  assert.equal(loadRetrievalRows(db,'other',scope).length,1);
  db.close();
 });
+
+ test('指定考点后的补充关键词仍然收窄结果',()=>{
+  assert.equal(rankQuestions([classified('q')],scope,{knowledgeIds:[period],query:'不存在的关键词'}).total,0);
+  assert.equal(rankQuestions([classified('q')],scope,{knowledgeIds:[period],query:'sin(2x)'}).total,1);
+ });
