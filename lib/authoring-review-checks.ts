@@ -65,11 +65,11 @@ export function authoringReviewChecks(knowledgeIds: string[]): AuthoringReviewCh
     if (selected.has(id) || selected.has(parent)) for (const [key, requirement] of requirements) checks.push({ id: `${topic}.${key}`, requirement });
   }
   if (selected.has("math.high.trigonometry.period") || selected.has("math.high.trigonometry")) checks.push(
-    { id: "period.nonzero", requirement: "周期可为正或负的非零数；最小正周期要求正且最小。不得声称负周期无意义或不是周期，也不能把任意周期说成最小正周期。" },
-    { id: "period.constant", requirement: "标准周期公式要求角系数 ω≠0 且振幅 A≠0。任一为零时，应讨论常函数（含原式定义域）和有无最小正周期，不能直接套公式。" },
+    { id: "period.nonzero", requirement: "区分任意周期与最小正周期，最小正周期要求正且最小。采用非零周期约定且声称 −T 也为周期时，必须核对定义域的双向平移不变性；仅由正向包含不能推出负向包含，例如 D=[0,+∞) 的常函数。若教材明确只把正平移量称作周期，不能仅因这种术语约定判错，但不能混用两种约定进行推导。" },
+    { id: "period.constant", requirement: "标准周期公式要求角系数 ω≠0 且振幅 A≠0。任一为零时须保留原式定义域：正弦余弦在 R 上退化为常函数时无最小正周期；0·tan x 的原定义域仍有缺点，不能擅自补成 R，定义域平移保持使其最小正周期仍为 π。不能把所有退化情形一概说成任意非零数都是周期。" },
     { id: "period.domain", requirement: "正切周期性针对整个定义域，平移一个周期通常跨越相邻连续区间；不得说周期结论只在每个连续区间内成立。定义域必须在周期平移下保持。" },
     { id: "period.absolute", requirement: "含绝对值或平方的函数可能缩短周期，需要恒等式、图象或定义核验最小性；|sin x|一般不能用恒等变换化为单一正弦/余弦函数，不能要求所有变式都先化为单一三角函数。" },
-    { id: "period.minimum", requirement: "证明 T 为最小正周期必须使用适用的最小正周期定理，或排除所有更小的正周期；仅排除某一个较小值（如 T/2）不能证明最小性。若声称完成最小性证明，须说明任意周期的必要条件，而非只举一次反例。" },
+    { id: "period.minimum", requirement: "最小性可引用适用的最小正周期定理，或对任意周期推导必要条件。为任意 T 取特殊自变量（如 x=0 或极值点）得到必要条件是有效证明，不等于仅排除一个 T/2；不要求展开显然的代入步骤。正周期推导须核对负角系数：由 ωT=2kπ 得 T=2kπ/ω，T>0 时 k 与 ω 同号；改写为 2π|k|/|ω| 可行，但不能在原式中无条件令同一个 k 为正。" },
   );
   return checks;
 }

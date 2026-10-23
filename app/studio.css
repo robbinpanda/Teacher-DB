@@ -43,3 +43,5 @@
 
 .studio-model-settings { border: 1px solid #dbe3dd; border-radius: 10px; padding: 16px; margin-bottom: 20px; background: #fafcf9; }
 .studio-model-settings p,.studio-review-model { color: #536358; line-height: 1.7; }
+.studio-review-checks section { margin: 12px 0; padding: 12px; border: 1px solid var(--studio-border); border-radius: 8px; }
+.studio-review-checks blockquote { margin: 12px 0 0; padding: 12px; border-left: 3px solid #b4cfc2; white-space: pre-wrap; overflow-wrap: anywhere; }

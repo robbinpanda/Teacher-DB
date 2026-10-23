@@ -9,7 +9,7 @@ import type { AuthoringChapter, SavedChapterContent, AuthoringChapterVersion } f
 import type { RetrievalHit } from "../lib/knowledge-retrieval";
 import type { QuestionWithSource } from "../lib/types";
 
-const labels: Record<AuthoringChapter["status"], string> = { pending: "等待处理", running: "正在选题、编写与审校", complete: "审校通过，待核对", needs_review: "有缺口或审校问题", failed: "处理失败", approved: "教师已采用" };
+const labels: Record<AuthoringChapter["status"], string> = { pending: "等待处理", running: "正在选题、编写与审校", complete: "模型未发现问题，待核对", needs_review: "有缺口或审校问题", failed: "处理失败", approved: "教师已采用" };
 export function AuthoringChapters({ projectId, projectRevision, projectStatus, chapters, scopeQuery, documentIds, onUpdate, onDirty }: {
   projectId: string; projectRevision: number; projectStatus: string; chapters: AuthoringChapter[]; scopeQuery: string; documentIds: string[];
   onUpdate: (project: unknown) => void; onDirty: (dirty: boolean) => void;
@@ -70,9 +70,10 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
       <button className="btn" disabled={busy} onClick={()=>{setPlanning(false);setPlanDraft(chapter.plan);setDirty(false);notifyDirty(false);}}>取消计划修改</button></div>
     </section>}
     {draft && <>
-      {draft.review.checks?.length ? <details><summary>逐项学科核查（{draft.review.checks.filter(check => check.passed).length} / {draft.review.checks.length} 项通过）</summary>{draft.review.checks.map(check => <p key={check.id}><strong>{check.passed ? "通过" : "需修正"}：</strong>{check.reason}<br />原文：{check.evidence}</p>)}</details> : null}
+      {draft.review.checks?.length ? <details className="studio-review-checks"><summary>逐项学科核查（{draft.review.checks.filter(check => check.passed).length} / {draft.review.checks.length} 项通过）</summary>{draft.review.checks.map(check => <section key={check.id}><p><strong>{check.passed ? "通过" : "需修正"}：</strong><MathText text={check.reason}/></p><details><summary>查看原文依据</summary><blockquote><MathText text={check.evidence}/></blockquote></details></section>)}</details> : null}
       {draft.gaps.length > 0 && <div className="studio-error"><strong>尚未满足题量</strong>{draft.gaps.map(gap => <p key={gap.slotIndex}>第 {gap.slotIndex + 1} 组：{gap.reason}</p>)}</div>}
       {!draft.review.passed && <div className="studio-error"><strong>待核对的问题</strong><ul>{draft.review.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></div>}
+      {!!draft.review.suggestions?.length && <details className="studio-review-suggestions"><summary>可选教学建议（不影响审校结论）</summary><ul>{draft.review.suggestions.map((suggestion,index)=><li key={index}><MathText text={suggestion}/></li>)}</ul></details>}
       {editing ? <label>导入说明<textarea value={draft.introduction} onChange={event => edit({ ...draft, introduction: event.target.value })} /></label> : <p><MathText text={draft.introduction} /></p>}
       {draft.knowledge.map((knowledge, index) => <section className="studio-knowledge-body" key={knowledge.id}>
         <h4>{knowledge.title}</h4>

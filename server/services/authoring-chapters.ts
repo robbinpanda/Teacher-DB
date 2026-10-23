@@ -9,6 +9,7 @@ import { readAuthoringProject } from "./authoring";
 import { getApprovedQuestions } from "../../lib/question-repository";
 import { getFile } from "../../lib/file-storage";
 import { authoringReviewChecks } from "../../lib/authoring-review-checks";
+import { chapterReviewEvidence } from "../../lib/authoring-review-evidence";
 import { authoringModel } from "./authoring-model";
 import { resolveModelProfile } from "../../lib/model-profiles";
 import { loadRetrievalRows, rankQuestions, fingerprintRow } from "../../lib/knowledge-retrieval";
@@ -227,7 +228,7 @@ async function reviewChapter(project: Project, chapter: AuthoringChapter, conten
   const media = await questionImages(content.questions);
   const checks = authoringReviewChecks(chapter.plan.knowledgeIds);
   const result = await authoringModel({ ownerId: currentJobOwner(project.id), profileId: project.request.reviewerProfileId ?? project.request.profileId,
-    system: chapterReviewSystemPrompt, text: JSON.stringify({ plan: chapter.plan, checks, content: chapterContentSchema.parse(content), questions: content.questions.map(promptQuestion), imageMapping: media.mapping }),
+    system: chapterReviewSystemPrompt, text: JSON.stringify({ plan: chapter.plan, checks, evidenceSources: chapterReviewEvidence(content), content: chapterContentSchema.parse(content), questions: content.questions.map(promptQuestion), imageMapping: media.mapping }),
     images: media.images, purpose: "authoring_chapter_review", jsonMode: true, maxOutputTokens: 10000, timeoutMs: 240000 }, value => validateChapterReview(value, content, checks));
   return { ...result.value, traceId: result.traceId, modelProfileId: result.modelProfileId, modelDisplayName: result.modelDisplayName };
 }

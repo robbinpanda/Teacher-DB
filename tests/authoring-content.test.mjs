@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { validateChapterContent,validateChapterReview } from '../lib/authoring-content.ts';
 import { authoringReviewChecks } from '../lib/authoring-review-checks.ts';
 import { knowledgeCatalog } from '../lib/knowledge-catalog.ts';
+import { chapterReviewEvidence,chapterReviewPassages } from '../lib/authoring-review-evidence.ts';
 const id='math.high.trigonometry.period';
 const slot={role:'example',knowledgeIds:[id],difficulty:2,type:'fill',count:1,score:0,purpose:'计算最小正周期'};
 const plan={id:'period',title:'周期',objectives:['理解最小正周期'],knowledgeIds:[id],prerequisites:[],teachingNotes:'',slots:[slot,{...slot,role:'practice'}]};
@@ -31,8 +32,11 @@ test('拒绝虚构候选、跨章重复、配额不足不报告或无效缺口',
 test('审校不能跳过题目或知识点；任一不通过均保留具体问题',()=>{
  const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'}))};
  assert.equal(validateChapterReview(review,content).passed,true);
+ const advisory=validateChapterReview({...review,suggestions:['可增加一个生活中的周期现象作引入。']},content);
+ assert.equal(advisory.passed,true);assert.equal(advisory.issues.length,0);assert.equal(advisory.suggestions.length,1);
  assert.throws(()=>validateChapterReview({...review,questions:review.questions.slice(0,1)},content),/逐项/);
  assert.equal(validateChapterReview({...review,questions:[{...review.questions[0],explanationCorrect:false},review.questions[1]]},content).passed,false);
+ assert.equal(validateChapterReview({...review,suggestions:['可增加一个引入例子。'],knowledge:[{...review.knowledge[0],correct:false}]},content).passed,false);
 });
 
  test('学科核查必须全部覆盖、引用原文，不能用笼统通过掩盖错误',()=>{
@@ -40,6 +44,34 @@ test('审校不能跳过题目或知识点；任一不通过均保留具体问�
   const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'})),checks:[{id:'period.constant',passed:false,evidence:content.knowledge[0].formulas[0].conditions,reason:'需要结合原定义域核对退化为常函数时的最小正周期。'}]};
   assert.equal(validateChapterReview(review,content,checks).passed,false);
   assert.equal(validateChapterReview({...review,checks:[{...review.checks[0],evidence:`'${review.checks[0].evidence}'`}]},content,checks).passed,false);
+  assert.throws(()=>validateChapterReview({...review,checks:[{...review.checks[0],evidence:`'${review.checks[0].evidence}'。模型虚构的另一句原话。`}]},content,checks),/逐字引用/);
   assert.throws(()=>validateChapterReview({...review,checks:[]},content,checks),/学科核查/);
   assert.throws(()=>validateChapterReview({...review,checks:[{...review.checks[0],evidence:'本章中不存在的句子'}]},content,checks),/逐字引用/);
  });
+
+test('审校引用编号必须来自当前正文，原文由服务端还原，错误结论仍阻止通过',()=>{
+ const checks=[{id:'period.constant',requirement:'核验振幅与角系数非零条件'}];
+ const ref='knowledge.0.formulas.0.conditions:0';
+ const base={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'})),checks:[{id:'period.constant',passed:false,evidenceRefs:[ref],reason:'原式退化后的定义域仍需核对，不能直接套用公式。'}]};
+ const saved=validateChapterReview(base,content,checks);
+ assert.equal(saved.passed,false);assert.deepEqual(saved.checks[0].evidenceRefs,[ref]);
+ assert.equal(saved.checks[0].evidence,content.knowledge[0].formulas[0].conditions);
+ assert.ok(saved.issues.some(issue=>issue.includes(saved.checks[0].reason)));
+ assert.ok(saved.issues.every(issue=>!issue.includes(saved.checks[0].evidence)), 'long quotations stay in expandable checks, not repeated in issue summaries');
+ for(const evidenceRefs of [['review.issues:0'],[ref,ref],['knowledge.99.explanation:0'],[]])assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs}]},content,checks));
+ assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidence:'模型自己写的引文'}]},content,checks),/只返回 evidenceRefs/);
+ assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs:undefined}]},content,checks),/缺少原文依据/);
+ const withOldReview={...content,review:{issues:['旧审校写下的错误句子']}};
+ assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs:undefined,evidence:'旧审校写下的错误句子'}]},withOldReview,checks),/逐字引用/);
+ assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs:undefined,evidence:content.items[0].selectionReason}]},content,checks),/逐字引用/);
+});
+
+test('原文索引保留长公式和跨段上下文全部字符，编号稳定且不含旧审校或元数据',()=>{
+ const longContent={...content,knowledge:[{...content.knowledge[0],explanation:'甲'.repeat(699)+'😀'+String.raw` $T=2\\pi/|\\omega|$。`+'乙'.repeat(1500)}],review:{issues:['旧审校意见']},traceId:'trace-secret'};
+ const sources=chapterReviewEvidence(longContent),passages=chapterReviewPassages(longContent);
+ assert.deepEqual(sources,chapterReviewEvidence(longContent));
+ assert.equal(new Set(sources.map(s=>s.ref)).size,sources.length);
+ for(const passage of passages)assert.equal(sources.filter(s=>s.path===passage.path).map(s=>s.text).join(''),passage.text);
+ for(const source of sources){assert.ok(source.text.length<=700);assert.ok(!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(source.text));}
+ assert.ok(sources.every(s=>!s.text.includes('旧审校意见')&&!s.text.includes('trace-secret')));
+});
