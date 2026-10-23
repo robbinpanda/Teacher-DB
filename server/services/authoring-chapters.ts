@@ -1,3 +1,4 @@
+import { archiveAuthoringChapter, readAuthoringChapterVersion } from "./authoring-history";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import sharp from "sharp";
@@ -61,17 +62,17 @@ export async function controlAuthoringProject(owner: string, scope: EducationSco
   })();
 }
 
-export async function retryAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, reviewOnly = false) {
+export async function retryAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, jobKind: "generate" | "review" | "revise" = "generate") {
   const project = requireProject(owner, scope, id);
   await resolveModelProfile(owner, project.request.profileId);
   return getSqlite().transaction(() => {
     const current = requireProject(owner, scope, id), chapter = current.chapters.find(item => item.id === chapterId);
     if (!chapter || chapter.revision !== revision || ["pending", "running"].includes(chapter.status)) throw new Error("章节已变化或正在处理，请刷新后重试");
-    if (reviewOnly && !chapter.content) throw new Error("章节尚无内容可供审校");
+    if (jobKind !== "generate" && !chapter.content) throw new Error("章节尚无内容可供审校");
     if (current.status === "paused") throw new Error("请先继续任务，再重试章节");
     const db = getSqlite();
     db.prepare("UPDATE authoring_chapters SET status='pending',job_kind=?,revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?")
-      .run(reviewOnly ? "review" : "generate", time(), chapterId);
+      .run(jobKind, time(), chapterId);
     db.prepare("UPDATE authoring_projects SET status='generating',paper_id=NULL,revision=revision+1,updated_at=? WHERE id=?").run(time(), id);
     return requireProject(owner, scope, id);
   })();
@@ -98,6 +99,7 @@ export async function editAuthoringChapter(owner: string, scope: EducationScope,
     if (latest.status === "generating" || latest.chapters.some(item => item.status === "running")) throw new Error("作品已继续生成，请暂停后再保存");
     assertSourceSnapshots(owner, scope, saved, latest.request.documentIds);
     assertNoDuplicateStems(questions, latest, chapterId);
+    archiveAuthoringChapter(chapterId, "教师修改正文与选题");
     const changed = getSqlite().prepare("UPDATE authoring_chapters SET content_json=?,status='needs_review',revision=revision+1,error=NULL,updated_at=? WHERE id=? AND project_id=? AND revision=? AND status NOT IN ('running','pending')")
       .run(JSON.stringify(saved), time(), chapterId, id, revision);
     if (!changed.changes) throw new Error("保存期间章节已变化，请刷新后重试");
@@ -106,6 +108,12 @@ export async function editAuthoringChapter(owner: string, scope: EducationScope,
     updateProjectProgress(id);
   })();
   return requireProject(owner, scope, id);
+}
+
+export async function restoreAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, versionId: string) {
+  const content = readAuthoringChapterVersion(owner, scope, id, chapterId, versionId);
+  if (!content) throw new Error("历史版本不存在");
+  return editAuthoringChapter(owner, scope, id, chapterId, revision, content);
 }
 
 export function approveAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, note: string) {
@@ -217,6 +225,29 @@ async function generateChapter(owner: string, scope: EducationScope, project: Pr
   return saved;
 }
 
+async function reviseChapter(owner: string, scope: EducationScope, project: Project, chapter: AuthoringChapter, content: SavedChapterContent, checkpoint: (content: SavedChapterContent) => void) {
+  assertSourceSnapshots(owner, scope, content, project.request.documentIds);
+  const media = await questionImages(content.questions);
+  const pools = chapter.plan.slots.map((_, i) => content.items.filter(item => item.slotIndex === i).map(item => item.questionId));
+  const result = await authoringModel({ ownerId: owner, profileId: project.request.profileId, purpose: "authoring_revision", jsonMode: true,
+    maxOutputTokens: 20000, timeoutMs: 240000, images: media.images,
+    system: `${chapterSystemPrompt}\n本轮是根据审校意见修订已有正文。逐条纠错并补全条件，保留所有原有知识点、题目 ID、分组、题量和真实缺口。不得修改或替换原题、不得降低难度要求，不可为修复正文而编造缺失题。只输出修订后的完整章节 JSON。`,
+    text: JSON.stringify({ kind: project.kind, audience: project.plan!.audience, chapter: chapter.plan,
+      previousContent: chapterContentSchema.parse(content), issues: content.review.issues, checks: authoringReviewChecks(chapter.plan.knowledgeIds),
+      selection: { items: content.items, gaps: content.gaps }, questions: content.questions.map(promptQuestion), imageMapping: media.mapping }),
+  }, value => {
+    const revised = validateChapterContent(value, chapter.plan, project.request.kind, pools, new Set());
+    if (revised.items.length !== content.items.length || content.items.some(item => !revised.items.some(other => other.questionId === item.questionId && other.slotIndex === item.slotIndex))) throw new Error("修订不能改变已选题目或分组，请只修订知识讲解与解答");
+    return revised;
+  });
+  const revised: SavedChapterContent = { ...result.value, questions: content.questions, questionFingerprints: content.questionFingerprints,
+    traceId: result.traceId, revisionNotes: content.review.issues, review: { passed: false, issues: ["修订已保存，等待独立复核。"] } };
+  assertSourceSnapshots(owner, scope, revised, project.request.documentIds);
+  checkpoint(revised);
+  revised.review = await reviewChapter(project, chapter, revised);
+  return revised;
+}
+
 export async function kickAuthoringChapters() {
   await ensureDatabase();
   const db = getSqlite(), token = randomUUID(), now = time();
@@ -237,18 +268,29 @@ export async function kickAuthoringChapters() {
   heartbeat.unref();
   try {
     const project = requireProject(job.owner_id, scope, job.project_id), chapter = project.chapters.find(item => item.id === job.id)!;
-    let content: SavedChapterContent;
-    if (job.job_kind === "review") {
-      if (!chapter.content) throw new Error("没有可审校的章节内容");
-      assertSourceSnapshots(job.owner_id, scope, chapter.content, project.request.documentIds);
-      content = { ...chapter.content, teacherApproval: undefined, review: await reviewChapter(project, chapter, chapter.content) };
-    } else content = await generateChapter(job.owner_id, scope, project, chapter, saved => {
-      const changed = db.prepare("UPDATE authoring_chapters SET content_json=?,job_kind='review',revision=revision+1,updated_at=? WHERE id=? AND lease_owner=? AND status='running'")
+    const checkpoint = (saved: SavedChapterContent) => db.transaction(() => {
+      if (!db.prepare("SELECT 1 FROM authoring_chapters WHERE id=? AND lease_owner=? AND status='running'").get(job.id, token)) throw new Error("任务已被其他进程接管");
+      archiveAuthoringChapter(job.id, "模型编写或修订前的保存版本");
+      db.prepare("UPDATE authoring_chapters SET content_json=?,job_kind='review',revision=revision+1,updated_at=? WHERE id=? AND lease_owner=? AND status='running'")
         .run(JSON.stringify(saved), time(), job.id, token);
-      if (!changed.changes) throw new Error("任务已被其他进程接管");
-    });
+    })();
+    let content: SavedChapterContent;
+    if (job.job_kind === "review" || job.job_kind === "revise") {
+      if (!chapter.content) throw new Error("没有可审校或修订的章节内容");
+      assertSourceSnapshots(job.owner_id, scope, chapter.content, project.request.documentIds);
+      content = job.job_kind === "revise" ? await reviseChapter(job.owner_id, scope, project, chapter, chapter.content, checkpoint)
+        : { ...chapter.content, teacherApproval: undefined, review: await reviewChapter(project, chapter, chapter.content) };
+    } else {
+      content = await generateChapter(job.owner_id, scope, project, chapter, checkpoint);
+      if (!content.review.passed) {
+        checkpoint(content);
+        // One bounded automatic revision; unresolved issues remain visible to the teacher.
+        content = await reviseChapter(job.owner_id, scope, project, chapter, content, checkpoint);
+      }
+    }
     assertSourceSnapshots(job.owner_id, scope, content, project.request.documentIds);
     db.transaction(() => {
+      if (db.prepare("SELECT 1 FROM authoring_chapters WHERE id=? AND lease_owner=? AND status='running'").get(job.id, token)) archiveAuthoringChapter(job.id, "独立审校完成前的版本");
       const changed = db.prepare("UPDATE authoring_chapters SET content_json=?,status=?,revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='running'")
         .run(JSON.stringify(content), content.review.passed && !content.gaps.length ? "complete" : "needs_review", time(), job.id, token);
       if (changed.changes) updateProjectProgress(job.project_id);

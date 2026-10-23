@@ -57,7 +57,8 @@ export function PaperBuilder({ questions, initialIds, templates: initialTemplate
   const [templateMessage, setTemplateMessage] = useState("");
   const ids = useMemo(() => orderedIds(sections), [sections]);
   const selected = useMemo(() => ids.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as QuestionWithSource[], [ids, questions]);
-  const settings: PaperSettings = useMemo(() => ({ templateId, subject: paperSubject, stage: paperStage, showAnswers, answerSpaces, assetLayouts, sections, notice, infoFields, compact, style: paperStyle }), [answerSpaces, assetLayouts, compact, infoFields, notice, paperStage, paperStyle, paperSubject, sections, showAnswers, templateId]);
+  const questionNumbers = initialPaper?.settings.questionNumbers;
+  const settings: PaperSettings = useMemo(() => ({ questionNumbers, templateId, subject: paperSubject, stage: paperStage, showAnswers, answerSpaces, assetLayouts, sections, notice, infoFields, compact, style: paperStyle }), [questionNumbers, answerSpaces, assetLayouts, compact, infoFields, notice, paperStage, paperStyle, paperSubject, sections, showAnswers, templateId]);
   const draftFingerprint = useMemo(() => JSON.stringify({ title, subtitle, ids, settings }), [ids, settings, subtitle, title]);
   const savedFingerprint = useRef<string | null>(initialPaper ? draftFingerprint : null);
   const currentFingerprint = useRef(draftFingerprint);

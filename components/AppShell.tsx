@@ -102,6 +102,7 @@ export function AppShell({ children, initialMode, initialScope }: { children: Re
   const scope = useMemo<EducationScopeValue>(() => {
     const change = (next: EducationScope) => {
       if (next.subject === subject && next.stage === stage) return;
+      if (!window.dispatchEvent(new CustomEvent("teacher-db-before-scope-change", { cancelable: true, detail: next }))) return;
       setScopeOpen(false);
       setSubjectOpen(false);
       document.cookie = `${educationScopeCookie}=${encodeURIComponent(JSON.stringify(next))}; Path=/; Max-Age=31536000; SameSite=Lax`;

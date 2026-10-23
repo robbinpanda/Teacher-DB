@@ -1099,3 +1099,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 
 .wb-pagination { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:16px; flex-wrap:wrap; } .wb-pagination input { width:80px; border:1px solid #d1d5db; border-radius:6px; padding:6px; }
+.studio-variation-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 18px 0; }
+.studio-variation-comparison > section { min-width: 0; }
+@media (max-width: 800px) { .studio-variation-comparison { grid-template-columns: 1fr; } }

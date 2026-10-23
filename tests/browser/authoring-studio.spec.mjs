@@ -15,10 +15,60 @@ async function prepare(context){
  db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES(?,'studio-test','周期选题资料','application/pdf','complete','数学','高三',?,?)").run(doc,time,time);
  db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,?,'1','fill','求函数 $y=sin(2x)$ 的最小正周期。','$\\pi$','由周期公式得 $T=2\\pi/2=\\pi$。','approved',1,'{}',?,?)").run(id,doc,time,time);db.close();return {id,doc};
 }
+
+test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出保留题号分值的 PDF',async({page,context,request})=>{
+ test.setTimeout(150000);
+ const {id,doc}=await prepare(context), second=crypto.randomUUID();
+ const db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3')),now=new Date().toISOString();
+ db.prepare("UPDATE documents SET name='整卷变式浏览器原卷' WHERE id=?").run(doc);
+ db.prepare("UPDATE questions SET number='3',score=5 WHERE id=?").run(id);
+ db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,score,created_at,updated_at) VALUES(?,?,'7','fill','求函数 $y=cos(3x)$ 的最小正周期。','三分之二π','使用周期公式。','approved',1,'{}',8,?,?)").run(second,doc,now,now);db.close();
+ let calls=0;
+ const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{calls++;const text=JSON.stringify(JSON.parse(raw).messages);let output;
+  const offset=text.includes('cos(3x)')?10:0;
+  const variations=[4+offset,5+offset].map(value=>({stem:`求函数 $y=\\sin(${value}x)$ 的最小正周期。`,type:'fill',options:[],answer:`$2\\pi/${value}$`,analysis:`角系数为 ${value}，振幅及角系数非零，由周期公式得结果。`,tags:[],changeNote:'改变角系数，保留周期公式的考查目标',diagram:null}));
+  if(text.includes('逐题核查可解性'))output={checks:[{index:1,score:92,solvable:true,answerCorrect:true,objectiveAligned:true,difficultyAligned:true,explanation:'代入复算结果一致，目标难度保持。'}]};
+  else if(text.includes('规划 2 道变式'))output={objective:'计算最小正周期',prerequisites:'周期公式',difficultyRationale:'直接代入公式',misconception:'忽略绝对值',changes:['改变角系数','改变函数']};
+  else if(text.includes('独立审校与修订 Agent'))output={reviews:[{index:1,verdict:'pass',score:92,issues:[],finalVariation:variations[0]}]};
+  else output={variations};res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));
+ });});
+ await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
+ try{
+  expect((await request.post('/api/model-profiles',{data:{displayName:`整卷测试-${crypto.randomUUID()}`,provider:'openai-compatible',baseUrl:`http://127.0.0.1:${model.address().port}/v1`,model:'mock',apiKey:'test-only',select:true}})).status()).toBe(201);
+  await page.goto('/studio');await page.getByRole('combobox',{name:'作品类型',exact:true}).selectOption('variation');
+  await page.getByRole('combobox',{name:'选择原卷',exact:true}).selectOption(`uploaded:${doc}`);
+  await page.getByLabel('教学要求',{exact:true}).fill('保持原题知识目标和题型，改变参数，难度与原卷一致。');
+  await page.getByRole('button',{name:'读取原卷，确认逐题对应'}).click();
+  await expect(page.getByRole('heading',{name:'整卷变式浏览器原卷 · 整卷变式'})).toBeVisible();
+  await expect(page.locator('.studio-variations')).toContainText('2 题 · 13 分');
+  await page.getByRole('button',{name:'确认原卷，逐题生成'}).click();
+  await expect(page.locator('.studio-variations summary').filter({hasText:'待核对采用'})).toHaveCount(2,{timeout:45000});expect(calls).toBe(8);
+  await page.reload();await page.getByRole('button',{name:/整卷变式浏览器原卷 · 变式卷/}).click();
+  for(const number of ['3','7']){
+   const detail=page.locator('.studio-variations details.studio-chapter').filter({has:page.locator('summary').filter({hasText:`第 ${number} 题`})});
+   await detail.locator(':scope > summary').click();await expect(detail.locator('.studio-variation-comparison')).toBeVisible();
+   await detail.getByRole('button',{name:'核对完成，采用此题'}).click();
+   await expect(detail.locator(':scope > summary')).toContainText('已采用');
+  }
+  await page.screenshot({path:'tmp/teacher-pilot/whole-variation-browser.png',fullPage:true});
+  await page.getByRole('button',{name:'进入组卷器与导出变式卷'}).click();await expect(page).toHaveURL(/\/papers\/[a-f0-9-]+$/);
+  const paperId=page.url().split('/').pop();
+  await expect(page.locator('.printable-paper .paper-question-line > b')).toHaveText(['3.','7.']);
+  // Saving in the ordinary editor must retain the original-number mapping.
+  await page.getByRole('button',{name:'保存试卷',exact:true}).click();
+  await expect(page.getByRole('button',{name:'下载试卷',exact:true})).toBeEnabled();
+  await page.reload();await expect(page.locator('.printable-paper .paper-question-line > b')).toHaveText(['3.','7.']);
+  const response=await request.get(`/api/papers/${paperId}/pdf`,{timeout:120000});expect(response.status()).toBe(200);
+  const bytes=await response.body();await writeFile('tmp/teacher-pilot/whole-variation-student.pdf',bytes);
+  const task=getDocument({data:new Uint8Array(bytes)}),pdf=await task.promise;let full='';
+  for(let p=1;p<=pdf.numPages;p++){const text=(await(await pdf.getPage(p)).getTextContent()).items.map(i=>i.str).join('');expect(text.length).toBeGreaterThan(4);full+=text;}
+  expect(full).toContain('3.');expect(full).toContain('7.');expect(full.replace(/\s/g,'')).toContain('8分');expect(full).not.toContain('振幅及角系数非零');await task.destroy();
+ }finally{await new Promise(resolve=>model.close(resolve));}
+});
 test('教师可核对标签、按考点难度检索，再将选题带入原有组卷器',async({page,context,request})=>{
  const {id}=await prepare(context);await page.goto('/studio');
  await page.getByRole('button',{name:'精准选题与标注'}).click();
- await page.getByRole('button',{name:'查看题目与标签'}).first().click();
+ await page.locator('.studio-results article').filter({has:page.getByRole('checkbox',{name:`选择题目 ${id}`,exact:true})}).getByRole('button',{name:'查看题目与标签'}).click();
  await page.getByRole('button',{name:'手动标注',exact:true}).click();await page.getByRole('button',{name:'增加考点'}).click();
  await page.getByLabel('考点 1',{exact:true}).selectOption(period);
  await page.getByLabel('考点依据 1',{exact:true}).fill('题干直接要求求最小正周期。');
@@ -52,6 +102,10 @@ test('自然语言规划通过后台模型调用持久化，可刷新恢复、�
   await page.reload();await page.getByRole('button',{name:new RegExp(plan.title)}).click();await expect(page.getByLabel('标题',{exact:true})).toHaveValue(plan.title);
   await page.getByRole('button',{name:'检查题库覆盖'}).click();await expect(page.locator('.studio-gap').first()).toContainText('还需核对或补充');
   await page.getByLabel('第 1 章第 2 组题量').fill('6');await expect(page.getByRole('button',{name:'检查题库覆盖'})).toBeDisabled();
+  page.once('dialog',dialog=>dialog.dismiss());
+  await page.getByRole('button',{name:'教学范围 高中 · 数学'}).click();await page.getByRole('button',{name:'初中',exact:true}).click();
+  await expect(page.getByLabel('第 1 章第 2 组题量')).toHaveValue('6');await expect(page.getByRole('button',{name:'教学范围 高中 · 数学'})).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.getByRole('button',{name:'保存大纲',exact:true}).click();await expect(page.getByText('大纲已保存',{exact:true})).toBeVisible();
   const conflict=await request.patch(`/api/authoring/${saved.id}?${scope}`,{data:{revision:before.project.revision,plan}});expect(conflict.status()).toBe(409);
   const foreign=await request.get(`/api/authoring/${saved.id}?${scope}`,{headers:{'oai-authenticated-user-id':'other'}});expect(foreign.status()).toBe(404);

@@ -1,5 +1,6 @@
 import type { QuestionType, VariationReview } from "./types";
 import { parseQuestionDiagram, type QuestionDiagram } from "./question-diagrams.ts";
+import { parseStructuredModelJson } from "./model-json.ts";
 
 function objectValue(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
@@ -42,9 +43,8 @@ export function parseVariationModelContent(input: {
   fallbackTags: string[];
   allowDiagrams?: boolean;
 }): ValidatedVariation[] {
-  const normalized = input.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   let parsed: unknown;
-  try { parsed = JSON.parse(normalized) as unknown; }
+  try { parsed = parseStructuredModelJson(input.content); }
   catch { throw new Error("模型没有返回有效的 JSON 变式题"); }
   const root = objectValue(parsed);
   const rawVariations = Array.isArray(root?.variations) ? root.variations : [];
@@ -116,9 +116,8 @@ export function parseVariationCandidatePool(input: {
   fallbackTags: string[];
   allowDiagrams?: boolean;
 }) {
-  const normalized = input.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   let parsed: unknown;
-  try { parsed = JSON.parse(normalized) as unknown; }
+  try { parsed = parseStructuredModelJson(input.content); }
   catch { throw new Error("生成 Agent 没有返回有效 JSON"); }
   const root = objectValue(parsed);
   const rawVariations = Array.isArray(root?.variations) ? root.variations.slice(0, input.targetCount + 2) : [];
@@ -162,9 +161,8 @@ export function parseVariationReviewContent(input: {
   /** Revision-only phase: the independent final verification must supply the admission score. */
   deferScoring?: boolean;
 }) {
-  const normalized = input.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   let parsed: unknown;
-  try { parsed = JSON.parse(normalized) as unknown; }
+  try { parsed = parseStructuredModelJson(input.content); }
   catch { throw new Error("审校 Agent 没有返回有效 JSON"); }
   const root = objectValue(parsed);
   const rawReviews = Array.isArray(root?.reviews) ? root.reviews : [];
@@ -186,8 +184,11 @@ export function parseVariationReviewContent(input: {
       if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) throw new Error(`第 ${index} 道题的审校分数无效`);
       if (score < 75) throw new Error(`第 ${index} 道题审校后仅 ${score} 分，未达到 75 分入库线`);
     }
-    if (!Array.isArray(item.issues) || item.issues.length > 5) throw new Error(`第 ${index} 道题的审校问题列表无效`);
-    const issues = item.issues.map((issue) => boundedText(issue, 160, true));
+    if (!Array.isArray(item.issues) || item.issues.length > 5) throw new Error(`第 ${index} 道题 issues 必须为数组且最多 5 项，请合并同类问题`);
+    const issues = item.issues.map((issue) => {
+      if (typeof issue !== "string" || !issue.trim() || issue.length > 160) throw new Error(`第 ${index} 道题 issues 每项必须为 1–160 字符的简短问题说明，详细推导写入 analysis`);
+      return boundedText(issue, 160, true);
+    });
     if (!item.finalVariation) throw new Error(`第 ${index} 道题缺少审校后的最终版本`);
     byIndex.set(index, {
       finalVariation: item.finalVariation,

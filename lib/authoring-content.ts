@@ -30,12 +30,14 @@ export type SavedChapterContent = ChapterContent & {
   questionFingerprints: Record<string, string>;
   review: ChapterReview;
   traceId: string;
+  revisionNotes?: string[];
   teacherApproval?: { at: string; note: string };
 };
 export type AuthoringChapter = {
   id: string; position: number; plan: AuthoringChapterPlan; content: SavedChapterContent | null;
   status: "pending" | "running" | "complete" | "needs_review" | "failed" | "approved";
   revision: number; attempt: number; error: string | null;
+  history?: Array<{ id: string; revision: number; reason: string; createdAt: string }>;
 };
 
 export function validateChapterContent(value: unknown, plan: AuthoringChapterPlan, kind: AuthoringRequest["kind"], pools: string[][], excluded: Set<string>) {

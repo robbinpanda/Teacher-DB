@@ -1,3 +1,4 @@
+import { parseStructuredModelJson } from "./model-json.ts";
 export type VariationPlan = {
   objective: string;
   prerequisites: string;
@@ -7,19 +8,19 @@ export type VariationPlan = {
 };
 
 export function parseVariationPlan(content: string, count: number): VariationPlan {
-  const value = JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+  const value = parseStructuredModelJson(content) as Record<string, unknown>;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("命题计划格式无效");
   for (const key of ["objective", "prerequisites", "difficultyRationale", "misconception"]) {
     if (typeof value[key] !== "string" || !value[key].trim() || value[key].length > 600) throw new Error(`命题计划缺少 ${key}`);
   }
   if (!Array.isArray(value.changes) || value.changes.length !== count + 1 || value.changes.some((text: unknown) => typeof text !== "string" || !text.trim() || text.length > 400)) throw new Error("命题计划必须覆盖每道候选题");
-  return { objective: value.objective, prerequisites: value.prerequisites, difficultyRationale: value.difficultyRationale, misconception: value.misconception, changes: value.changes };
+  return { objective: value.objective as string, prerequisites: value.prerequisites as string, difficultyRationale: value.difficultyRationale as string, misconception: value.misconception as string, changes: value.changes as string[] };
 }
 
 export type VariationVerification = { index: number; score: number; solvable: boolean; answerCorrect: boolean; objectiveAligned: boolean; difficultyAligned: boolean; explanation: string };
 
 export function parseVariationVerification(content: string, count: number): VariationVerification[] {
-  const value = JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+  const value = parseStructuredModelJson(content) as Record<string, unknown>;
   if (!Array.isArray(value?.checks) || value.checks.length !== count) throw new Error("最终复核结果数量不符");
   const seen = new Set<number>();
   const checks = value.checks as VariationVerification[];

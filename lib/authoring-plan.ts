@@ -8,6 +8,8 @@ export const authoringRequestSchema = z.object({
   documentIds: z.array(z.string().min(1).max(100)).max(100).default([]),
   requiredKnowledgeIds: z.array(z.string().min(1).max(150)).max(80).default([]),
   profileId: z.string().max(100).optional(),
+  variationDifficulty: z.enum(["easier", "similar", "harder"]).default("similar"),
+  reviewerProfileId: z.string().max(100).optional(),
   sourcePaperId: z.string().max(100).optional(),
   sourcePaperKind: z.enum(["uploaded", "assembled"]).optional(),
 }).strict();

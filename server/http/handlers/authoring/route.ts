@@ -3,6 +3,7 @@ import { ensureDatabase } from "../../../../db/bootstrap";
 import { requestOwner } from "../../../../lib/server";
 import { requestEducationScope, documentScopeSql } from "../../../../lib/education-scope";
 import { createAuthoringProject } from "../../../services/authoring";
+import { getPaperLibrary } from "../../../../lib/paper-library";
 
 export async function GET(request: Request) {
   await ensureDatabase();
@@ -12,7 +13,8 @@ export async function GET(request: Request) {
     .all(owner, scope.subject, scope.stage);
   const sources = sqlite.prepare(`SELECT d.id,d.name,COUNT(q.id) AS questionCount FROM documents d JOIN questions q ON q.document_id=d.id
     WHERE d.owner_id=?${filter.sql} AND q.status='approved' GROUP BY d.id ORDER BY d.created_at DESC`).all(owner, ...filter.params);
-  return Response.json({ projects, sources });
+  const { papers } = await getPaperLibrary(owner, scope);
+  return Response.json({ projects, sources, papers: papers.filter(paper => paper.questionCount > 0).map(({ id, kind, title, questionCount, approvedCount }) => ({ id, kind, title, questionCount, approvedCount })) });
 }
 export async function POST(request: Request) {
   try { return Response.json({ project: await createAuthoringProject(requestOwner(request), requestEducationScope(request), await request.json()) }, { status: 201 }); }

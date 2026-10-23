@@ -1,0 +1,87 @@
+import assert from "node:assert/strict";
+import { ensureDatabase } from "../db/bootstrap.ts";
+import { getSqlite } from "../db/index.ts";
+import { encryptSecret } from "../lib/secret-box.ts";
+import { createAuthoringProject,readAuthoringProject } from "../server/services/authoring.ts";
+import { controlWholePaperVariation,kickWholePaperVariations,acceptWholePaperItem,retryWholePaperItem,publishWholePaperVariation } from "../server/services/authoring-variations.ts";
+import { acceptVariationCandidates } from "../server/services/variation-acceptance.ts";
+import { prepareWholePaperSource } from "../server/services/authoring-variation-source.ts";
+import { getPaperData } from "../lib/question-repository.ts";
+
+await ensureDatabase();
+const db=getSqlite(),scope={subject:"数学",stage:"high" as const},now=new Date().toISOString();
+const key=await encryptSecret("synthetic-test-key");
+db.prepare("INSERT INTO model_profiles(id,owner_id,display_name,provider,base_url,model,api_key_ciphertext,api_key_iv,api_key_mask,created_at,updated_at) VALUES('model','teacher','Mock','openai-compatible','https://model.invalid/v1','mock',?,?,'test',?,?)").run(key.ciphertext,key.iv,now,now);
+db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES('doc','teacher','原卷','application/pdf','complete','数学','高三',?,?)").run(now,now);
+for(let i=1;i<=2;i++)db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,score,created_at,updated_at) VALUES(?,'doc',?,'fill',?,'2','代入计算。','approved',1,'{}',?,?,?)").run(`q${i}`,String(i*3),`若 x=${i}，求 x+1。`,i*5,now,now);
+const request={kind:"variation",instruction:"保留原题知识目标，改变数值与设问，保持原卷难度。",sourcePaperKind:"uploaded",sourcePaperId:"doc",profileId:"model"};
+const read=(id:string)=>readAuthoringProject("teacher",scope,id)!;
+let calls=0,steal:(()=>void)|undefined, fail=false, duplicate=false, malformedGeneration=false;
+globalThis.fetch=async(_url,init)=>{
+  calls++;
+  const body=JSON.parse(String(init?.body)),text=JSON.stringify(body.messages??body.input);
+  if(fail)return Response.json({error:"unauthorized"},{status:401});
+  const offset=!duplicate && text.includes('若 x=2，求 x+1。') ? 10 : 0;
+  const variations=[3+offset,5+offset].map(value=>({stem:`若 x=${value}，求 2x+1。`,type:"fill",options:[],answer:String(2*value+1),analysis:`代入计算，2×${value}+1=${2*value+1}。`,tags:[],changeNote:"改变数值与计算表达式",diagram:null}));
+  let output:unknown;
+  if(text.includes("逐题核查可解性"))output={checks:[{index:1,score:92,solvable:true,answerCorrect:true,objectiveAligned:true,difficultyAligned:true,explanation:"代入复算结果一致，目标难度保持。"}]};
+  else if(text.includes("规划 2 道变式"))output={objective:"代入求值",prerequisites:"整数运算",difficultyRationale:"一步代入",misconception:"运算次序",changes:["改变数值","改变表达式"]};
+  else if(text.includes("独立审校与修订 Agent"))output={reviews:[{index:1,verdict:"pass",score:92,issues:[],finalVariation:variations[0]}]};
+  else {steal?.();output={variations};if(malformedGeneration){output={variations:variations.map(q=>({...q,changeNote:'过长说明'.repeat(100)}))};malformedGeneration=false;}}
+  return Response.json({choices:[{message:{content:JSON.stringify(output)},finish_reason:"stop"}]});
+};
+async function create(){const p=await createAuthoringProject("teacher",scope,request);return controlWholePaperVariation("teacher",scope,p.id,p.revision,"generate");}
+let project=await create();
+assert.deepEqual(project.variation!.items.map(i=>[i.number,i.score]),[["3",5],["6",10]]);
+db.prepare("UPDATE questions SET type='multiple',answer='B' WHERE id='q1'").run();
+await assert.rejects(()=>createAuthoringProject("teacher",scope,request),/题型与答案个数/);
+db.prepare("UPDATE questions SET type='fill',answer='2' WHERE id='q1'").run();
+await assert.rejects(()=>createAuthoringProject("other",scope,request),/不存在/);
+await assert.rejects(()=>createAuthoringProject("teacher",{...scope,stage:"middle"},request),/学科/);
+await controlWholePaperVariation("teacher",scope,project.id,project.revision,"pause");
+await kickWholePaperVariations();assert.equal(calls,0);
+project=await controlWholePaperVariation("teacher",scope,project.id,read(project.id).revision,"resume");
+await kickWholePaperVariations();project=read(project.id);assert.equal(calls,4);assert.equal(project.variation!.items[0].status,"awaiting_teacher");
+assert.equal((db.prepare("SELECT count(*) AS n FROM questions").get() as {n:number}).n,2,"generation must not adopt candidates");
+await assert.rejects(()=>publishWholePaperVariation("teacher",scope,project.id),/逐题/);
+// Recover an expired worker using its completed candidate run, with no extra model calls.
+db.prepare("UPDATE authoring_variation_items SET status='running',lease_owner='dead',lease_expires_at='2000-01-01' WHERE id=?").run(project.variation!.items[0].id);
+await kickWholePaperVariations();assert.equal(calls,4);
+await kickWholePaperVariations();project=read(project.id);assert.equal(calls,8);assert.equal(project.status,"reviewing");
+let item=project.variation!.items[0];
+await assert.rejects(()=>acceptWholePaperItem("other",scope,project.id,item.id,item.revision),/不存在/);
+await acceptWholePaperItem("teacher",scope,project.id,item.id,item.revision);
+await assert.rejects(()=>acceptWholePaperItem("teacher",scope,project.id,item.id,item.revision),/变化/);
+// Simulate a crash after adoption was persisted but before the parent mapping was saved.
+item=read(project.id).variation!.items[1];
+db.prepare("UPDATE authoring_variation_items SET status='accepting',lease_owner='dead',lease_expires_at='2000-01-01' WHERE id=?").run(item.id);
+assert.equal((await acceptVariationCandidates("teacher",item.runId!,{candidateIds:[item.candidate!.id]})).status,200);
+await kickWholePaperVariations();project=read(project.id);assert.equal(project.status,"completed");
+const published=await publishWholePaperVariation("teacher",scope,project.id);
+assert.deepEqual(await publishWholePaperVariation("teacher",scope,project.id),published);
+const saved=await getPaperData(published.id,"teacher");
+assert.deepEqual(saved!.questions.map(q=>q.parentQuestionId),["q1","q2"]);
+assert.deepEqual(Object.values(saved!.settings.questionNumbers!),["3","6"]);
+assert.deepEqual(db.prepare("SELECT score FROM paper_items WHERE paper_id=? ORDER BY position").all(published.id),[{score:5},{score:10}]);
+// Generated papers are not accepted as another variation source.
+await assert.rejects(()=>prepareWholePaperSource("teacher",scope,{...project.request,sourcePaperKind:"assembled",sourcePaperId:published.id}),/已有 AI/);
+db.prepare("UPDATE questions SET answer='edited' WHERE id='q1'").run();
+await assert.rejects(()=>publishWholePaperVariation("teacher",scope,project.id),/已变化/);
+db.prepare("UPDATE questions SET answer='2' WHERE id='q1'").run();
+item=read(project.id).variation!.items[0];
+await retryWholePaperItem("teacher",scope,project.id,item.id,item.revision);
+assert.equal(read(project.id).paperId,null);
+fail=true;await kickWholePaperVariations();fail=false;project=read(project.id);assert.equal(project.variation!.items[0].status,"failed");
+item=project.variation!.items[0];await retryWholePaperItem("teacher",scope,project.id,item.id,item.revision);
+// A stale worker must never overwrite a replacement worker's mapping or status.
+steal=()=>db.prepare("UPDATE authoring_variation_items SET lease_owner='replacement' WHERE id=?").run(item.id);
+await kickWholePaperVariations();assert.equal(read(project.id).variation!.items[0].status,"running");
+steal=undefined;db.prepare("UPDATE authoring_variation_items SET lease_expires_at='2000-01-01' WHERE id=?").run(item.id);
+await kickWholePaperVariations();project=read(project.id);assert.equal(project.variation!.items[0].status,"awaiting_teacher");
+item=project.variation!.items[0];await acceptWholePaperItem("teacher",scope,project.id,item.id,item.revision);
+assert.notEqual((await publishWholePaperVariation("teacher",scope,project.id)).id,published.id,"new edition retains the old published paper");
+const repeated=await create();duplicate=true;await kickWholePaperVariations();await kickWholePaperVariations();duplicate=false;
+assert.match(read(repeated.id).variation!.items[1].error!,/重复/);
+const brokenItem=read(repeated.id).variation!.items[1];await retryWholePaperItem("teacher",scope,repeated.id,brokenItem.id,brokenItem.revision);
+malformedGeneration=true;const beforeRepair=calls;await kickWholePaperVariations();assert.equal(calls-beforeRepair,5,"invalid generation gets exactly one bounded correction");assert.equal(read(repeated.id).variation!.items[1].status,"awaiting_teacher");
+console.log("Whole-paper variation: source order/scores, independent model pipeline, adoption, leases, isolation and publishing passed.");

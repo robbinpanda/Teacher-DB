@@ -94,6 +94,7 @@ export type PaperAssetLayout = {
 };
 
 export type PaperSettings = {
+  questionNumbers?: Record<string, string>;
   templateId: string;
   subject: string;
   stage: EducationStage;
@@ -384,6 +385,7 @@ export function normalizePaperSettings(value: Record<string, unknown>, questions
   if (remaining.length) sections.at(-1)?.questionIds.push(...remaining);
   return {
     templateId: typeof value.templateId === "string" ? value.templateId : fallbackTemplate.id,
+    questionNumbers: value.questionNumbers && typeof value.questionNumbers === "object" ? Object.fromEntries(Object.entries(value.questionNumbers).filter(([id, number]) => knownIds.has(id) && typeof number === "string" && number.length <= 30)) as Record<string, string> : {},
     subject: typeof value.subject === "string" ? value.subject : questions[0]?.source.subject ?? "数学",
     stage: value.stage === "primary" || value.stage === "high" ? value.stage : "middle",
     showAnswers: Boolean(value.showAnswers),

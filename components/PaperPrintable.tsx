@@ -84,7 +84,8 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
         const sectionQuestions = section.questionIds.map((id) => questionMap.get(id)).filter(Boolean) as QuestionWithSource[];
         return sectionQuestions.map((question, sectionIndex) => {
               const questionNumber = ++globalIndex;
-              const number = preserveQuestionNumbers && question.number ? question.number : String(questionNumber);
+              const preserveNumber = preserveQuestionNumbers || Boolean(settings.questionNumbers?.[question.id]);
+              const number = settings.questionNumbers?.[question.id] ?? (preserveQuestionNumbers && question.number ? question.number : String(questionNumber));
               const score = scoreForQuestion(section, sectionIndex);
               const questionAssets = question.assets.filter((asset) => asset.role === "question");
               const beforeAssets = questionAssets.filter((asset) => (settings.assetLayouts[asset.id]?.placement ?? "after-stem") === "after-stem");
@@ -108,7 +109,7 @@ export function PaperPrintable({ title, subtitle, questions, settings, includeAn
                 minimumBlank: Number.isFinite(configuredBlank) ? Math.max(0, configuredBlank) : 0,
                 heading: <div className="paper-section-heading"><h2>{section.title}</h2><span>{section.scoreDetail}</span></div>,
                 content: <>
-                  <div className="paper-question-line"><b>{preserveQuestionNumbers ? `${number}.` : formatQuestionNumber(questionNumber, style.questionNumberStyle)}</b><div className="paper-question-stem"><MathText text={question.stem} />{question.type === "fill" && !questionStemHasAnswerBlank(question.stem) && <span className="paper-fill-blank" aria-label="答题空格" />}{score > 0 && style.scoreStyle === "inline" && <span className="paper-question-score inline">（{score} 分）</span>}</div>{score > 0 && style.scoreStyle === "right" && <span className="paper-question-score">（{score} 分）</span>}</div>
+                  <div className="paper-question-line"><b>{preserveNumber ? `${number}.` : formatQuestionNumber(questionNumber, style.questionNumberStyle)}</b><div className="paper-question-stem"><MathText text={question.stem} />{question.type === "fill" && !questionStemHasAnswerBlank(question.stem) && <span className="paper-fill-blank" aria-label="答题空格" />}{score > 0 && style.scoreStyle === "inline" && <span className="paper-question-score inline">（{score} 分）</span>}</div>{score > 0 && style.scoreStyle === "right" && <span className="paper-question-score">（{score} 分）</span>}</div>
                   {beforeAssets.map((asset) => renderAsset(asset))}
                   {question.options && <div className="paper-options">{question.options.map((option) => <span key={option.key}><b>{option.key}.</b> <MathText text={option.content} /></span>)}</div>}
                   {afterAssets.map((asset) => renderAsset(asset))}

@@ -26,6 +26,7 @@ function ChapterEditor({ chapter, projectId, projectStatus, scopeQuery, document
 }) {
   const [draft, setDraft] = useState(chapter.content), [editing, setEditing] = useState(false), [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [note, setNote] = useState("");
+  const [historical, setHistorical] = useState<{ id: string; content: SavedChapterContent } | null>(null);
   const [lookup, setLookup] = useState<{ slot: number; replace: number | null } | null>(null), [query, setQuery] = useState(""), [hits, setHits] = useState<RetrievalHit[]>([]);
   const url = `/api/authoring/${projectId}/chapters/${chapter.id}?${scopeQuery}`;
   const working = ["pending", "running"].includes(chapter.status);
@@ -34,7 +35,7 @@ function ChapterEditor({ chapter, projectId, projectStatus, scopeQuery, document
   useEffect(() => () => notifyDirty(false), [notifyDirty]);
   function edit(value: SavedChapterContent) { setDraft(value); setDirty(true); notifyDirty(true); }
   async function operate(action: () => Promise<void>) { setBusy(true); setError(""); try { await action(); } catch (caught) { setError(caught instanceof Error ? caught.message : "操作失败"); } finally { setBusy(false); } }
-  async function action(name: "retry" | "review" | "approve") {
+  async function action(name: "retry" | "review" | "revise" | "approve") {
     const result = await studioRequest<{ project: unknown }>(url, "POST", { action: name, revision: chapter.revision, note });
     onUpdate(result.project);
   }
@@ -51,7 +52,9 @@ function ChapterEditor({ chapter, projectId, projectStatus, scopeQuery, document
     {working && <p role="status">本章第 {chapter.attempt || 1} 次处理。进度保存在后台，可以刷新后继续查看。</p>}
     {!working && <div className="studio-plan-actions">
       <button className="btn" disabled={busy || dirty || projectStatus === "paused"} onClick={() => { if (!draft || window.confirm("重新生成会替换本章当前内容，其他章节会保留。继续吗？")) void operate(() => action("retry")); }}>重新生成本章</button>
-      {draft && <><button className="btn" disabled={busy || dirty || projectStatus === "paused"} onClick={() => void operate(() => action("review"))}>重新审校</button>
+      {!!chapter.history?.length && <details className="studio-history"><summary>已保存的历史版本（{chapter.history.length}）</summary>{chapter.history.map(version => <p key={version.id}>版本 {version.revision} · {new Date(version.createdAt).toLocaleString()} · {version.reason} <button className="btn" disabled={busy} onClick={() => void operate(async () => { const result = await studioRequest<{ content: SavedChapterContent }>(`${url}&version=${version.id}`); setHistorical({ id: version.id, content: result.content }); })}>查看此版</button></p>)}</details>}
+    {historical && <section className="studio-historical-content"><h4>历史版本预览</h4><p><MathText text={historical.content.introduction} /></p>{historical.content.knowledge.map(k => <section key={k.id}><h4>{k.title}</h4><p><MathText text={k.explanation} /></p></section>)}{historical.content.items.map(item => <p key={item.questionId}><strong>{historical.content.questions.find(q => q.id === item.questionId)?.number} 题讲解：</strong><MathText text={item.teachingExplanation} /></p>)}<p><MathText text={historical.content.conclusion} /></p><button className="btn" onClick={() => setHistorical(null)}>关闭历史预览</button><button className="btn" disabled={busy || dirty || working || projectStatus === "generating"} onClick={() => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "POST", { action: "restore", revision: chapter.revision, versionId: historical.id }); onUpdate(result.project); })}>恢复此版并重新核对</button></section>}
+    {draft && <>{!draft.review.passed && <button className="btn btn-primary" disabled={busy || dirty || projectStatus === "paused"} onClick={() => void operate(() => action("revise"))}>按审校意见修订正文</button>}<button className="btn" disabled={busy || dirty || projectStatus === "paused"} onClick={() => void operate(() => action("review"))}>重新审校</button>
         <button className="btn" disabled={busy || projectStatus === "generating"} onClick={() => setEditing(!editing)}>{editing ? "收起编辑" : "修改正文与选题"}</button>
         <button className="btn btn-primary" disabled={busy || !dirty} onClick={() => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "PATCH", { revision: chapter.revision, content: draft }); setDirty(false); notifyDirty(false); onUpdate(result.project); })}>保存本章修改</button></>}
     </div>}

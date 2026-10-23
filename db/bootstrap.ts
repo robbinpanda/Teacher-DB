@@ -527,7 +527,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 13;
+export const DATABASE_VERSION = 15;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -632,6 +632,29 @@ function initialize() {
       ALTER TABLE authoring_chapters ADD COLUMN job_kind TEXT NOT NULL DEFAULT 'generate';
       ALTER TABLE authoring_projects ADD COLUMN paper_id TEXT REFERENCES papers(id) ON DELETE SET NULL;
       CREATE INDEX authoring_chapters_queue_idx ON authoring_chapters(status, lease_expires_at, project_id, position);
+    `) },
+    { version: 14, name: "authoring-chapter-history", checksum: "authoring-chapter-history-v1", up: sqlite => sqlite.exec(`
+      CREATE TABLE authoring_chapter_versions (
+        id TEXT PRIMARY KEY, chapter_id TEXT NOT NULL REFERENCES authoring_chapters(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL, content_json TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(chapter_id,revision)
+      );
+    `) },
+    { version: 15, name: "authoring-whole-paper-variations", checksum: "authoring-whole-paper-variations-v1", up: sqlite => sqlite.exec(`
+      CREATE TABLE authoring_variation_sources (
+        project_id TEXT PRIMARY KEY REFERENCES authoring_projects(id) ON DELETE CASCADE,
+        snapshot_json TEXT NOT NULL
+      );
+      CREATE TABLE authoring_variation_items (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES authoring_projects(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL, source_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        revision INTEGER NOT NULL DEFAULT 1, attempt INTEGER NOT NULL DEFAULT 0,
+        run_id TEXT REFERENCES variation_runs(id) ON DELETE SET NULL,
+        promoted_question_id TEXT REFERENCES questions(id) ON DELETE SET NULL,
+        stage TEXT, error TEXT, lease_owner TEXT, lease_expires_at TEXT, updated_at TEXT NOT NULL,
+        UNIQUE(project_id,position)
+      );
+      CREATE INDEX authoring_variation_queue_idx ON authoring_variation_items(status,lease_expires_at,project_id,position);
     `) },
   ]);
   initialized = true;

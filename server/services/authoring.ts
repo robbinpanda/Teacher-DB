@@ -1,3 +1,5 @@
+import { prepareWholePaperSource } from "./authoring-variation-source";
+import type { WholePaperSource, WholePaperVariation, WholePaperVariationItem } from "../../lib/authoring-variation";
 import { randomUUID } from "node:crypto";
 import { getSqlite } from "../../db";
 import { ensureDatabase } from "../../db/bootstrap";
@@ -28,18 +30,29 @@ export function readAuthoringProject(ownerId: string, scope: EducationScope, id:
   const plan = row.plan_json ? JSON.parse(row.plan_json) as AuthoringPlan : null;
   const chapters = (sqlite.prepare("SELECT * FROM authoring_chapters WHERE project_id=? ORDER BY position").all(id) as Array<{ id: string; position: number; plan_json: string; content_json: string | null; status: AuthoringChapter["status"]; revision: number; attempt: number; error: string | null }>).map(chapter => ({
     id: chapter.id, position: chapter.position, plan: JSON.parse(chapter.plan_json), content: chapter.content_json ? JSON.parse(chapter.content_json) as SavedChapterContent : null,
+    history: sqlite.prepare("SELECT id,revision,reason,created_at AS createdAt FROM authoring_chapter_versions WHERE chapter_id=? ORDER BY revision DESC").all(chapter.id),
     status: chapter.status, revision: chapter.revision, attempt: chapter.attempt, error: chapter.error,
   })) as AuthoringChapter[];
-  return { id: row.id, title: row.title, subject: row.subject, stage: row.stage, kind: row.kind, status: row.status, revision: row.revision, error: row.error,
+  const sourceSnapshot = sqlite.prepare("SELECT snapshot_json FROM authoring_variation_sources WHERE project_id=?").get(id) as { snapshot_json: string } | undefined;
+  const variation: WholePaperVariation | null = sourceSnapshot ? { sourceTitle: (JSON.parse(sourceSnapshot.snapshot_json) as WholePaperSource).title,
+    items: (sqlite.prepare(`SELECT i.*,vc.id AS candidate_id,vc.content_json AS candidate_json,vc.review_json FROM authoring_variation_items i
+      LEFT JOIN variation_candidates vc ON vc.run_id=i.run_id AND vc.ordinal=1 WHERE i.project_id=? ORDER BY i.position`).all(id) as Array<Record<string, unknown>>).map(item => {
+      const saved = JSON.parse(item.source_json as string) as WholePaperSource["items"][number];
+      return { id: item.id, position: item.position, source: saved.source, number: saved.number, score: saved.score, sectionTitle: saved.sectionTitle,
+        status: item.status, revision: item.revision, attempt: item.attempt, stage: item.stage, error: item.error, runId: item.run_id, promotedQuestionId: item.promoted_question_id,
+        candidate: item.candidate_json ? { id: item.candidate_id, question: JSON.parse(item.candidate_json as string), review: JSON.parse(item.review_json as string) } : null } as WholePaperVariationItem;
+    }) } : null;
+  return { variation, id: row.id, title: row.title, subject: row.subject, stage: row.stage, kind: row.kind, status: row.status, revision: row.revision, error: row.error,
     createdAt: row.created_at, updatedAt: row.updated_at, request: JSON.parse(row.request_json) as AuthoringRequest, plan, chapters, paperId: row.paper_id, summary: plan ? planSummary(plan) : null };
 }
 export async function createAuthoringProject(ownerId: string, scope: EducationScope, value: unknown) {
   await ensureDatabase();
   const request = validateAuthoringRequest(value, scope);
-  await variationSource(ownerId, scope, request);
+  const wholePaper = request.kind === "variation" ? await prepareWholePaperSource(ownerId, scope, request) : null;
   // Resolve before enqueueing, so missing or another teacher's model fails visibly.
   const profile = await resolveModelProfile(ownerId, request.profileId);
   request.profileId = profile.id;
+  if (wholePaper) request.reviewerProfileId = (await resolveModelProfile(ownerId, request.reviewerProfileId ?? profile.id)).id;
   const sqlite = getSqlite();
   if (request.documentIds.length) {
     const rows = loadRetrievalRows(sqlite, ownerId, scope, request.documentIds);
@@ -47,8 +60,15 @@ export async function createAuthoringProject(ownerId: string, scope: EducationSc
     if (request.documentIds.some(id => !found.has(id))) throw new Error("选定资料没有当前范围内的已审核题目，请先完成入库");
   }
   const id = randomUUID(), time = new Date().toISOString();
+  sqlite.transaction(() => {
   sqlite.prepare(`INSERT INTO authoring_projects(id,owner_id,subject,stage,kind,title,request_json,status,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,'queued',?,?)`).run(id, ownerId, scope.subject, scope.stage, request.kind, request.instruction.slice(0, 60), JSON.stringify(request), time, time);
+    VALUES(?,?,?,?,?,?,?,?,?,?)`).run(id, ownerId, scope.subject, scope.stage, request.kind, wholePaper ? `${wholePaper.title} · 变式卷` : request.instruction.slice(0, 60), JSON.stringify(request), wholePaper ? "planned" : "queued", time, time);
+  if (wholePaper) {
+    sqlite.prepare("INSERT INTO authoring_variation_sources(project_id,snapshot_json) VALUES(?,?)").run(id, JSON.stringify(wholePaper));
+    const insert = sqlite.prepare("INSERT INTO authoring_variation_items(id,project_id,position,source_json,updated_at) VALUES(?,?,?,?,?)");
+    wholePaper.items.forEach((item, position) => insert.run(randomUUID(), id, position, JSON.stringify(item), time));
+  }
+  })();
   return readAuthoringProject(ownerId, scope, id)!;
 }
 

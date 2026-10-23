@@ -5,7 +5,8 @@ import { ensureDatabase } from "../db/bootstrap.ts";
 import { getSqlite } from "../db/index.ts";
 import { encryptSecret } from "../lib/secret-box.ts";
 import { createAuthoringProject, readAuthoringProject, kickAuthoringPlanning } from "../server/services/authoring.ts";
-import { controlAuthoringProject, kickAuthoringChapters, retryAuthoringChapter, editAuthoringChapter, approveAuthoringChapter, readyAuthoringProject, publishAuthoringPaper } from "../server/services/authoring-chapters.ts";
+import { controlAuthoringProject, kickAuthoringChapters, retryAuthoringChapter, editAuthoringChapter, restoreAuthoringChapter, approveAuthoringChapter, readyAuthoringProject, publishAuthoringPaper } from "../server/services/authoring-chapters.ts";
+import { readAuthoringChapterVersion } from "../server/services/authoring-history.ts";
 import { getAuthoringDocument } from "../server/services/authoring-output.ts";
 import { readModel } from "../server/http/read-models.ts";
 import { createPaperExportToken } from "../lib/paper-export-token.ts";
@@ -43,7 +44,7 @@ globalThis.fetch = async (_url, init) => {
     calls.push("review"); if (reviewError) return Response.json({ error: "temporary test failure" }, { status: 503 });
     output = { checks: (input.checks ?? []).map((check: { id: string }) => ({ id: check.id, passed: true, evidence: input.content.introduction, reason: "已逐项核对该学科要求和本章对应内容。" })), knowledge: input.content.knowledge.map((item: { id: string }) => ({ id: item.id, correct: !reviewReject, complete: true, reason: "公式条件与本章知识要求逐项核对。" })), questions: input.content.items.map((item: { questionId: string }) => ({ id: item.questionId, aligned: true, difficultyAppropriate: true, explanationCorrect: true, reason: "题目条件明确，代入公式与计算过程一致。" })) };
   } else if (system.includes("校本教辅编辑")) {
-    calls.push("write"); stealing?.();
+    calls.push(input.previousContent ? "revise" : "write"); stealing?.();
     output = { ...input.selection, introduction: "从周期的概念出发，先理解定义，再通过例题掌握计算方法。", knowledge: input.kind === "paper" ? [] : [{ id: period, title: "最小正周期", explanation: "周期函数的函数值按固定间隔重复，最小正周期是所有正周期中的最小值。研究周期时必须明确自变量的变化范围，并确认恒等关系对定义域内所有自变量成立。正弦函数的角系数会改变变化速度，因此需要使用角系数的绝对值计算周期，不能忽略非零条件。", formulas: [{ latex: "T=2\\pi/|\\omega|", conditions: "角系数非零且振幅非零。" }], method: "先识别函数中的角系数，再判断是否为正弦或余弦函数，代入最小正周期公式并验证非零条件。", misconceptions: [{ mistake: "把负的角系数直接代入。", correction: "周期取正值，应当使用角系数的绝对值。" }] }], items: input.selection.items.map((item: object) => ({ ...item, teachingExplanation: "第一步识别函数中的角系数并确认它不为零；第二步使用正弦函数最小正周期公式，取角系数的绝对值后计算。第三步把结果代回定义，检查自变量平移一个周期后函数值保持不变，从而验证结论。" })), conclusion: "本章通过定义、公式和典型题，建立了周期计算的完整步骤。" };
   } else { calls.push("plan"); output = plan; }
   return Response.json({ choices: [{ message: { content: JSON.stringify(output) } }] });
@@ -90,10 +91,12 @@ try {
   await kickAuthoringChapters(); failure = read(failure.id);
   assert.equal(failure.chapters[0].status, "failed"); assert.ok(failure.chapters[0].content, "preserve expensive writing after review failure");
   reviewError = false;
-  await retryAuthoringChapter("teacher", scope, failure.id, failure.chapters[0].id, failure.chapters[0].revision, true);
+  await retryAuthoringChapter("teacher", scope, failure.id, failure.chapters[0].id, failure.chapters[0].revision, "review");
   const counts = calls.length; await kickAuthoringChapters(); assert.deepEqual(calls.slice(counts), ["review"]);
-  reviewReject = true; await kickAuthoringChapters(); failure = read(failure.id); assert.equal(failure.chapters[1].status, "needs_review"); reviewReject = false;
-  await retryAuthoringChapter("teacher", scope, failure.id, failure.chapters[1].id, failure.chapters[1].revision, true);
+  reviewReject = true; const revisionStart = calls.length; await kickAuthoringChapters(); failure = read(failure.id); assert.equal(failure.chapters[1].status, "needs_review"); reviewReject = false;
+  assert.deepEqual(calls.slice(revisionStart), ["select", "write", "review", "revise", "review"], "failed review gets exactly one automatic revision and independent recheck");
+  assert.ok(failure.chapters[1].history!.length >= 3, "preserve writing and review history");
+  await retryAuthoringChapter("teacher", scope, failure.id, failure.chapters[1].id, failure.chapters[1].revision, "review");
   db.prepare("UPDATE authoring_chapters SET status='running',lease_owner='dead',lease_expires_at='2000-01-01' WHERE id=?").run(failure.chapters[1].id);
   await kickAuthoringChapters(); assert.equal(read(failure.id).chapters[1].status, "complete");
 
@@ -110,6 +113,16 @@ try {
   assert.equal((await view("authoring-print", project.id, token)).status, 200);
   assert.equal((await view("paper-print", project.id, token)).status, 404);
   assert.equal((await view("authoring-print", paper.id, token)).status, 404);
+
+  const currentChapter = read(project.id).chapters[0];
+  const previous = currentChapter.history!.find(version => readAuthoringChapterVersion("teacher", scope, project.id, currentChapter.id, version.id)?.conclusion === c.content!.conclusion)!;
+  assert.ok(previous);
+  assert.equal(readAuthoringChapterVersion("other", scope, project.id, currentChapter.id, previous.id), null);
+  const restored = await restoreAuthoringChapter("teacher", scope, project.id, currentChapter.id, currentChapter.revision, previous.id);
+  assert.equal(restored.chapters[0].content!.conclusion, c.content!.conclusion);
+  assert.equal(restored.chapters[0].status, "needs_review", "restore invalidates approval");
+  assert.ok(restored.chapters[0].history!.some(version => version.revision === currentChapter.revision), "restoring preserves the replaced version");
+  await assert.rejects(() => restoreAuthoringChapter("teacher", scope, project.id, currentChapter.id, currentChapter.revision, previous.id), /变化/);
 
   const stale = await create();
   stealing = () => db.prepare("UPDATE authoring_chapters SET lease_owner='replacement',error='replacement-owned' WHERE id=?").run(stale.chapters[0].id);

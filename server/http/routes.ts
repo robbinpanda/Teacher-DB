@@ -1,7 +1,8 @@
 // Explicit registry: application modules never import the Next.js app.
 export const routes = [
   { path: "/api/authoring/[projectId]/pdf", methods: ["GET"], load: () => import("./handlers/authoring/[projectId]/pdf/route") },
-  { path: "/api/authoring/[projectId]/chapters/[chapterId]", methods: ["POST", "PATCH"], load: () => import("./handlers/authoring/[projectId]/chapters/[chapterId]/route") },
+  { path: "/api/authoring/[projectId]/variations/[itemId]", methods: ["GET", "POST"], load: () => import("./handlers/authoring/[projectId]/variations/[itemId]/route") },
+  { path: "/api/authoring/[projectId]/chapters/[chapterId]", methods: ["GET", "POST", "PATCH"], load: () => import("./handlers/authoring/[projectId]/chapters/[chapterId]/route") },
   { path: "/api/authoring", methods: ["GET", "POST"], load: () => import("./handlers/authoring/route") },
   { path: "/api/authoring/[projectId]", methods: ["GET", "PATCH", "POST"], load: () => import("./handlers/authoring/[projectId]/route") },
   { path: "/api/knowledge", methods: ["GET", "POST"], load: () => import("./handlers/knowledge/route") },
