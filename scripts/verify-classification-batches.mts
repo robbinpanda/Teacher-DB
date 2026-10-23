@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import { ensureDatabase } from "../db/bootstrap.ts";
+import { getSqlite } from "../db/index.ts";
+import { encryptSecret } from "../lib/secret-box.ts";
+import { createClassificationBatch,readClassificationBatch,controlClassificationBatch,kickClassificationBatch,confirmClassificationBatch } from "../server/services/classification-batches.ts";
+import { saveClassification } from "../server/services/question-classification.ts";
+import { loadRetrievalRows,fingerprintRow } from "../lib/knowledge-retrieval.ts";
+await ensureDatabase();
+const db=getSqlite(),scope={subject:'数学',stage:'high' as const},now=new Date().toISOString(),key=await encryptSecret('synthetic-test-key');
+db.prepare("INSERT INTO model_profiles(id,owner_id,display_name,provider,base_url,model,api_key_ciphertext,api_key_iv,api_key_mask,created_at,updated_at) VALUES('model','teacher','Mock','openai-compatible','https://model.invalid/v1','mock',?,?,'test',?,?)").run(key.ciphertext,key.iv,now,now);
+db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES('doc','teacher','周期题库','application/pdf','complete','数学','高三',?,?)").run(now,now);
+for(let i=1;i<=8;i++)db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,'doc',?,'fill',?,'π','周期公式计算。','approved',1,'{}',?,?)").run(`q${i}`,String(i),`求函数 y=sin(${i}x) 的最小正周期。`,now,now);
+const classification={knowledge:[{id:'math.high.trigonometry.period',evidence:'题干明确要求计算最小正周期。'}],methods:['公式变形'],competencies:['数学运算'],difficulty:2,difficultyReason:'识别角系数后直接代入周期公式。',prerequisites:[],confidence:.9};
+let calls=0,fail=false,steal:(()=>void)|undefined;
+globalThis.fetch=async()=>{calls++;steal?.();if(fail)return Response.json({error:'test unavailable'},{status:503});return Response.json({choices:[{message:{content:JSON.stringify(classification)}}]});};
+const read=(id:string)=>readClassificationBatch('teacher',scope,id)!;
+const fingerprint=(id:string)=>fingerprintRow(loadRetrievalRows(db,'teacher',scope,undefined,[id])[0],scope);
+saveClassification('teacher',scope,'q1',fingerprint('q1'),classification,'confirmed');
+let batch=await createClassificationBatch('teacher',scope,['q1','q2','q3'],'model');
+assert.equal(batch.items[0].status,'skipped');assert.equal(calls,0);
+assert.equal(readClassificationBatch('other',scope,batch.id),null);assert.equal(readClassificationBatch('teacher',{...scope,stage:'middle'},batch.id),null);
+await assert.rejects(()=>createClassificationBatch('teacher',scope,['q1','q1'],'model'),/重复/);
+await assert.rejects(()=>createClassificationBatch('teacher',{...scope,stage:'middle'},['q2'],'model'),/教学范围/);
+batch=controlClassificationBatch('teacher',scope,batch.id,batch.revision,'pause');await kickClassificationBatch();assert.equal(calls,0);
+batch=controlClassificationBatch('teacher',scope,batch.id,batch.revision,'resume');
+await Promise.all([kickClassificationBatch(),kickClassificationBatch()]);batch=read(batch.id);assert.equal(calls,2);assert.equal(batch.status,'complete');
+assert.equal(batch.items[1].classificationStatus,'suggested');assert.equal(batch.items[0].classificationStatus,'confirmed');
+const snapshots=batch.items.slice(1).map(item=>({questionId:item.questionId,fingerprint:item.fingerprint,classification:item.classification!}));
+db.prepare("UPDATE questions SET answer='changed' WHERE id='q3'").run();
+assert.throws(()=>confirmClassificationBatch('teacher',scope,batch.id,snapshots),/变化/);
+assert.equal(read(batch.id).items[1].classificationStatus,'suggested','one stale item rolls back entire confirmation');
+db.prepare("UPDATE questions SET answer='π' WHERE id='q3'").run();
+confirmClassificationBatch('teacher',scope,batch.id,snapshots);assert.ok(read(batch.id).items.every(item=>item.classificationStatus==='confirmed'));
+const reused=await createClassificationBatch('teacher',scope,['q1','q2'],'model');assert.equal(reused.status,'complete');await kickClassificationBatch();assert.equal(calls,2);
+// Mid-flight teacher confirmation wins over model suggestions.
+batch=await createClassificationBatch('teacher',scope,['q4'],'model');steal=()=>saveClassification('teacher',scope,'q4',fingerprint('q4'),{...classification,difficulty:3},'confirmed');
+await kickClassificationBatch();steal=undefined;assert.equal(read(batch.id).items[0].classification?.difficulty,3);
+// Stale leases cannot save tags or finish the replacement worker's item.
+batch=await createClassificationBatch('teacher',scope,['q5'],'model');const item=batch.items[0];
+steal=()=>db.prepare("UPDATE classification_batch_items SET lease_owner='replacement' WHERE id=?").run(item.id);
+await kickClassificationBatch();steal=undefined;assert.equal(read(batch.id).items[0].status,'running');assert.equal(read(batch.id).items[0].classification,null);
+const before=calls;await kickClassificationBatch();assert.equal(calls,before);
+db.prepare("UPDATE classification_batch_items SET lease_expires_at='2000-01-01' WHERE id=?").run(item.id);await kickClassificationBatch();assert.equal(read(batch.id).status,'complete');
+// Failed items retry current source versions, and confirmation rejects refreshed suggestions.
+batch=await createClassificationBatch('teacher',scope,['q6'],'model');fail=true;await kickClassificationBatch();fail=false;batch=read(batch.id);assert.equal(batch.status,'needs_attention');
+db.prepare("UPDATE questions SET stem='更新后的周期题' WHERE id='q6'").run();batch=controlClassificationBatch('teacher',scope,batch.id,batch.revision,'retry');await kickClassificationBatch();batch=read(batch.id);assert.equal(batch.items[0].status,'complete');
+const old={questionId:'q6',fingerprint:batch.items[0].fingerprint,classification:batch.items[0].classification!};
+saveClassification('teacher',scope,'q6',fingerprint('q6'),{...classification,difficulty:4},'suggested');
+assert.throws(()=>confirmClassificationBatch('teacher',scope,batch.id,[old]),/变化/);
+// Two batches targeting one question must share its completed classification, not generate twice.
+const one=await createClassificationBatch('teacher',scope,['q7'],'model'),two=await createClassificationBatch('teacher',scope,['q7'],'model');
+const prior=calls;await Promise.all([kickClassificationBatch(),kickClassificationBatch()]);await kickClassificationBatch();assert.equal(calls,prior+1);assert.equal(read(one.id).status,'complete');assert.equal(read(two.id).items[0].status,'skipped');
+batch=await createClassificationBatch('teacher',scope,['q8'],'model');db.prepare("UPDATE questions SET stem='changed while queued' WHERE id='q8'").run();const count=calls;await kickClassificationBatch();assert.equal(calls,count);assert.equal(read(batch.id).items[0].status,'failed');
+console.log('classification batches: durable queue, pause/retry, reuse, version checks, teacher authority, stale lease and scope isolation passed');db.close();

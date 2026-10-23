@@ -527,7 +527,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 15;
+export const DATABASE_VERSION = 16;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -655,6 +655,22 @@ function initialize() {
         UNIQUE(project_id,position)
       );
       CREATE INDEX authoring_variation_queue_idx ON authoring_variation_items(status,lease_expires_at,project_id,position);
+    `) },
+    { version: 16, name: "classification-batches", checksum: "classification-batches-v1", up: sqlite => sqlite.exec(`
+      CREATE TABLE classification_batches (
+        id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, subject TEXT NOT NULL, stage TEXT NOT NULL,
+        profile_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running', revision INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE classification_batch_items (
+        id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES classification_batches(id) ON DELETE CASCADE,
+        question_id TEXT NOT NULL, fingerprint TEXT NOT NULL, position INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending', error TEXT, attempt INTEGER NOT NULL DEFAULT 0,
+        lease_owner TEXT, lease_expires_at TEXT, updated_at TEXT NOT NULL,
+        UNIQUE(batch_id,question_id)
+      );
+      CREATE INDEX classification_batch_scope_idx ON classification_batches(owner_id,subject,stage,created_at);
+      CREATE INDEX classification_batch_queue_idx ON classification_batch_items(status,lease_expires_at,batch_id,position);
     `) },
   ]);
   initialized = true;

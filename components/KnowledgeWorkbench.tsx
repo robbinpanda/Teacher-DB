@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { MathText } from "./MathText";
+import { ClassificationBatches } from "./ClassificationBatches";
 import { difficultyLabels, questionCompetencies, questionMethods, type KnowledgeNode } from "../lib/knowledge-catalog";
 import type { QuestionClassification } from "../lib/question-classification";
 import type { RetrievalHit } from "../lib/knowledge-retrieval";
@@ -15,12 +16,14 @@ export async function studioRequest<T>(url: string, method = "GET", body?: unkno
   return data as T;
 }
 type Detail = RetrievalHit & { fingerprint: string; question: QuestionWithSource };
-export function KnowledgeWorkbench({ scopeQuery, nodes, profileId }: { scopeQuery: string; nodes: KnowledgeNode[]; profileId: string }) {
+type SearchResult={ hits:RetrievalHit[];total:number;scanned:number;pagination:{offset:number;limit:number;nextOffset:number|null} };
+export function KnowledgeWorkbench({ scopeQuery, nodes, profileId,sources=[] }: { scopeQuery: string; nodes: KnowledgeNode[]; profileId: string;sources?:Array<{id:string;name:string}> }) {
   const [query, setQuery] = useState("");
   const [knowledgeId, setKnowledgeId] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [confirmedOnly, setConfirmedOnly] = useState(false);
-  const [result, setResult] = useState<{ hits: RetrievalHit[]; total: number; scanned: number } | null>(null);
+  const [result, setResult] = useState<SearchResult | null>(null);
+  const [method,setMethod]=useState(""),[competency,setCompetency]=useState(""),[type,setType]=useState(""),[documentId,setDocumentId]=useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<QuestionClassification | null>(null);
@@ -29,8 +32,8 @@ export function KnowledgeWorkbench({ scopeQuery, nodes, profileId }: { scopeQuer
     setBusy(true); setError(""); setNotice("");
     try { await action(); } catch (caught) { setError(caught instanceof Error ? caught.message : "操作失败"); } finally { setBusy(false); }
   }
-  async function search() {
-    setResult(await studioRequest(`/api/knowledge?${scopeQuery}`, "POST", { query, knowledgeIds: knowledgeId ? [knowledgeId] : undefined, difficulty: difficulty ? Number(difficulty) : undefined, confirmedOnly, limit: 100 }));
+  async function search(offset=0) {
+    setResult(await studioRequest(`/api/knowledge?${scopeQuery}`, "POST", { query, knowledgeIds: knowledgeId ? [knowledgeId] : undefined, difficulty: difficulty ? Number(difficulty) : undefined, confirmedOnly, methods:method?[method]:undefined,competencies:competency?[competency]:undefined,types:type?[type]:undefined,documentIds:documentId?[documentId]:undefined,limit:50,offset }));
   }
   async function open(id: string) {
     const current = await studioRequest<Detail>(`/api/questions/${encodeURIComponent(id)}/classification?${scopeQuery}`);
@@ -38,7 +41,7 @@ export function KnowledgeWorkbench({ scopeQuery, nodes, profileId }: { scopeQuer
   }
   useEffect(() => {
     const controller = new AbortController();
-    studioRequest<{ hits: RetrievalHit[]; total: number; scanned: number }>(`/api/knowledge?${scopeQuery}`, "POST", { limit: 30 }, controller.signal).then(setResult).catch(caught => { if (!controller.signal.aborted) setError(caught.message); });
+    studioRequest<SearchResult>(`/api/knowledge?${scopeQuery}`, "POST", { limit: 50 }, controller.signal).then(setResult).catch(caught => { if (!controller.signal.aborted) setError(caught.message); });
     return () => controller.abort();
   }, [scopeQuery]);
   return <section className="studio-search">
@@ -47,14 +50,19 @@ export function KnowledgeWorkbench({ scopeQuery, nodes, profileId }: { scopeQuer
       <label>关键词<input placeholder="例如：最小正周期" value={query} onChange={event => setQuery(event.target.value)} /></label>
       <label>知识点<select value={knowledgeId} onChange={event => setKnowledgeId(event.target.value)}><option value="">根据关键词识别</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.parentId ? "　" : ""}{node.label}</option>)}</select></label>
       <label>难度<select value={difficulty} onChange={event => setDifficulty(event.target.value)}><option value="">不限</option>{difficultyLabels.slice(1).map((label, index) => <option key={label} value={index + 1}>{index + 1} · {label}</option>)}</select></label>
+      <label>解题方法<select value={method} onChange={event=>setMethod(event.target.value)}><option value="">不限</option>{questionMethods.map(value=><option key={value}>{value}</option>)}</select></label>
+      <label>考查能力<select value={competency} onChange={event=>setCompetency(event.target.value)}><option value="">不限</option>{questionCompetencies.map(value=><option key={value}>{value}</option>)}</select></label>
+      <label>题型<select value={type} onChange={event=>setType(event.target.value)}><option value="">不限</option><option value="single">单选</option><option value="multiple">多选</option><option value="fill">填空</option><option value="answer">解答</option></select></label>
+      <label>来源资料<select value={documentId} onChange={event=>setDocumentId(event.target.value)}><option value="">当前范围全部资料</option>{sources.map(source=><option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
       <label className="studio-check"><input type="checkbox" checked={confirmedOnly} onChange={event => setConfirmedOnly(event.target.checked)} />仅教师确认标签</label>
       <button className="btn btn-primary" disabled={busy}>检索</button>
     </form>
     {error && <p role="alert" className="studio-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     {selected.length > 0 && <div className="studio-selection">已选 {selected.length} 题 <Link className="btn btn-primary" href={`/papers/new?ids=${encodeURIComponent(selected.join(","))}`}>进入组卷</Link><button className="btn" onClick={() => setSelected([])}>清空选择</button></div>}
-    {result && <p>{result.total} 道匹配题目 · 已检索当前范围 {result.scanned} 道题{result.total > result.hits.length ? `，显示前 ${result.hits.length} 道，请细化条件` : ""}</p>}
+    <ClassificationBatches scopeQuery={scopeQuery} profileId={profileId} selected={selected} nodes={nodes} onOpen={id=>void operate(()=>open(id))} onChanged={()=>search(result?.pagination.offset??0)}/>
+    {result && <div className="studio-plan-actions"><span>{result.total} 道匹配题目 · 已检索当前范围 {result.scanned} 道题 · 显示 {result.hits.length?result.pagination.offset+1:0}–{result.pagination.offset+result.hits.length}</span><button className="btn" disabled={busy||!result.hits.length} onClick={()=>setSelected(current=>[...new Set([...current,...result.hits.map(hit=>hit.id)])].slice(0,200))}>选中本页</button><button className="btn" disabled={busy||!result.pagination.offset} onClick={()=>void operate(()=>search(Math.max(0,result.pagination.offset-result.pagination.limit)))}>上一页</button><button className="btn" disabled={busy||result.pagination.nextOffset===null} onClick={()=>void operate(()=>search(result.pagination.nextOffset!))}>下一页</button></div>}
     <div className="studio-results">{result?.hits.map(hit => <article key={hit.id}>
-      <header><label><input type="checkbox" aria-label={`选择题目 ${hit.id}`} checked={selected.includes(hit.id)} onChange={event => setSelected(current => event.target.checked ? [...current, hit.id] : current.filter(id => id !== hit.id))} /> {hit.documentName}</label><span>{hit.classification ? `${difficultyLabels[hit.classification.difficulty]} · ${hit.classificationStatus === "confirmed" ? "已确认" : "模型建议"}` : hit.classificationStatus === "stale" ? "标签已过期" : "待标注"}</span></header>
+      <header><label><input type="checkbox" aria-label={`选择题目 ${hit.id}`} checked={selected.includes(hit.id)} disabled={!selected.includes(hit.id)&&selected.length>=200} onChange={event => setSelected(current => event.target.checked ? [...current, hit.id] : current.filter(id => id !== hit.id))} /> {hit.documentName}</label><span>{hit.classification ? `${difficultyLabels[hit.classification.difficulty]} · ${hit.classificationStatus === "confirmed" ? "已确认" : "模型建议"}` : hit.classificationStatus === "stale" ? "标签已过期" : "待标注"}</span></header>
       <MathText text={hit.stem} /><ul>{hit.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
       <button className="btn" disabled={busy} onClick={() => void operate(() => open(hit.id))}>查看题目与标签</button>
     </article>)}</div>

@@ -11,7 +11,8 @@ export type RetrievalRow = {
 export type RetrievalOptions = {
   query?: string; knowledgeIds?: string[]; match?: "all" | "any";
   documentIds?: string[]; types?: string[]; difficulty?: number; confirmedOnly?: boolean;
-  excludeIds?: string[]; limit?: number;
+  methods?: string[]; competencies?: string[];
+  excludeIds?: string[]; limit?: number; offset?: number;
 };
 export type RetrievalHit = {
   id: string; type: string; stem: string; documentId: string; documentName: string; grade: string;
@@ -62,6 +63,7 @@ export function rankQuestions(rows: RetrievalRow[], scope: EducationScope, optio
       catch { /* Legacy/invalid records cannot masquerade as verified coverage. */ }
     }
     if (options.confirmedOnly && status !== "confirmed" || options.difficulty !== undefined && classification?.difficulty !== options.difficulty) continue;
+    if (options.methods?.some(method => !classification?.methods.includes(method as QuestionClassification["methods"][number])) || options.competencies?.some(competency => !classification?.competencies.includes(competency as QuestionClassification["competencies"][number]))) continue;
     const tags = JSON.parse(row.tagsJson) as string[];
     const exactIds = new Set(classification?.knowledge.map(item => item.id) ?? []);
     // Legacy strings may aid discovery, but never count as a confirmed knowledge assessment.
@@ -97,6 +99,13 @@ export function rankQuestions(rows: RetrievalRow[], scope: EducationScope, optio
       score += terms.length * 8; reasons.push(`文字命中：${terms.join("、")}（待核对）`);
     }
     if (!groups.length && !terms.length) reasons.push("当前教学范围内的已审核题目");
+    if (!groups.length && classification) {
+      score += status === "confirmed" ? 20 : 10;
+      evidenceKind = status === "confirmed" ? "confirmed" : "suggested";
+      reasons.push(`${status === "confirmed" ? "已确认" : "模型建议"}考点：${classification.knowledge.map(item => byId.get(item.id)!.label).join("、")}`);
+    }
+    if (options.methods?.length) reasons.push(`解题方法：${options.methods.join("、")}（${status === "confirmed" ? "教师确认" : "模型建议"}）`);
+    if (options.competencies?.length) reasons.push(`考查能力：${options.competencies.join("、")}（${status === "confirmed" ? "教师确认" : "模型建议"}）`);
     hits.push({ id: row.id, type: row.type, stem: row.stem, documentId: row.documentId, documentName: row.documentName, grade: row.grade,
       score, reasons, classification, classificationStatus: status, matchedKnowledgeIds: [...matched], evidenceKind });
   }
@@ -105,5 +114,6 @@ export function rankQuestions(rows: RetrievalRow[], scope: EducationScope, optio
     const classified = hits.filter(hit => hit.classification?.difficulty === difficulty && groups.every(group => hit.matchedKnowledgeIds.some(id => group.has(id))));
     return { difficulty, classified: classified.length, confirmed: classified.filter(hit => hit.classificationStatus === "confirmed").length };
   });
-  return { total: hits.length, scanned: rows.length, difficultyCounts, hits: hits.slice(0, Math.min(100, Math.max(1, options.limit ?? 30))), requestedKnowledgeIds: requested };
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0)), limit = Math.min(100, Math.max(1, options.limit ?? 30));
+  return { total: hits.length, scanned: rows.length, difficultyCounts, hits: hits.slice(offset, offset + limit), requestedKnowledgeIds: requested, pagination: { offset, limit, nextOffset: offset + limit < hits.length ? offset + limit : null } };
 }

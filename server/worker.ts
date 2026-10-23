@@ -4,14 +4,20 @@ import { kickDocumentPreparation } from "./services/document-preparation";
 import { kickAuthoringPlanning } from "./services/authoring";
 import { kickAuthoringChapters } from "./services/authoring-chapters";
 import { kickWholePaperVariations } from "./services/authoring-variations";
+import { kickClassificationBatch } from "./services/classification-batches";
 
 process.env.JIANTI_PROCESS_ROLE = "worker";
 const stopHeartbeat = await startHeartbeat("worker");
 let stopping = false;
 let extracting = false;
 let authoring = false;
+let classifying = false;
 function tick() {
   if (stopping) return;
+  if (!classifying) {
+    classifying = true;
+    void Promise.allSettled([kickClassificationBatch(),kickClassificationBatch()]).then(results=>{for(const result of results)if(result.status==='rejected')console.error("[worker] classification failed",result.reason);}).finally(()=>{classifying=false;});
+  }
   if (!authoring) {
     authoring = true;
     void (async () => { await kickAuthoringPlanning(); await kickAuthoringChapters(); await kickWholePaperVariations(); })().catch(error => console.error("[worker] authoring failed", error)).finally(() => { authoring = false; });

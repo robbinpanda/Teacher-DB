@@ -16,6 +16,44 @@ async function prepare(context){
  db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,?,'1','fill','求函数 $y=sin(2x)$ 的最小正周期。','$\\pi$','由周期公式得 $T=2\\pi/2=\\pi$。','approved',1,'{}',?,?)").run(id,doc,time,time);db.close();return {id,doc};
 }
 
+test('批量标注刷新后可核对确认，方法能力来源筛选与跨页选题有效',async({page,context,request})=>{
+ test.setTimeout(90000);
+ const {doc}=await prepare(context),db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3')),now=new Date().toISOString();
+ db.prepare("UPDATE documents SET name='批量标注分页资料' WHERE id=?").run(doc);
+ const insert=db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,?,?,'fill',?,'π','周期公式计算。','approved',1,'{}',?,?)");
+ for(let i=2;i<=52;i++)insert.run(crypto.randomUUID(),doc,String(i),`第 ${i} 道：求函数 y=sin(2x) 的最小正周期。`,now,now);db.close();
+ let calls=0;
+ const classification={knowledge:[{id:period,evidence:'题目明确要求计算正弦函数的最小正周期。'}],methods:['公式变形'],competencies:['数学运算'],difficulty:2,difficultyReason:'识别角系数后直接代入最小正周期公式。',prerequisites:[],confidence:.9};
+ const model=createServer((req,res)=>{req.resume();req.on('end',()=>{calls++;res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(classification)}}]}));});});
+ await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
+ try{
+  expect((await request.post('/api/model-profiles',{data:{displayName:`批量测试-${crypto.randomUUID()}`,provider:'openai-compatible',baseUrl:`http://127.0.0.1:${model.address().port}/v1`,model:'mock',apiKey:'test-only',select:true}})).status()).toBe(201);
+  await page.goto('/studio');await page.getByRole('button',{name:'精准选题与标注'}).click();
+  await page.getByRole('combobox',{name:'来源资料',exact:true}).selectOption(doc);await page.getByRole('button',{name:'检索',exact:true}).click();
+  await expect(page.locator('.studio-results article')).toHaveCount(50);
+  const selected=[];for(let i=0;i<3;i++){const checkbox=page.locator('.studio-results input[type=checkbox]').nth(i);selected.push((await checkbox.getAttribute('aria-label')).replace('选择题目 ',''));await checkbox.check();}
+  await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(page.locator('.studio-results article')).toHaveCount(2);
+  await expect(page.locator('.studio-selection')).toContainText('已选 3 题');
+  await page.getByRole('button',{name:'批量分析所选 3 题'}).click();
+  await expect(page.locator('.studio-batch-item')).toHaveCount(3);
+  await expect(page.locator('.studio-batch-item').getByText('已生成建议',{exact:true})).toHaveCount(3,{timeout:45000});expect(calls).toBe(3);
+  await page.reload();await page.getByRole('button',{name:'精准选题与标注'}).click();await page.getByText('最近的批量标注',{exact:true}).click();
+  await page.getByRole('button',{name:/3\/3 题完成/}).click();
+  for(const id of selected)await page.getByRole('checkbox',{name:`确认标签 ${id}`,exact:true}).check();
+  await page.getByRole('button',{name:'确认已核对的 3 题标签'}).click();await expect(page.locator('.studio-batch-item').getByText('教师已确认',{exact:true})).toHaveCount(3);
+  await page.getByRole('button',{name:'收起批量核对'}).click();
+  await page.getByRole('combobox',{name:'来源资料',exact:true}).selectOption(doc);
+  await page.getByRole('combobox',{name:'解题方法',exact:true}).selectOption('公式变形');
+  await page.getByRole('combobox',{name:'考查能力',exact:true}).selectOption('数学运算');
+  await page.getByRole('combobox',{name:'题型',exact:true}).selectOption('fill');await page.getByLabel('仅教师确认标签').check();
+  await page.getByRole('button',{name:'检索',exact:true}).click();await expect(page.locator('.studio-results article')).toHaveCount(3);
+  await page.getByRole('combobox',{name:'考查能力',exact:true}).selectOption('数学建模');await page.getByRole('button',{name:'检索',exact:true}).click();await expect(page.locator('.studio-results article')).toHaveCount(0);
+  await page.getByRole('combobox',{name:'考查能力',exact:true}).selectOption('数学运算');await page.getByRole('button',{name:'检索',exact:true}).click();
+  await page.setViewportSize({width:760,height:1000});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'tmp/teacher-pilot/batch-browser.png',fullPage:true});
+ }finally{await new Promise(resolve=>model.close(resolve));}
+});
+
 test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出保留题号分值的 PDF',async({page,context,request})=>{
  test.setTimeout(150000);
  const {id,doc}=await prepare(context), second=crypto.randomUUID();
@@ -86,7 +124,9 @@ test('教师可核对标签、按考点难度检索，再将选题带入原有�
 });
 
 test('自然语言规划通过后台模型调用持久化，可刷新恢复、修改题量、检查缺口并阻止旧版本覆盖',async({page,context,request})=>{
- test.setTimeout(60000);await prepare(context);
+ test.setTimeout(60000);const {doc}=await prepare(context);
+ const seed=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
+ seed.prepare("UPDATE documents SET name='规划缺口专用资料' WHERE id=?").run(doc);seed.close();
  const slot={role:'example',knowledgeIds:[period],difficulty:2,type:'fill',count:2,score:0,purpose:'直接使用周期公式'};
  const plan={title:'三角函数周期复习讲义',audience:'高三基础班',approach:'先理解周期定义，再逐步迁移到复合角函数',estimatedMinutes:45,assumptions:['学生已掌握弧度制'],chapters:[{id:'period',title:'周期概念与计算',objectives:['理解周期并计算最小正周期'],knowledgeIds:[period],prerequisites:[],teachingNotes:'借助单位圆说明周期，再归纳计算步骤。',slots:[slot,{...slot,role:'practice',count:4}]}]};
  let calls=0;
@@ -95,6 +135,7 @@ test('自然语言规划通过后台模型调用持久化，可刷新恢复、�
  try{
   const configured=await request.post('/api/model-profiles',{data:{displayName:`规划测试-${crypto.randomUUID()}`,provider:'openai-compatible',baseUrl:`http://127.0.0.1:${model.address().port}/v1`,model:'mock',apiKey:'test-only',select:true}});expect(configured.status()).toBe(201);
   await page.goto('/studio');await page.getByLabel('教学要求',{exact:true}).fill('给高三学生制作三角函数周期讲义，2 道例题、4 道练习。');
+  await page.getByText('选择资料范围（整个当前题库）',{exact:true}).click();await page.getByRole('checkbox',{name:'规划缺口专用资料 · 1 题',exact:true}).check();
   await expect(page.getByRole('button',{name:'生成教学大纲'})).toBeEnabled();await page.getByRole('button',{name:'生成教学大纲'}).click();
   await expect(page.getByLabel('标题',{exact:true})).toHaveValue(plan.title,{timeout:30000});expect(calls).toBe(1);
   const list=await (await request.get(`/api/authoring?${scope}`)).json();const saved=list.projects.find(p=>p.title===plan.title);expect(saved).toBeTruthy();

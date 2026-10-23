@@ -3,7 +3,7 @@ import { getSqlite } from "../../../../db";
 import { ensureDatabase } from "../../../../db/bootstrap";
 import { requestOwner } from "../../../../lib/server";
 import { requestEducationScope } from "../../../../lib/education-scope";
-import { knowledgeCatalog, knowledgeCatalogVersion, curriculumSource } from "../../../../lib/knowledge-catalog";
+import { knowledgeCatalog, knowledgeCatalogVersion, curriculumSource, questionMethods, questionCompetencies } from "../../../../lib/knowledge-catalog";
 import { loadRetrievalRows, rankQuestions } from "../../../../lib/knowledge-retrieval";
 
 const searchSchema = z.object({
@@ -11,6 +11,8 @@ const searchSchema = z.object({
   documentIds: z.array(z.string().min(1).max(100)).max(100).optional(), types: z.array(z.enum(["single","multiple","fill","answer"])).max(4).optional(),
   difficulty: z.number().int().min(1).max(5).optional(), confirmedOnly: z.boolean().optional(), match: z.enum(["any","all"]).optional(),
   excludeIds: z.array(z.string().max(100)).max(1000).optional(), limit: z.number().int().min(1).max(100).optional(),
+  methods: z.array(z.enum(questionMethods)).max(6).optional(), competencies: z.array(z.enum(questionCompetencies)).max(5).optional(),
+  offset: z.number().int().min(0).max(1000000).optional(),
 });
 export async function GET(request: Request) {
   const scope = requestEducationScope(request);

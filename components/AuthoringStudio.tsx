@@ -91,7 +91,7 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
     <div className="studio-topbar"><nav aria-label="备课工具"><button className={tab === "authoring" ? "active" : ""} onClick={() => setTab("authoring")}>教学规划</button><button className={tab === "search" ? "active" : ""} disabled={dirty || chapterDirty} onClick={() => setTab("search")}>精准选题与标注</button></nav><label>本次使用模型<select value={profileId} onChange={event => setProfileId(event.target.value)}><option value="">选择模型</option>{models.map(model => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label></div>
     {!models.length && <p>尚无可用模型，可先使用检索与手动标注，或前往 <Link href="/settings/models">模型配置</Link>。</p>}
     {error && <p className="studio-error" role="alert">{error}</p>}
-    {tab === "search" ? <KnowledgeWorkbench scopeQuery={scopeQuery} nodes={nodes} profileId={profileId} /> : <div className="studio-layout">
+    {tab === "search" ? <KnowledgeWorkbench scopeQuery={scopeQuery} nodes={nodes} profileId={profileId} sources={sources} /> : <div className="studio-layout">
       <aside>
         <h2>准备什么内容</h2>
         <label>作品类型<select value={kind} onChange={event => setKind(event.target.value as typeof kind)}><option value="paper">试卷</option><option value="variation">整卷变式</option><option value="handout">专题讲义</option><option value="book">校本 / 教辅</option></select></label>

@@ -30,6 +30,9 @@ test('确认标签优先于模型建议与关键词；模糊字符串不算确�
  assert.deepEqual(result.hits.map(h=>h.id),['confirmed','suggested','keyword']);
  assert.deepEqual(result.hits[2].matchedKnowledgeIds,[]);assert.equal(result.hits[2].evidenceKind,'keyword');
  assert.equal(rankQuestions([row('keyword')],scope,{knowledgeIds:[identity]}).total,0);
+ const general=rankQuestions([row('a-unclassified'),classified('b-suggested','suggested'),classified('c-confirmed')],scope);
+ assert.deepEqual(general.hits.map(h=>h.id),['c-confirmed','b-suggested','a-unclassified']);
+ assert.deepEqual(general.hits.map(h=>h.evidenceKind),['confirmed','suggested','keyword']);
 });
 test('题干、选项、答案、解析或题图变动后不能继续使用旧难度和确认状态',()=>{
  for(const change of [{stem:'另一题'},{optionsJson:'[{"key":"A","content":"2"}]'},{answer:'2π'},{analysis:'新解析'},{assetsJson:'[{"id":"new"}]'}]){
@@ -44,6 +47,16 @@ test('多考点 AND、不重复选题、题型与难度约束真实生效',()=>{
  assert.equal(rankQuestions([classified('q')],scope,{excludeIds:['q']}).total,0);
  assert.equal(rankQuestions([classified('q')],scope,{types:['answer']}).total,0);
  assert.equal(rankQuestions([classified('q')],scope,{difficulty:4}).total,0);
+});
+test('方法与能力必须由当前有效标签支持，分页不截断题库覆盖统计',()=>{
+ const rows=[classified('q1'),classified('q2','suggested'),row('keyword')];
+ assert.equal(rankQuestions(rows,scope,{methods:['公式变形'],competencies:['数学运算']}).total,2);
+ assert.equal(rankQuestions(rows,scope,{methods:['公式变形'],confirmedOnly:true}).total,1);
+ assert.equal(rankQuestions(rows,scope,{methods:['分类讨论']}).total,0);
+ assert.equal(rankQuestions([{...classified('q'),answer:'changed'}],scope,{methods:['公式变形']}).total,0);
+ const page=rankQuestions(rows,scope,{methods:['公式变形'],limit:1,offset:1});
+ assert.deepEqual(page.hits.map(hit=>hit.id),['q2']);assert.equal(page.total,2);assert.equal(page.pagination.nextOffset,null);
+ assert.equal(rankQuestions(rows,scope,{limit:1}).pagination.nextOffset,1);
 });
 test('SQLite 查询覆盖 2000 条以外的题目，同时强制租户、审核、学段、学科和来源隔离',()=>{
  const db=new Database(':memory:');

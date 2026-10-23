@@ -7,7 +7,7 @@ import { knowledgeCatalog, knowledgeCatalogVersion, questionMethods, questionCom
 import { callTextModel } from "../../lib/text-model";
 import { contentTypeForKey, getFile } from "../../lib/file-storage";
 
-export async function classifyQuestion(ownerId: string, scope: EducationScope, questionId: string, profileId?: string) {
+export async function classifyQuestion(ownerId: string, scope: EducationScope, questionId: string, profileId?: string, beforeSave?: () => void) {
   await ensureDatabase();
   const sqlite = getSqlite();
   const row = loadRetrievalRows(sqlite, ownerId, scope, undefined, [questionId])[0];
@@ -26,6 +26,7 @@ export async function classifyQuestion(ownerId: string, scope: EducationScope, q
     system: classificationSystemPrompt, images, text: JSON.stringify({ scope, catalog: knowledgeCatalog(scope.subject, scope.stage), methods: questionMethods, competencies: questionCompetencies,
       question: { stem: row.stem, options: JSON.parse(row.optionsJson ?? "[]"), answer: row.answer, analysis: row.analysis } }) });
   const classification = parseClassification(parseModelJson(result.content), scope.subject, scope.stage);
+  beforeSave?.();
   saveClassification(ownerId, scope, questionId, fingerprint, classification, "suggested", result.profile.id, result.traceId);
   return { classification, fingerprint, status: "suggested" as const };
 }
