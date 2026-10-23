@@ -1,4 +1,5 @@
 import { migrateEducationScopes } from "./education-scope-migration";
+import { installAuthoringSchema } from "../lib/authoring-store";
 import { teachingSkillSchemaSql } from "../lib/teaching-skill-store";
 import { getSqlite } from ".";
 import { createHash } from "node:crypto";
@@ -625,6 +626,7 @@ function initialize() {
       `),
     },
     { version: 11, name: "education-scope-isolation", checksum: "education-scope-isolation-v1", up: migrateEducationScopes },
+    { version: 12, name: "teacher-authoring", checksum: "teacher-authoring-v1", up: installAuthoringSchema },
   ]);
   initialized = true;
 }

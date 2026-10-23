@@ -9,6 +9,7 @@ import "./globals.css";
 import "./resource-management.css";
 import "./workbench.css";
 import "./select-controls.css";
+import "./studio.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_BASE_URL || "http://localhost:3050"),

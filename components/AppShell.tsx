@@ -48,6 +48,7 @@ export function useTeacherMode() { return useContext(TeacherModeContext); }
 const navigation = [
   { href: "/", label: "工作台", icon: House },
   { href: "/bank", label: "题库", icon: LibraryBig },
+  { href: "/studio", label: "备课工作台", icon: BookOpen },
   { href: "/papers/new", label: "组卷", icon: FilePlus2 },
   { href: "/papers", label: "试卷库", icon: FolderOpen },
   { href: "/classes", label: "班级学生", icon: Users, schoolOnly: true },

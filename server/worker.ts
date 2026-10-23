@@ -1,13 +1,19 @@
 import { startHeartbeat } from "./runtime";
 import { kickExtractionQueue } from "../lib/extraction-queue";
 import { kickDocumentPreparation } from "./services/document-preparation";
+import { kickAuthoringPlanning } from "./services/authoring";
 
 process.env.JIANTI_PROCESS_ROLE = "worker";
 const stopHeartbeat = await startHeartbeat("worker");
 let stopping = false;
 let extracting = false;
+let authoring = false;
 function tick() {
   if (stopping) return;
+  if (!authoring) {
+    authoring = true;
+    void kickAuthoringPlanning().catch(error => console.error("[worker] authoring failed", error)).finally(() => { authoring = false; });
+  }
   if (!extracting) {
     extracting = true;
     void kickExtractionQueue().catch(error => console.error("[worker] queue failed", error)).finally(() => { extracting = false; });

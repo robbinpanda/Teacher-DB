@@ -121,9 +121,10 @@ try {
   }
   if (args.has("--build")) {
     const fingerprint = await buildFingerprint(root);
-    const stamp = path.join(root, ".next", "local-build.sha256");
+    const distDirectory = process.env.JIANTI_NEXT_DIST_DIR || ".next";
+    const stamp = path.join(root, distDirectory, "local-build.sha256");
     const previous = await readFile(stamp, "utf8").catch(() => "");
-    const built = await readFile(path.join(root, ".next", "BUILD_ID"), "utf8").catch(() => "");
+    const built = await readFile(path.join(root, distDirectory, "BUILD_ID"), "utf8").catch(() => "");
     if (fingerprint !== previous || !built) {
       console.log("[local] building production frontend");
       const build = spawn(process.execPath, ["node_modules/next/dist/bin/next", "build"], { cwd: root, stdio: "inherit", env: process.env, windowsHide: true });
