@@ -34,17 +34,29 @@ let reviewError = false, reviewReject = false, malformedSelection = false, lateS
 let pauseDuringWriting:string|undefined;
 let wrongPracticeAnswer=false;
 let conflictingAnswerReview=false;
+let rejectProgression=false;
+const courseStages=new Set<string>();
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (_url, init) => {
   const body = JSON.parse(String(init?.body)), messages = body.messages;
   const system = messages.find((message: { role: string }) => message.role === "system").content;
   const user = messages.find((message: { role: string }) => message.role === "user").content;
   const input = JSON.parse(typeof user === "string" ? user : user.find((part: { type: string }) => part.type === "text").text);
+  if(system.includes('输出 JSON {items:')||system.includes('独立审校教师')||system.includes('校本教辅编辑')){
+    const target=input.chapter??input.plan;
+    assert.equal(input.courseContext.currentChapterId,target.id);
+    assert.equal(input.courseContext.outline[input.courseContext.currentPosition-1].id,target.id);
+    assert.ok(input.request.instruction.includes('周期'));
+    assert.equal(input.courseContext.chapterCount,2);
+    if(input.courseContext.currentPosition===2)assert.ok(input.courseContext.priorPlannedKnowledgeIds.includes(period));
+    courseStages.add(system.includes('输出 JSON {items:')?'select':system.includes('独立审校教师')?'review':input.previousContent?'revise':'write');
+  }
   if (input.imageMapping?.length) assert.ok(Array.isArray(user) && user.some((part: { type: string }) => part.type === "image_url"), "writer and reviewer must receive actual selected question images");
   let output: unknown;
   if (system.includes("教学需求核对员")) { calls.push("requirements"); output = { numeric: [], knowledge: [], questions: [], assumptions: [] }; }
   else if (system.includes("输出 JSON {items:")) {
     calls.push("select"); const chosen = new Set<string>();
+    assert.ok(input.candidates.every((candidate:{assessment:{prerequisites:unknown}})=>Array.isArray(candidate.assessment.prerequisites)));
     output = { items: input.pools.flatMap((pool: string[], slotIndex: number) => {
       const id = pool.find(id => !chosen.has(id) && (!lateSelection || ['late-130','late-131'].includes(id))); if (!id) return []; chosen.add(id);
       return [{ slotIndex, questionId: id, selectionReason: "从角系数的识别到周期公式代入，符合本组的计算目标。" }];
@@ -61,6 +73,9 @@ globalThis.fetch = async (_url, init) => {
     assert.ok(input.evidenceSources.every((source: { path: string }) => !source.path.startsWith("review")));
     output = { checks: (input.checks ?? []).map((check: { id: string }) => ({ id: check.id, passed: true, evidenceRefs: ["introduction:0"], reason: "已逐项核对该学科要求和本章对应内容。" })), knowledge: input.content.knowledge.map((item: { id: string }) => ({ id: item.id, correct: !reviewReject, complete: true, reason: "公式条件与本章知识要求逐项核对。" })), questions: input.content.items.map((item: { questionId: string },index:number) => ({ id: item.questionId, solvable: true, answerCorrect: !(wrongPracticeAnswer && index===1), computedAnswer: "$2\\pi$", aligned: true, difficultyAppropriate: true, explanationCorrect: true, reason: wrongPracticeAnswer && index===1 ? "原题参考答案与复算结果矛盾，须更换题目或修复原题。" : "题目条件明确，代入公式与计算过程一致。" })) };
     if(conflictingAnswerReview)(output as {questions:Array<{reason:string}>}).questions[0].reason='复算结果与参考答案不符。修正：answerCorrect应为false。';
+    const progression=(output as {checks:Array<{id:string;passed:boolean;reason:string}>}).checks.find(check=>check.id==='curriculum.progression');
+    assert.equal(!!progression,['handout','book'].includes(input.request.kind));
+    if(rejectProgression&&progression){progression.passed=false;progression.reason='基础例题依赖尚未引入的后章方法，当前正文没有说明，须更换题目。';}
   } else if (system.includes("校本教辅编辑")) {
     calls.push(input.previousContent ? "revise" : "write"); stealing?.();
     if(pauseDuringWriting){const id=pauseDuringWriting;pauseDuringWriting=undefined;await controlAuthoringProject('teacher',scope,id,readAuthoringProject('teacher',scope,id)!.revision,'pause');}
@@ -312,5 +327,12 @@ try {
   assert.equal(repaired.chapters[0].status,'needs_review');
   assert.deepEqual(repaired.workCoverage!.structureProblemQuestionIds,[]);
   assert.equal(repaired.chapters[0].content!.review.passed,false,'replacement requires a new review');
-  console.log("chapter workflow passed: selection, answer review, structure exclusion and legacy repair, identity-aware cross-chapter filtering and supply, teacher edits, recovery, publication, source freshness and leases");
+  db.prepare("UPDATE authoring_projects SET status='paused' WHERE status='generating'").run();
+  rejectProgression=true;const progressionProject=await create();await kickAuthoringChapters();rejectProgression=false;
+  const progressionChapter=read(progressionProject.id).chapters[0];
+  assert.equal(progressionChapter.status,'needs_review');
+  assert.ok(progressionChapter.content!.review.issues.some(issue=>issue.includes('curriculum.progression')));
+  assert.throws(()=>approveAuthoringChapter('teacher',scope,progressionProject.id,progressionChapter.id,progressionChapter.revision,''),/核对/);
+  assert.deepEqual(courseStages,new Set(['select','write','review','revise']));
+  console.log("chapter workflow passed: course context and progression review, selection, answer review, structure exclusion and legacy repair, identity-aware cross-chapter filtering and supply, teacher edits, recovery, publication, source freshness and leases");
 } finally { globalThis.fetch = originalFetch; db.close(); }

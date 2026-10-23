@@ -31,6 +31,9 @@ globalThis.fetch=async(_url,init)=>{
   const user=messages.find((message:{role:string})=>message.role==='user').content;
   const input=JSON.parse(typeof user==='string'?user:user.find((part:{type:string})=>part.type==='text').text);
   if(!system.includes('输出 JSON {items:'))throw new Error('fixture-writer-stop');
+  assert.equal(input.courseContext.currentChapterId,'period');
+  if(mode==='invalidate-course')assert.ok(input.courseContext.assumptions.includes('学生尚未学习和差公式，本册需要先作说明'));
+  if(mode==='invalidate-instruction')assert.match(input.request.instruction,/不要使用尚未引入的方法/);
   selectionRequests++;firstRound??=input.round;
   appendFileSync(path.join(process.env.JIANTI_DATA_DIR!,'selection-calls.jsonl'),JSON.stringify({mode,round:input.round,model:body.model})+'\n');
   if(mode==='crash'&&input.round===2)process.exit(73);

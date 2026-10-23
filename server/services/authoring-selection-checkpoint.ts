@@ -6,7 +6,7 @@ import { fingerprintRow, type RetrievalRow, type RetrievalHit } from '../../lib/
 import { validateSelectionCheckpoint, type SelectionCheckpoint } from '../../lib/authoring-candidates';
 
 export function selectionFingerprint(context:unknown,scope:EducationScope,rows:RetrievalRow[],lists:RetrievalHit[][]) {
-  const hash=createHash('sha256').update('selection-v3-question-structure\n').update(JSON.stringify(context));
+  const hash=createHash('sha256').update('selection-v4-course-context\n').update(JSON.stringify(context));
   const ids=new Set(lists.flatMap(list=>list.map(hit=>hit.id)));
   hash.update(JSON.stringify(lists.map(list=>list.map(hit=>hit.id))));
   for(const row of rows.filter(row=>ids.has(row.id)).sort((a,b)=>a.id.localeCompare(b.id)))hash.update(JSON.stringify([
@@ -18,7 +18,7 @@ export function selectionFingerprint(context:unknown,scope:EducationScope,rows:R
 export function loadSelectionCheckpoint(db:Database.Database,chapterId:string,fingerprint:string,lists:RetrievalHit[][],slots:AuthoringChapterPlan['slots']) {
   const row=db.prepare('SELECT fingerprint,state_json FROM authoring_selection_checkpoints WHERE chapter_id=?').get(chapterId) as {fingerprint:string;state_json:string}|undefined;
   if(!row)return {};
-  if(row.fingerprint!==fingerprint)return {resetReason:'题库、章节计划或模型设置已变化，本次重新比较候选。'};
+  if(row.fingerprint!==fingerprint)return {resetReason:'题库、课程大纲、章节计划或模型设置已变化，本次重新比较候选。'};
   try{return {resume:validateSelectionCheckpoint(JSON.parse(row.state_json),lists,slots)};}
   catch{return {resetReason:'先前选题进度无法校验，本次重新比较候选。'};}
 }
