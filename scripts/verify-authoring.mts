@@ -18,9 +18,11 @@ const slot={role:"example",knowledgeIds:[period],difficulty:2,type:"fill",count:
 const plan={title:"三角函数周期讲义",audience:"高三基础班",approach:"从图象周期到解析式计算，逐步迁移",estimatedMinutes:45,assumptions:["已掌握弧度制"],chapters:[{id:"period",title:"周期的概念与计算",objectives:["能求三角函数的最小正周期"],knowledgeIds:[period],prerequisites:[],teachingNotes:"从单位圆解释周期，不只记忆公式。",slots:[slot,{...slot,role:"practice"}]}]};
 const profile={knowledge:[{id:period,evidence:"题干要求计算最小正周期。"}],methods:["公式变形"],competencies:["数学运算"],difficulty:2,difficultyReason:"直接识别角系数后应用周期公式。",prerequisites:[],confidence:.9};
 let response: unknown=plan;
+let requirementsResponse: unknown={numeric:[],knowledge:[],questions:[],assumptions:[]};
+let extractionCalls=0;
 let calls=0;
 const originalFetch=globalThis.fetch;
-globalThis.fetch=async()=>{calls++;return Response.json({choices:[{message:{content:JSON.stringify(response)}}],usage:{prompt_tokens:20,completion_tokens:30}});};
+globalThis.fetch=async(_url,init)=>{calls++;const system=JSON.parse(String(init?.body)).messages[0].content;const extracting=system.includes("教学需求核对员");if(extracting)extractionCalls++;const output=extracting?requirementsResponse:response;return Response.json({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:20,completion_tokens:30}});};
 try {
  const input={kind:"handout",instruction:"给高三学生制作周期专题讲义",requiredKnowledgeIds:[period],profileId:"model",documentIds:["doc"]};
  const project=await createAuthoringProject("teacher",scope,input);
@@ -31,8 +33,8 @@ try {
  await assert.rejects(()=>createAuthoringProject("teacher",scope,{...input,documentIds:["other-doc"]}),/已审核/);
  await kickAuthoringPlanning();
  const planned=readAuthoringProject("teacher",scope,project.id)!;
- assert.equal(planned.status,"planned");assert.deepEqual(planned.plan,plan);assert.equal(calls,1);
- await kickAuthoringPlanning();assert.equal(calls,1,"completed plans must not run again");
+ assert.equal(planned.status,"planned");assert.deepEqual(planned.plan,plan);assert.equal(calls,2);
+ await kickAuthoringPlanning();assert.equal(calls,2,"completed plans must not run again");
  const saved=saveAuthoringPlan("teacher",scope,project.id,planned.revision,{...plan,title:"修改后的讲义"});
  assert.equal(saved.title,"修改后的讲义");
  assert.throws(()=>saveAuthoringPlan("teacher",scope,project.id,planned.revision,plan),/变化/);
@@ -61,6 +63,29 @@ try {
  const live=await createAuthoringProject("teacher",scope,input);
  db.prepare("UPDATE authoring_projects SET status='planning',lease_owner='live',lease_expires_at='2099-01-01' WHERE id=?").run(live.id);
  const before=calls;await kickAuthoringPlanning();assert.equal(calls,before,"do not restart a live lease");
+ // Independent requirements survive a failed plan and a teacher correction/retry.
+ requirementsResponse={numeric:[{metric:"questions",operator:"eq",value:4,evidence:"4 道题"}],knowledge:[],questions:[],assumptions:[]};
+ const constrained=await createAuthoringProject("teacher",scope,{...input,instruction:"周期讲义，整份共 4 道题"});
+ await kickAuthoringPlanning();
+ let current=readAuthoringProject("teacher",scope,constrained.id)!;
+ assert.equal(current.status,"failed"); assert.match(current.error!,/未满足教师要求/);
+ assert.equal(current.requirements!.numeric[0].value,4); assert.equal(current.plan,null);
+ const countBeforeRetry=extractionCalls;
+ const edited={...current.requirements!,numeric:current.requirements!.numeric.map(item=>({...item,value:2}))};
+ assert.throws(()=>saveAuthoringPlan("other",scope,current.id,current.revision,undefined,edited),/不存在/);
+ current=saveAuthoringPlan("teacher",scope,current.id,current.revision,undefined,edited);
+ assert.equal(current.requirements!.editedByTeacher,true);
+ db.prepare("UPDATE authoring_projects SET status='queued' WHERE id=?").run(current.id);
+ await kickAuthoringPlanning(); current=readAuthoringProject("teacher",scope,current.id)!;
+ assert.equal(current.status,"planned");assert.equal(extractionCalls,countBeforeRetry,"retry must retain teacher requirements");
+ assert.equal(current.requirementChecks[0].passed,true);
+ assert.throws(()=>saveAuthoringPlan("teacher",scope,current.id,current.revision,{...plan,chapters:[{...plan.chapters[0],slots:[slot,{...slot,role:"practice",count:3}]}]}),/未满足/);
+ requirementsResponse={numeric:[],knowledge:[],questions:[{evidence:"一百多道题",question:"请明确题数或可接受范围。"}],assumptions:[]};
+ const ambiguous=await createAuthoringProject("teacher",scope,{...input,instruction:"周期讲义，需要一百多道题"});
+ const beforeAmbiguous=calls;await kickAuthoringPlanning();current=readAuthoringProject("teacher",scope,ambiguous.id)!;
+ assert.equal(current.status,"failed");assert.equal(calls,beforeAmbiguous+1,"unresolved ambiguity must not start planning");
+ assert.equal(current.requirements!.questions.length,1);
+ requirementsResponse={numeric:[],knowledge:[],questions:[],assumptions:[]};
  // A late response from an old lease must not overwrite the replacement worker's state.
  const stale=await createAuthoringProject("teacher",scope,input);
  globalThis.fetch=async()=>{db.prepare("UPDATE authoring_projects SET lease_owner='replacement',title='new owner' WHERE id=?").run(stale.id);return Response.json({choices:[{message:{content:JSON.stringify(plan)}}]});};

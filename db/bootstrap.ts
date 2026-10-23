@@ -527,7 +527,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 16;
+export const DATABASE_VERSION = 17;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -671,6 +671,9 @@ function initialize() {
       );
       CREATE INDEX classification_batch_scope_idx ON classification_batches(owner_id,subject,stage,created_at);
       CREATE INDEX classification_batch_queue_idx ON classification_batch_items(status,lease_expires_at,batch_id,position);
+    `) },
+    { version: 17, name: "authoring-requirements", checksum: "authoring-requirements-v1", up: sqlite => sqlite.exec(`
+      ALTER TABLE authoring_projects ADD COLUMN requirements_json TEXT;
     `) },
   ]);
   initialized = true;

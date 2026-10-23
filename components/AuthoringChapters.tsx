@@ -100,7 +100,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
           edit({ ...draft, items, gaps, questions: [...draft.questions, result.question] }); setLookup(null);
         })}>选用并填写理由</button></article>)}</div>}
       {editing ? <label>本章小结<textarea value={draft.conclusion} onChange={event => edit({ ...draft, conclusion: event.target.value })} /></label> : <p><strong>本章小结：</strong><MathText text={draft.conclusion} /></p>}
-      {!working && chapter.status !== "approved" && <div className="studio-approval"><label>人工核对说明{!draft.review.passed && "（请说明如何处理上面的审校问题）"}<textarea value={note} onChange={event => setNote(event.target.value)} /></label><button className="btn btn-primary" disabled={busy || dirty || !["complete", "needs_review"].includes(chapter.status) || draft.gaps.length > 0 || !draft.review.passed && note.trim().length < 10} onClick={() => void operate(() => action("approve"))}>已核对，采用本章</button></div>}
+      {!working && chapter.status !== "approved" && <div className="studio-approval"><label>人工核对说明{!draft.review.passed && "（请说明如何处理上面的审校问题）"}<textarea disabled={busy || working} value={note} onChange={event => setNote(event.target.value)} /></label><button className="btn btn-primary" disabled={busy || dirty || !["complete", "needs_review"].includes(chapter.status) || draft.gaps.length > 0 || !draft.review.passed && note.trim().length < 10} onClick={() => void operate(() => action("approve"))}>已核对，采用本章</button></div>}
     </>}
   </article>;
 }

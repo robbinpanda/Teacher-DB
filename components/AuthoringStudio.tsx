@@ -5,6 +5,8 @@ import { useEducationScope } from "./AppShell";
 import { KnowledgeWorkbench, studioRequest } from "./KnowledgeWorkbench";
 import { AuthoringChapters } from "./AuthoringChapters";
 import { AuthoringVariations } from "./AuthoringVariations";
+import { AuthoringRequirements } from "./AuthoringRequirements";
+import type { AuthoringRequirements as Requirements } from "../lib/authoring-requirements";
 import { AuthoringCoverage } from "./AuthoringCoverage";
 import type { WorkCoverage } from "../lib/authoring-coverage";
 import type { WholePaperVariation } from "../lib/authoring-variation";
@@ -12,7 +14,7 @@ import type { AuthoringChapter } from "../lib/authoring-content";
 import { difficultyLabels, type KnowledgeNode } from "../lib/knowledge-catalog";
 import { planSummary, type AuthoringPlan, type AuthoringRequest } from "../lib/authoring-plan";
 
-type Project = { assumedPrerequisites: Array<{id:string;label:string}>; workCoverage: WorkCoverage | null; variation: WholePaperVariation | null; chapters: AuthoringChapter[]; paperId: string | null; id: string; title: string; kind: string; status: string; revision: number; error: string | null; request: AuthoringRequest; plan: AuthoringPlan | null; summary: { questionCount: number; totalScore: number; knowledgeCount: number } | null };
+type Project = { requirements: Requirements | null; assumedPrerequisites: Array<{id:string;label:string}>; workCoverage: WorkCoverage | null; variation: WholePaperVariation | null; chapters: AuthoringChapter[]; paperId: string | null; id: string; title: string; kind: string; status: string; revision: number; error: string | null; request: AuthoringRequest; plan: AuthoringPlan | null; summary: { questionCount: number; totalScore: number; knowledgeCount: number } | null };
 type Source = { id: string; name: string; questionCount: number };
 type SourcePaper = { id:string; kind:"uploaded"|"assembled"; title:string; questionCount:number; approvedCount:number };
 const isRunning = (project:Project) => ["queued","planning","generating"].includes(project.status) || project.chapters.some(chapter=>chapter.status === "running") || Boolean(project.variation?.items.some(item=>["running","accepting"].includes(item.status)));
@@ -23,6 +25,8 @@ export function AuthoringStudio() {
   return <StudioWorkspace key={`${scope.subject}:${scope.stage}`} scopeQuery={new URLSearchParams({ subject: scope.subject, stage: scope.stage }).toString()} />;
 }
 function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
+  const educationScope = useEducationScope();
+  const [requirementsDraft, setRequirementsDraft] = useState<Requirements | null>(null);
   const [tab, setTab] = useState<"authoring" | "search">("authoring");
   const [nodes, setNodes] = useState<KnowledgeNode[]>([]), [sources, setSources] = useState<Source[]>([]);
   const [projects, setProjects] = useState<Array<Pick<Project, "id" | "title" | "status">>>([]);
@@ -38,7 +42,7 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [dirty, setDirty] = useState(false);
   async function refreshList() { const result = await studioRequest<{ projects: typeof projects; sources: Source[]; papers:SourcePaper[] }>(`/api/authoring?${scopeQuery}`); setProjects(result.projects); setSources(result.sources);setPapers(result.papers); }
   function adopt(value: Project) {
-    setProject(value); setProjects(items => items.map(item => item.id === value.id ? { ...item, title: value.title, status: value.status } : item)); setDraft(value.plan); setDirty(false); setChapterDirty(false); setCoverage(null);
+    setProject(value); setRequirementsDraft(value.requirements); setProjects(items => items.map(item => item.id === value.id ? { ...item, title: value.title, status: value.status } : item)); setDraft(value.plan); setDirty(false); setChapterDirty(false); setCoverage(null);
     setInstruction(value.request.instruction); setSourceIds(value.request.documentIds); setRequired(value.request.requiredKnowledgeIds);
     setKind(value.request.kind);setPaperKey(value.request.sourcePaperId ? `${value.request.sourcePaperKind}:${value.request.sourcePaperId}` : "");
     setVariationDifficulty(value.request.variationDifficulty);setReviewerProfileId(value.request.reviewerProfileId??"");
@@ -65,7 +69,7 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
       try {
         const result = await studioRequest<{ project: Project }>(`/api/authoring/${id}?${scopeQuery}`, "GET", undefined, controller.signal);
         if (controller.signal.aborted) return;
-        setProject(result.project); if (result.project.plan) setDraft(result.project.plan);
+        setProject(result.project); setRequirementsDraft(result.project.requirements); if (result.project.plan) setDraft(result.project.plan);
         if (!isRunning(result.project)) return;
       } catch (caught) { if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "任务状态读取失败"); }
       if (!controller.signal.aborted) timer = setTimeout(poll, 2500);
@@ -114,7 +118,11 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
         {!project && <div className="studio-empty"><h2>把教学目标变成一份可检查的计划</h2><p>说明学生基础、范围、课时、题量和期望难度。规划会列出各章目标、例题与练习配额，再检查哪些知识点缺题。</p><p>每章保留题库来源、选题理由、知识讲解和审校结果。内容可以逐章修改、替换题目和重新生成。</p></div>}
         {running && !project.variation && <div role="status" className="studio-empty"><h2>{statusLabels[project.status]}</h2><p>任务已保存，刷新后可从最近作品继续查看。逐章编写包含选题、正文和独立审校，长讲义可以暂停并继续。</p></div>}
         {project?.variation && <AuthoringVariations project={project} scopeQuery={scopeQuery} onUpdate={value=>adopt(value as Project)}/>}
-        {project?.error && <div role="alert" className="studio-error"><p>{project.error}</p><button className="btn" disabled={busy} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "POST", { action: "retry" })).project))}>重试规划</button></div>}
+        {project?.error && <div role="alert" className="studio-error"><p>{project.error}</p><button className="btn" disabled={busy || dirty} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "POST", { action: "retry" })).project))}>重试规划</button></div>}
+        {project && requirementsDraft && <>
+          <AuthoringRequirements value={requirementsDraft} plan={draft} nodes={nodes} scope={educationScope} editable={!busy && !running && !project.chapters.length} onChange={value => { setRequirementsDraft({ ...value, editedByTeacher: true }); setDirty(true); setCoverage(null); }}/>
+          {!draft && !running && !project.chapters.length && <button className="btn" disabled={busy || !dirty} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "PATCH", { revision: project.revision, requirements: requirementsDraft })).project))}>保存要求</button>}
+        </>}
         {project?.workCoverage && <AuthoringCoverage coverage={project.workCoverage} educational={["handout","book"].includes(project.kind)}/> }
         {!!project?.assumedPrerequisites?.length && <p className="studio-assumed-knowledge">本次未安排教学、需学生已掌握的前置知识：{project.assumedPrerequisites.map(node=>node.label).join("、")}。请核对学生基础，必要时补入大纲。</p>}
         {project?.chapters.length ? <>
@@ -127,15 +135,17 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
           <AuthoringChapters key={project.id} projectId={project.id} projectRevision={project.revision} projectStatus={project.status} chapters={project.chapters} scopeQuery={scopeQuery} documentIds={project.request.documentIds} onUpdate={value => adopt(value as Project)} onDirty={setChapterDirty} />
         </> : null}
         {draft && project && !project.chapters.length && <>
-          <div className="studio-plan-actions"><span>{dirty ? "有未保存修改" : "大纲已保存"}</span><button className="btn" disabled={busy || !dirty} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "PATCH", { revision: project.revision, plan: draft })).project))}>保存大纲</button><button className="btn btn-primary" disabled={busy || dirty || chapterDirty} onClick={() => void operate(async () => setCoverage((await studioRequest<{ coverage: Coverage }>(`/api/authoring/${project.id}?${scopeQuery}&coverage=1`)).coverage))}>检查题库覆盖</button><button className="btn btn-primary" disabled={busy || dirty || project.status !== "planned"} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "POST", { action: "generate", revision: project.revision })).project))}>确认大纲，逐章生成</button></div>
+          <div className="studio-plan-actions"><span>{dirty ? "有未保存修改" : "大纲已保存"}</span><button className="btn" disabled={busy || !dirty} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "PATCH", { revision: project.revision, plan: draft, ...(requirementsDraft && JSON.stringify(requirementsDraft) !== JSON.stringify(project.requirements) ? { requirements: requirementsDraft } : {}) })).project))}>保存大纲</button><button className="btn" disabled={busy || !dirty} onClick={() => { setDraft(project.plan); setRequirementsDraft(project.requirements); setDirty(false); setCoverage(null); }}>取消修改</button><button className="btn btn-primary" disabled={busy || dirty || chapterDirty} onClick={() => void operate(async () => setCoverage((await studioRequest<{ coverage: Coverage }>(`/api/authoring/${project.id}?${scopeQuery}&coverage=1`)).coverage))}>检查题库覆盖</button><button className="btn btn-primary" disabled={busy || dirty || project.status !== "planned"} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "POST", { action: "generate", revision: project.revision })).project))}>确认大纲，逐章生成</button></div>
           <label>标题<input value={draft.title} onChange={event => edit({ ...draft, title: event.target.value })} /></label><label>适用学生<input value={draft.audience} onChange={event => edit({ ...draft, audience: event.target.value })} /></label>
+          <label>预计用时（分钟）<input type="number" min={1} max={5000} value={draft.estimatedMinutes} onChange={event => edit({ ...draft, estimatedMinutes: Number(event.target.value) })}/></label>
           <p>{draft.approach}</p><p>{draft.chapters.length} 章 · {planSummary(draft).questionCount} 题 · {planSummary(draft).totalScore} 分 · 预计 {draft.estimatedMinutes} 分钟</p>
           {draft.assumptions.length > 0 && <details open><summary>需要老师核对的假设</summary><ul>{draft.assumptions.map((item, i) => <li key={i}>{item}</li>)}</ul></details>}
           {draft.chapters.map((chapter, index) => <article className="studio-chapter" key={chapter.id}>
+            <button className="btn" disabled={busy || draft.chapters.length <= 1} onClick={() => edit({ ...draft, chapters: draft.chapters.filter((_, i) => i !== index) })}>移除第 {index + 1} 章</button>
             <label>第 {index + 1} 章<input value={chapter.title} onChange={event => edit({ ...draft, chapters: draft.chapters.map((item, i) => i === index ? { ...item, title: event.target.value } : item) })} /></label>
             <ul>{chapter.objectives.map((objective, i) => <li key={i}>{objective}</li>)}</ul><p>{chapter.knowledgeIds.map(id => nodes.find(node => node.id === id)?.label ?? id).join(" · ")}</p>
             <label>讲解与衔接要求<textarea value={chapter.teachingNotes} onChange={event => edit({ ...draft, chapters: draft.chapters.map((item, i) => i === index ? { ...item, teachingNotes: event.target.value } : item) })} /></label>
-            <table><thead><tr><th>用途与目标</th><th>难度</th><th>题量</th><th>每题分值</th></tr></thead><tbody>{chapter.slots.map((slot, slotIndex) => <tr key={slotIndex}><td>{({ example: "例题", practice: "练习", assessment: "检测" })[slot.role]} · {slot.purpose}</td><td>{difficultyLabels[slot.difficulty]}</td><td><input aria-label={`第 ${index + 1} 章第 ${slotIndex + 1} 组题量`} type="number" min={1} max={30} value={slot.count} onChange={event => edit({ ...draft, chapters: draft.chapters.map((item, i) => i === index ? { ...item, slots: item.slots.map((entry, j) => j === slotIndex ? { ...entry, count: Number(event.target.value) } : entry) } : item) })} /></td><td>{slot.score}</td></tr>)}</tbody></table>
+            <table><thead><tr><th>用途与目标</th><th>难度</th><th>题量</th><th>每题分值</th></tr></thead><tbody>{chapter.slots.map((slot, slotIndex) => <tr key={slotIndex}><td>{({ example: "例题", practice: "练习", assessment: "检测" })[slot.role]} · {slot.purpose}<select aria-label={`第 ${index + 1} 章第 ${slotIndex + 1} 组题型`} value={slot.type} onChange={event => edit({ ...draft, chapters: draft.chapters.map((item, i) => i === index ? { ...item, slots: item.slots.map((entry, j) => j === slotIndex ? { ...entry, type: event.target.value as typeof slot.type } : entry) } : item) })}>{Object.entries({any:"不限题型",single:"单选",multiple:"多选",fill:"填空",answer:"解答"}).map(([type,label])=><option key={type} value={type}>{label}</option>)}</select></td><td><select aria-label={`第 ${index + 1} 章第 ${slotIndex + 1} 组难度`} value={slot.difficulty} onChange={event => edit({ ...draft, chapters: draft.chapters.map((item, i) => i === index ? { ...item, slots: item.slots.map((entry, j) => j === slotIndex ? { ...entry, difficulty: Number(event.target.value) } : entry) } : item) })}>{[1,2,3,4,5].map(level => <option key={level} value={level}>{difficultyLabels[level]}</option>)}</select></td><td><input aria-label={`第 ${index + 1} 章第 ${slotIndex + 1} 组题量`} type="number" min={1} max={30} value={slot.count} onChange={event => edit({ ...draft, chapters: draft.chapters.map((item, i) => i === index ? { ...item, slots: item.slots.map((entry, j) => j === slotIndex ? { ...entry, count: Number(event.target.value) } : entry) } : item) })} /></td><td><input aria-label={`第 ${index + 1} 章第 ${slotIndex + 1} 组分值`} type="number" min={0} step="0.5" value={slot.score} onChange={event => edit({ ...draft, chapters: draft.chapters.map((item, i) => i === index ? { ...item, slots: item.slots.map((entry, j) => j === slotIndex ? { ...entry, score: Number(event.target.value) } : entry) } : item) })}/></td></tr>)}</tbody></table>
             {coverage?.find(item => item.id === chapter.id)?.slots.map((slot, i) => <p key={i} className={slot.shortage ? "studio-gap" : ""}>{slot.purpose}：需 {slot.count} 题，候选 {slot.candidateCount} 题，同难度已标注 {slot.difficultyMatchedCount} 题，其中教师确认 {slot.confirmedCount} 题；整份作品去重后可分配教师确认题 {slot.allocatedConfirmedCount} 道（含建议标签可分配 {slot.allocatedClassifiedCount} 道）{slot.shortage ? `；还需核对或补充 ${slot.shortage} 题` : ""}。</p>)}
           </article>)}
           {coverage && <p>可分配数量已按整份作品去重：同一道题及相同题干只分配一次，按知识点、题型与目标难度匹配。这是题库供给检查，正式选题仍需核对题目质量。</p>}

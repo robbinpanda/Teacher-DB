@@ -12,6 +12,7 @@ import { allocateUniqueQuestions, inspectWorkCoverage, questionStemKey } from ".
 import { resolveModelProfile } from "../../lib/model-profiles";
 import { getPaperData, getUploadedPaperData } from "../../lib/question-repository";
 import type { AuthoringChapter, SavedChapterContent } from "../../lib/authoring-content";
+import { authoringRequirementsSystemPrompt, parseAuthoringRequirements, inspectPlanRequirements, type AuthoringRequirements } from "../../lib/authoring-requirements";
 
 async function variationSource(ownerId: string, scope: EducationScope, request: AuthoringRequest) {
   if (request.kind !== "variation") return null;
@@ -22,12 +23,13 @@ async function variationSource(ownerId: string, scope: EducationScope, request: 
   return { id: source.id, title: source.title, questions: source.questions.map(question => ({ id: question.id, number: question.number, type: question.type, stem: question.stem, tags: question.tags })) };
 }
 
-type ProjectRow = { id: string; owner_id: string; subject: string; stage: EducationScope["stage"]; kind: AuthoringRequest["kind"]; title: string; request_json: string; plan_json: string | null; status: string; revision: number; error: string | null; created_at: string; updated_at: string; paper_id: string | null };
+type ProjectRow = { id: string; owner_id: string; subject: string; stage: EducationScope["stage"]; kind: AuthoringRequest["kind"]; title: string; request_json: string; plan_json: string | null; requirements_json: string | null; status: string; revision: number; error: string | null; created_at: string; updated_at: string; paper_id: string | null };
 export function readAuthoringProject(ownerId: string, scope: EducationScope, id: string) {
   const sqlite = getSqlite();
   const row = sqlite.prepare("SELECT * FROM authoring_projects WHERE id=? AND owner_id=? AND subject=? AND stage=?").get(id, ownerId, scope.subject, scope.stage) as ProjectRow | undefined;
   if (!row) return null;
   const plan = row.plan_json ? JSON.parse(row.plan_json) as AuthoringPlan : null;
+  const requirements = row.requirements_json ? JSON.parse(row.requirements_json) as AuthoringRequirements : null;
   const chapters = (sqlite.prepare("SELECT * FROM authoring_chapters WHERE project_id=? ORDER BY position").all(id) as Array<{ id: string; position: number; plan_json: string; content_json: string | null; status: AuthoringChapter["status"]; revision: number; attempt: number; error: string | null }>).map(chapter => ({
     id: chapter.id, position: chapter.position, plan: JSON.parse(chapter.plan_json), content: chapter.content_json ? JSON.parse(chapter.content_json) as SavedChapterContent : null,
     history: sqlite.prepare("SELECT id,revision,reason,created_at AS createdAt FROM authoring_chapter_versions WHERE chapter_id=? ORDER BY revision DESC").all(chapter.id),
@@ -47,7 +49,7 @@ export function readAuthoringProject(ownerId: string, scope: EducationScope, id:
   const fingerprints = new Map(loadRetrievalRows(sqlite, ownerId, scope, request.documentIds.length ? request.documentIds : undefined, selectedIds).map(question => [question.id, fingerprintRow(question, scope)]));
   const stale = [...new Set(chapters.flatMap(chapter => chapter.content?.items.filter(item => !fingerprints.has(item.questionId) || fingerprints.get(item.questionId) !== chapter.content!.questionFingerprints[item.questionId]).map(item => item.questionId) ?? []))];
   return { variation, id: row.id, title: row.title, subject: row.subject, stage: row.stage, kind: row.kind, status: row.status, revision: row.revision, error: row.error,
-    createdAt: row.created_at, updatedAt: row.updated_at, request, plan, chapters, paperId: row.paper_id, summary: plan ? planSummary(plan) : null,
+    createdAt: row.created_at, updatedAt: row.updated_at, request, plan, requirements, requirementChecks: plan && requirements ? inspectPlanRequirements(plan, requirements, scope) : [], chapters, paperId: row.paper_id, summary: plan ? planSummary(plan) : null,
     assumedPrerequisites: plan ? assumedPrerequisites(plan, scope) : [], workCoverage: plan ? inspectWorkCoverage(plan, request, chapters, scope, stale) : null };
 }
 export async function createAuthoringProject(ownerId: string, scope: EducationScope, value: unknown) {
@@ -77,15 +79,19 @@ export async function createAuthoringProject(ownerId: string, scope: EducationSc
   return readAuthoringProject(ownerId, scope, id)!;
 }
 
-export function saveAuthoringPlan(ownerId: string, scope: EducationScope, id: string, revision: number, value: unknown) {
+export function saveAuthoringPlan(ownerId: string, scope: EducationScope, id: string, revision: number, value: unknown, requirementsValue?: unknown) {
   const sqlite = getSqlite();
   return sqlite.transaction(() => {
     const project = readAuthoringProject(ownerId, scope, id);
     if (!project) throw new Error("作品不存在");
-    if (project.revision !== revision || project.status !== "planned") throw new Error("作品已变化或正在生成，请刷新后再保存");
-    const plan = validateAuthoringPlan(value, scope, project.request);
-    sqlite.prepare("UPDATE authoring_projects SET title=?,plan_json=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=?")
-      .run(plan.title, JSON.stringify(plan), new Date().toISOString(), id, ownerId);
+    if (project.revision !== revision || !["planned", "failed"].includes(project.status) || project.chapters.length || project.kind === "variation") throw new Error("作品已变化或正在生成，请刷新后再保存");
+    if (value === undefined && requirementsValue === undefined) throw new Error("没有要保存的大纲或要求");
+    const requirements = requirementsValue === undefined ? project.requirements : parseAuthoringRequirements(requirementsValue, scope, project.request.instruction, true);
+    const candidate = value === undefined ? project.plan : value;
+    const plan = candidate ? validateAuthoringPlan(candidate, scope, project.request, requirements) : null;
+    if (project.plan && !plan) throw new Error("不能清空已保存的大纲");
+    sqlite.prepare("UPDATE authoring_projects SET title=?,plan_json=?,requirements_json=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=?")
+      .run(plan?.title ?? project.title, plan ? JSON.stringify(plan) : null, requirements ? JSON.stringify(requirements) : null, new Date().toISOString(), id, ownerId);
     return readAuthoringProject(ownerId, scope, id)!;
   })();
 }
@@ -127,18 +133,34 @@ export async function kickAuthoringPlanning() {
   })();
   if (!job) return;
   const scope = { subject: job.subject, stage: job.stage }, request = JSON.parse(job.request_json) as AuthoringRequest;
+  const heartbeat = setInterval(() => {
+    sqlite.prepare("UPDATE authoring_projects SET lease_expires_at=? WHERE id=? AND lease_owner=? AND status='planning'")
+      .run(new Date(Date.now() + 10 * 60_000).toISOString(), job.id, token);
+  }, 30_000);
+  heartbeat.unref();
   try {
+    let requirements = job.requirements_json ? JSON.parse(job.requirements_json) as AuthoringRequirements : null;
+    if (!requirements) {
+      const extracted = await authoringModel({ ownerId: job.owner_id, profileId: request.profileId, system: authoringRequirementsSystemPrompt,
+        text: JSON.stringify({ instruction: request.instruction, scope, catalog: knowledgeCatalog(scope.subject, scope.stage) }),
+        purpose: "authoring_requirements", jsonMode: true, maxOutputTokens: 7000, timeoutMs: 240000 }, value => parseAuthoringRequirements(value, scope, request.instruction));
+      requirements = extracted.value;
+      const saved = sqlite.prepare("UPDATE authoring_projects SET requirements_json=?,revision=revision+1,updated_at=? WHERE id=? AND lease_owner=? AND status='planning'")
+        .run(JSON.stringify(requirements), new Date().toISOString(), job.id, token);
+      if (!saved.changes) return;
+    }
+    if (requirements.questions.length) throw new Error(`请先核对教学要求：${requirements.questions.map(item => item.question).join("；")}`);
     const inventory = loadRetrievalRows(sqlite, job.owner_id, scope, request.documentIds.length ? request.documentIds : undefined);
     const counts = inventory.reduce((result, question) => { result[question.type] = (result[question.type] ?? 0) + 1; return result; }, {} as Record<string, number>);
     const sourcePaper = await variationSource(job.owner_id, scope, request);
     const result = await authoringModel({ ownerId: job.owner_id, profileId: request.profileId, system: authoringPlanSystemPrompt,
-      text: JSON.stringify({ scope, request, sourcePaper, catalog: knowledgeCatalog(scope.subject, scope.stage), reference: scope.subject === "数学" && scope.stage === "high" ? curriculumSource : null, availableQuestionCounts: counts }),
-      purpose: "authoring_plan", jsonMode: true, maxOutputTokens: 14000, timeoutMs: 240000 }, value => validateAuthoringPlan(value, scope, request));
+      text: JSON.stringify({ scope, request, requirements, sourcePaper, catalog: knowledgeCatalog(scope.subject, scope.stage), reference: scope.subject === "数学" && scope.stage === "high" ? curriculumSource : null, availableQuestionCounts: counts }),
+      purpose: "authoring_plan", jsonMode: true, maxOutputTokens: 14000, timeoutMs: 240000 }, value => validateAuthoringPlan(value, scope, request, requirements));
     const plan = result.value;
     sqlite.prepare(`UPDATE authoring_projects SET title=?,plan_json=?,status='planned',revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='planning'`)
       .run(plan.title, JSON.stringify(plan), new Date().toISOString(), job.id, token);
   } catch (error) {
     sqlite.prepare("UPDATE authoring_projects SET status='failed',error=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='planning'")
       .run(error instanceof Error ? error.message.slice(0, 1500) : "大纲生成失败", new Date().toISOString(), job.id, token);
-  }
+  } finally { clearInterval(heartbeat); }
 }

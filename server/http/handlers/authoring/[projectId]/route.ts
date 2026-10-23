@@ -21,9 +21,9 @@ export async function GET(request: Request, context: Context) {
 }
 export async function PATCH(request: Request, context: Context) {
   await ensureDatabase();
-  const data = z.object({ revision: z.number().int().min(1), plan: z.unknown() }).strict().safeParse(await request.json().catch(() => null));
+  const data = z.object({ revision: z.number().int().min(1), plan: z.unknown().optional(), requirements: z.unknown().optional() }).strict().safeParse(await request.json().catch(() => null));
   if (!data.success) return Response.json({ error: "大纲保存格式无效" }, { status: 400 });
-  try { return Response.json({ project: saveAuthoringPlan(requestOwner(request), requestEducationScope(request), (await context.params).projectId, data.data.revision, data.data.plan) }); }
+  try { return Response.json({ project: saveAuthoringPlan(requestOwner(request), requestEducationScope(request), (await context.params).projectId, data.data.revision, data.data.plan, data.data.requirements) }); }
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : "保存失败" }, { status: 409 }); }
 }
 export async function POST(request: Request, context: Context) {

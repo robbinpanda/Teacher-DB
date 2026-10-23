@@ -33,7 +33,8 @@ globalThis.fetch = async (_url, init) => {
   const input = JSON.parse(typeof user === "string" ? user : user.find((part: { type: string }) => part.type === "text").text);
   if (input.imageMapping?.length) assert.ok(Array.isArray(user) && user.some((part: { type: string }) => part.type === "image_url"), "writer and reviewer must receive actual selected question images");
   let output: unknown;
-  if (system.includes("输出 JSON {items:")) {
+  if (system.includes("教学需求核对员")) { calls.push("requirements"); output = { numeric: [], knowledge: [], questions: [], assumptions: [] }; }
+  else if (system.includes("输出 JSON {items:")) {
     calls.push("select"); const chosen = new Set<string>();
     output = { items: input.pools.flatMap((pool: string[], slotIndex: number) => {
       const id = pool.find(id => !chosen.has(id)); if (!id) return []; chosen.add(id);
@@ -46,7 +47,7 @@ globalThis.fetch = async (_url, init) => {
   } else if (system.includes("校本教辅编辑")) {
     calls.push(input.previousContent ? "revise" : "write"); stealing?.();
     output = { ...input.selection, introduction: "从周期的概念出发，先理解定义，再通过例题掌握计算方法。", knowledge: input.kind === "paper" ? [] : [{ id: period, title: "最小正周期", explanation: "周期函数的函数值按固定间隔重复，最小正周期是所有正周期中的最小值。研究周期时必须明确自变量的变化范围，并确认恒等关系对定义域内所有自变量成立。正弦函数的角系数会改变变化速度，因此需要使用角系数的绝对值计算周期，不能忽略非零条件。", formulas: [{ latex: "T=2\\pi/|\\omega|", conditions: "角系数非零且振幅非零。" }], method: "先识别函数中的角系数，再判断是否为正弦或余弦函数，代入最小正周期公式并验证非零条件。", misconceptions: [{ mistake: "把负的角系数直接代入。", correction: "周期取正值，应当使用角系数的绝对值。" }] }], items: input.selection.items.map((item: object) => ({ ...item, teachingExplanation: "第一步识别函数中的角系数并确认它不为零；第二步使用正弦函数最小正周期公式，取角系数的绝对值后计算。第三步把结果代回定义，检查自变量平移一个周期后函数值保持不变，从而验证结论。" })), conclusion: "本章通过定义、公式和典型题，建立了周期计算的完整步骤。" };
-  } else { calls.push("plan"); output = plan; }
+  } else { calls.push("plan"); output = input.request.kind === "paper" ? { ...plan, chapters: plan.chapters.map(chapter => ({ ...chapter, slots: chapter.slots.map(slot => ({ ...slot, role: "assessment" })) })) } : plan; }
   return Response.json({ choices: [{ message: { content: JSON.stringify(output) } }] });
 };
 const read = (id: string) => readAuthoringProject("teacher", scope, id)!;

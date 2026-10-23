@@ -130,14 +130,15 @@ test('自然语言规划通过后台模型调用持久化，可刷新恢复、�
  const slot={role:'example',knowledgeIds:[period],difficulty:2,type:'fill',count:2,score:0,purpose:'直接使用周期公式'};
  const plan={title:'三角函数周期复习讲义',audience:'高三基础班',approach:'先理解周期定义，再逐步迁移到复合角函数',estimatedMinutes:45,assumptions:['学生已掌握弧度制'],chapters:[{id:'period',title:'周期概念与计算',objectives:['理解周期并计算最小正周期'],knowledgeIds:[period],prerequisites:[],teachingNotes:'借助单位圆说明周期，再归纳计算步骤。',slots:[slot,{...slot,role:'practice',count:4}]}]};
  let calls=0;
- const model=createServer((req,res)=>{let text='';req.on('data',part=>{text+=part;});req.on('end',()=>{calls++;const input=JSON.parse(text);expect(JSON.stringify(input)).toContain('教学');res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(plan)}}],usage:{prompt_tokens:10,completion_tokens:20}}));});});
+ const requirements={numeric:[{metric:'questions',scope:'work',roles:['example'],operator:'eq',value:2,evidence:'2 道例题'},{metric:'questions',scope:'work',roles:['practice'],operator:'eq',value:4,evidence:'4 道练习'}],knowledge:[],questions:[],assumptions:[]};
+ const model=createServer((req,res)=>{let text='';req.on('data',part=>{text+=part;});req.on('end',()=>{calls++;const input=JSON.parse(text);expect(JSON.stringify(input)).toContain('教学');res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(input.messages[0].content.includes('教学需求核对员')?requirements:plan)}}],usage:{prompt_tokens:10,completion_tokens:20}}));});});
  await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
  try{
   const configured=await request.post('/api/model-profiles',{data:{displayName:`规划测试-${crypto.randomUUID()}`,provider:'openai-compatible',baseUrl:`http://127.0.0.1:${model.address().port}/v1`,model:'mock',apiKey:'test-only',select:true}});expect(configured.status()).toBe(201);
   await page.goto('/studio');await page.getByLabel('教学要求',{exact:true}).fill('给高三学生制作三角函数周期讲义，2 道例题、4 道练习。');
   await page.getByText('选择资料范围（整个当前题库）',{exact:true}).click();await page.getByRole('checkbox',{name:'规划缺口专用资料 · 1 题',exact:true}).check();
   await expect(page.getByRole('button',{name:'生成教学大纲'})).toBeEnabled();await page.getByRole('button',{name:'生成教学大纲'}).click();
-  await expect(page.getByLabel('标题',{exact:true})).toHaveValue(plan.title,{timeout:30000});expect(calls).toBe(1);
+  await expect(page.getByLabel('标题',{exact:true})).toHaveValue(plan.title,{timeout:30000});expect(calls).toBe(2);
   const list=await (await request.get(`/api/authoring?${scope}`)).json();const saved=list.projects.find(p=>p.title===plan.title);expect(saved).toBeTruthy();
   const before=await (await request.get(`/api/authoring/${saved.id}?${scope}`)).json();
   await page.reload();await page.getByRole('button',{name:new RegExp(plan.title)}).click();await expect(page.getByLabel('标题',{exact:true})).toHaveValue(plan.title);
@@ -147,7 +148,13 @@ test('自然语言规划通过后台模型调用持久化，可刷新恢复、�
   await page.getByRole('button',{name:'教学范围 高中 · 数学'}).click();await page.getByRole('button',{name:'初中',exact:true}).click();
   await expect(page.getByLabel('第 1 章第 2 组题量')).toHaveValue('6');await expect(page.getByRole('button',{name:'教学范围 高中 · 数学'})).toBeVisible();
   await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'保存大纲',exact:true}).click();await expect(page.getByRole('alert').filter({hasText:'未满足教师要求'})).toBeVisible();
+  await page.getByText('修改第 2 项要求',{exact:true}).click();await page.getByLabel('要求 2 数值',{exact:true}).fill('6');
   await page.getByRole('button',{name:'保存大纲',exact:true}).click();await expect(page.getByText('大纲已保存',{exact:true})).toBeVisible();
+  await expect(page.getByRole('region',{name:'教学要求核对'})).toContainText('已包含教师调整');
+  await expect(page.getByRole('button',{name:'移除第 1 章',exact:true})).toBeDisabled();
+  await page.getByLabel('第 1 章第 2 组题量').fill('7');await page.getByRole('button',{name:'取消修改',exact:true}).click();
+  await expect(page.getByLabel('第 1 章第 2 组题量')).toHaveValue('6');
   const conflict=await request.patch(`/api/authoring/${saved.id}?${scope}`,{data:{revision:before.project.revision,plan}});expect(conflict.status()).toBe(409);
   const foreign=await request.get(`/api/authoring/${saved.id}?${scope}`,{headers:{'oai-authenticated-user-id':'other'}});expect(foreign.status()).toBe(404);
   await page.screenshot({path:'tmp/teacher-pilot/plan-browser.png',fullPage:true});
@@ -168,6 +175,7 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   if(system.includes('输出 JSON {items:'))output={items:[{slotIndex:0,questionId:first.id,selectionReason:'通过识别角系数和代入公式示范基本方法。'},{slotIndex:1,questionId:second.id,selectionReason:'更换角系数后让学生独立说明推导依据。'}],gaps:[]};
   else if(system.includes('独立审校教师'))output={checks:(data.checks??[]).map(c=>({id:c.id,passed:true,evidence:data.content.introduction,reason:"已逐项核对该学科要求和对应内容。"})),knowledge:data.content.knowledge.map(k=>({id:k.id,correct:true,complete:true,reason:'公式使用条件明确，概念和方法完整。'})),questions:data.content.items.map(q=>({id:q.questionId,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'逐题核对条件、难度和推导，符合本章要求。'}))};
   else if(system.includes('校本教辅编辑'))output={...data.selection,knowledge:[lesson],introduction:'本章从周期定义出发，通过例题示范后安排独立练习。',items:data.selection.items.map(q=>({...q,teachingExplanation:'首先确认函数为正弦函数，振幅及角系数均不为零，再识别角系数。利用最小正周期等于二π除以角系数绝对值的公式，代入得到结果。最后将周期平移代入函数，验证前后函数值相同，并注意周期必须取正值。'})),conclusion:'本章掌握周期公式的条件，能够识别角系数并完成计算。'};
+  else if(system.includes('教学需求核对员'))output={numeric:[],knowledge:[],questions:[],assumptions:[]};
   else output=plan;
   res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));
  });});
@@ -185,6 +193,7 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   await page.getByRole('button',{name:'修改正文与选题'}).click();
   await page.getByRole('textbox',{name:'本章小结',exact:true}).fill('教师补充说明：检查角系数和振幅均非零，再求最小正周期。');
   await page.getByRole('button',{name:'保存本章修改'}).click();
+  await expect(page.getByText('教师修改了本章内容，请重新审校或核对后采用。',{exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'已核对，采用本章'})).toBeDisabled();
   await page.getByLabel(/人工核对说明/).fill('已经逐项检查公式条件、例题和练习的推导，确认正确。');
   await page.getByRole('button',{name:'已核对，采用本章'}).click();

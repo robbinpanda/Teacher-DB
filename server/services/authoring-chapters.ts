@@ -51,7 +51,7 @@ export async function controlAuthoringProject(owner: string, scope: EducationSco
     if (action === "generate") {
       if (project.kind === "variation") throw new Error("整卷变式需要使用专门的逐题变式流程");
       if (project.status !== "planned" || project.chapters.length) throw new Error("章节已经创建，请继续或单章重试");
-      validateAuthoringPlan(project.plan, scope, project.request);
+      validateAuthoringPlan(project.plan, scope, project.request, project.requirements);
       const insert = db.prepare("INSERT INTO authoring_chapters(id,project_id,position,plan_json,status,updated_at) VALUES(?,?,?,?,'pending',?)");
       project.plan!.chapters.forEach((chapter, position) => insert.run(randomUUID(), id, position, JSON.stringify(chapter), time()));
     } else if (action === "pause" && project.status !== "generating" || action === "resume" && project.status !== "paused") throw new Error("当前状态不支持此操作");
@@ -123,7 +123,7 @@ export async function replanAuthoringChapter(owner: string, scope: EducationScop
     const project = requireProject(owner, scope, id), chapter = project.chapters.find(chapter => chapter.id === chapterId), db = getSqlite();
     if (!chapter || chapter.revision !== revision || project.revision !== projectRevision) throw new Error("作品或章节已变化，请刷新后调整计划");
     if (project.status === "generating" || project.chapters.some(chapter => chapter.status === "running")) throw new Error("请先暂停任务并等待当前章结束，再调整计划");
-    const plan = validateAuthoringPlan({ ...project.plan, chapters: project.plan!.chapters.map(item => item.id === chapter.plan.id ? value : item) }, scope, project.request);
+    const plan = validateAuthoringPlan({ ...project.plan, chapters: project.plan!.chapters.map(item => item.id === chapter.plan.id ? value : item) }, scope, project.request, project.requirements);
     const replacement = plan.chapters[chapter.position];
     if (replacement.id !== chapter.plan.id) throw new Error("调整单章计划不能更换章节编号");
     archiveAuthoringChapter(chapterId, "调整本章计划并重新编写前的正文");
@@ -325,7 +325,7 @@ export function readyAuthoringProject(owner: string, scope: EducationScope, id: 
   const project = requireProject(owner, scope, id);
   if (project.status !== "completed" || project.chapters.length !== project.plan!.chapters.length || project.chapters.some(chapter => chapter.status !== "approved" || !chapter.content || chapter.content.gaps.length)) throw new Error("请先完成所有章节并核对采用，再导出正式作品");
   for (const chapter of project.chapters) assertSourceSnapshots(owner, scope, chapter.content!, project.request.documentIds);
-  validateAuthoringPlan(project.plan, scope, project.request);
+  validateAuthoringPlan(project.plan, scope, project.request, project.requirements);
   if (!project.workCoverage?.ready) throw new Error("整份作品的知识讲解、例题练习配额或采用状态尚未完整，请检查作品覆盖表");
   return project;
 }
