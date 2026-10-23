@@ -17,7 +17,7 @@ export async function GET(request: Request, context: { params: Promise<{ project
     const url = new URL(`/studio/${encodeURIComponent(id)}/print`, process.env.APP_BASE_URL || query.origin);
     url.searchParams.set("token", createPaperExportToken(`authoring:${id}`, owner, 300));
     if (answers) url.searchParams.set("answers", "1");
-    const pdf = await renderUrlToPdf(url.toString(), 120000);
+    const pdf = await renderUrlToPdf(url.toString(), 120000, { pageNumbers: true });
     const name = project.title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").slice(0, 80);
     return new Response(new Uint8Array(pdf), { headers: { "content-type": "application/pdf", "content-length": String(pdf.byteLength), "cache-control": "no-store", "x-content-type-options": "nosniff",
       "content-disposition": `attachment; filename="teaching-material.pdf"; filename*=UTF-8''${encodeURIComponent(`${name}-${answers ? "教师版" : "学生版"}.pdf`)}` } });

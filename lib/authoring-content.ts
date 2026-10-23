@@ -59,7 +59,7 @@ export function validateChapterContent(value: unknown, plan: AuthoringChapterPla
     if (count < slot.count && !content.gaps.some(gap => gap.slotIndex === index)) throw new Error("题量不足却没有说明缺口");
     if (count === slot.count && content.gaps.some(gap => gap.slotIndex === index)) throw new Error("题量已满足，不应仍标记缺题");
   });
-  return { ...content, items: content.items.sort((a, b) => a.slotIndex - b.slotIndex) };
+  return { ...content, knowledge: content.knowledge.sort((a, b) => plan.knowledgeIds.indexOf(a.id) - plan.knowledgeIds.indexOf(b.id)), items: content.items.sort((a, b) => a.slotIndex - b.slotIndex) };
 }
 
 const reviewSchema = z.object({

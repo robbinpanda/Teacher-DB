@@ -45,7 +45,8 @@ export function loadRetrievalRows(sqlite: Database.Database, ownerId: string, sc
     WHERE ${conditions.join(" AND ")}${filter.sql} ORDER BY q.id`).all(...params, ...filter.params) as RetrievalRow[];
 }
 
-export function rankQuestions(rows: RetrievalRow[], scope: EducationScope, options: RetrievalOptions = {}) {
+/** Internal full-bank matches. Public search applies pagination with rankQuestions. */
+export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, options: RetrievalOptions = {}) {
   const nodes = knowledgeCatalog(scope.subject, scope.stage);
   const byId = new Map(nodes.map(node => [node.id, node]));
   const requested = options.knowledgeIds?.length ? options.knowledgeIds : resolveKnowledgeTerms(options.query ?? "", nodes);
@@ -114,6 +115,10 @@ export function rankQuestions(rows: RetrievalRow[], scope: EducationScope, optio
     const classified = hits.filter(hit => hit.classification?.difficulty === difficulty && groups.every(group => hit.matchedKnowledgeIds.some(id => group.has(id))));
     return { difficulty, classified: classified.length, confirmed: classified.filter(hit => hit.classificationStatus === "confirmed").length };
   });
+  return { total: hits.length, scanned: rows.length, difficultyCounts, hits, requestedKnowledgeIds: requested };
+}
+export function rankQuestions(rows: RetrievalRow[], scope: EducationScope, options: RetrievalOptions = {}) {
+  const result = matchQuestions(rows, scope, options);
   const offset = Math.max(0, Math.trunc(options.offset ?? 0)), limit = Math.min(100, Math.max(1, options.limit ?? 30));
-  return { total: hits.length, scanned: rows.length, difficultyCounts, hits: hits.slice(offset, offset + limit), requestedKnowledgeIds: requested, pagination: { offset, limit, nextOffset: offset + limit < hits.length ? offset + limit : null } };
+  return { ...result, hits: result.hits.slice(offset, offset + limit), pagination: { offset, limit, nextOffset: offset + limit < result.total ? offset + limit : null } };
 }

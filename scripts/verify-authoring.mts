@@ -40,6 +40,9 @@ try {
  const row=loadRetrievalRows(db,"teacher",scope,undefined,["q"])[0],fingerprint=fingerprintRow(row,scope);
  saveClassification("teacher",scope,"q",fingerprint,profile,"confirmed");
  assert.equal(inspectAuthoringCoverage("teacher",scope,project.id)[0].slots[0].confirmedCount,1);
+ const supply=inspectAuthoringCoverage("teacher",scope,project.id)[0].slots;
+ assert.equal(supply.reduce((sum,slot)=>sum+slot.allocatedConfirmedCount,0),1,"a single question cannot fill both example and practice");
+ assert.equal(supply.reduce((sum,slot)=>sum+slot.shortage,0),1);
  assert.throws(()=>saveClassification("teacher",scope,"q",fingerprint,profile,"suggested"),/不能覆盖/);
  assert.throws(()=>saveClassification("other",scope,"q",fingerprint,profile,"confirmed"));
  db.prepare("UPDATE questions SET answer='2π' WHERE id='q'").run();

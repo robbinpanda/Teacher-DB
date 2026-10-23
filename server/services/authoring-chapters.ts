@@ -116,6 +116,25 @@ export async function restoreAuthoringChapter(owner: string, scope: EducationSco
   return editAuthoringChapter(owner, scope, id, chapterId, revision, content);
 }
 
+export async function replanAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, projectRevision: number, value: unknown) {
+  const first = requireProject(owner, scope, id);
+  await resolveModelProfile(owner, first.request.profileId);
+  return getSqlite().transaction(() => {
+    const project = requireProject(owner, scope, id), chapter = project.chapters.find(chapter => chapter.id === chapterId), db = getSqlite();
+    if (!chapter || chapter.revision !== revision || project.revision !== projectRevision) throw new Error("作品或章节已变化，请刷新后调整计划");
+    if (project.status === "generating" || project.chapters.some(chapter => chapter.status === "running")) throw new Error("请先暂停任务并等待当前章结束，再调整计划");
+    const plan = validateAuthoringPlan({ ...project.plan, chapters: project.plan!.chapters.map(item => item.id === chapter.plan.id ? value : item) }, scope, project.request);
+    const replacement = plan.chapters[chapter.position];
+    if (replacement.id !== chapter.plan.id) throw new Error("调整单章计划不能更换章节编号");
+    archiveAuthoringChapter(chapterId, "调整本章计划并重新编写前的正文");
+    db.prepare("UPDATE authoring_chapters SET plan_json=?,content_json=NULL,status='pending',job_kind='generate',revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?")
+      .run(JSON.stringify(replacement), time(), chapterId);
+    db.prepare("UPDATE authoring_projects SET plan_json=?,paper_id=NULL,status=?,revision=revision+1,updated_at=? WHERE id=?")
+      .run(JSON.stringify(plan), project.status === "paused" ? "paused" : "generating", time(), id);
+    return requireProject(owner, scope, id);
+  })();
+}
+
 export function approveAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, note: string) {
   return getSqlite().transaction(() => {
     const project = requireProject(owner, scope, id), chapter = project.chapters.find(item => item.id === chapterId);
@@ -306,6 +325,8 @@ export function readyAuthoringProject(owner: string, scope: EducationScope, id: 
   const project = requireProject(owner, scope, id);
   if (project.status !== "completed" || project.chapters.length !== project.plan!.chapters.length || project.chapters.some(chapter => chapter.status !== "approved" || !chapter.content || chapter.content.gaps.length)) throw new Error("请先完成所有章节并核对采用，再导出正式作品");
   for (const chapter of project.chapters) assertSourceSnapshots(owner, scope, chapter.content!, project.request.documentIds);
+  validateAuthoringPlan(project.plan, scope, project.request);
+  if (!project.workCoverage?.ready) throw new Error("整份作品的知识讲解、例题练习配额或采用状态尚未完整，请检查作品覆盖表");
   return project;
 }
 

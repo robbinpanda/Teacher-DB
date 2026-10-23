@@ -5,7 +5,7 @@ import { ensureDatabase } from "../db/bootstrap.ts";
 import { getSqlite } from "../db/index.ts";
 import { encryptSecret } from "../lib/secret-box.ts";
 import { createAuthoringProject, readAuthoringProject, kickAuthoringPlanning } from "../server/services/authoring.ts";
-import { controlAuthoringProject, kickAuthoringChapters, retryAuthoringChapter, editAuthoringChapter, restoreAuthoringChapter, approveAuthoringChapter, readyAuthoringProject, publishAuthoringPaper } from "../server/services/authoring-chapters.ts";
+import { controlAuthoringProject, kickAuthoringChapters, retryAuthoringChapter, editAuthoringChapter, restoreAuthoringChapter, replanAuthoringChapter, approveAuthoringChapter, readyAuthoringProject, publishAuthoringPaper } from "../server/services/authoring-chapters.ts";
 import { readAuthoringChapterVersion } from "../server/services/authoring-history.ts";
 import { getAuthoringDocument } from "../server/services/authoring-output.ts";
 import { readModel } from "../server/http/read-models.ts";
@@ -84,6 +84,8 @@ try {
   approveAuthoringChapter("teacher", scope, project.id, c.id, edited.chapters[0].revision, "已逐项核对公式条件及例题推导，内容可以使用。");
   const selected = c.content!.items[0].questionId;
   db.prepare("UPDATE questions SET answer='changed' WHERE id=?").run(selected);
+  assert.equal(read(project.id).workCoverage!.ready, false);
+  assert.ok(read(project.id).workCoverage!.staleQuestionIds.includes(selected));
   assert.throws(() => readyAuthoringProject("teacher", scope, project.id), /引用题目已修改/);
   db.prepare("UPDATE questions SET answer='参考答案' WHERE id=?").run(selected);
 
@@ -123,6 +125,21 @@ try {
   assert.equal(restored.chapters[0].status, "needs_review", "restore invalidates approval");
   assert.ok(restored.chapters[0].history!.some(version => version.revision === currentChapter.revision), "restoring preserves the replaced version");
   await assert.rejects(() => restoreAuthoringChapter("teacher", scope, project.id, currentChapter.id, currentChapter.revision, previous.id), /变化/);
+
+  const beforePlan = read(project.id), target = beforePlan.chapters[0], preserved = JSON.stringify(beforePlan.chapters[1]);
+  const newPlan = { ...target.plan, title: "周期计算与易错回顾", teachingNotes: "增加角系数非零和最小性证明的讲解。", slots: target.plan.slots.map(slot => ({ ...slot, score: 3 })) };
+  await assert.rejects(() => replanAuthoringChapter("other", scope, project.id, target.id, target.revision, beforePlan.revision, newPlan), /作品不存在/);
+  await assert.rejects(() => replanAuthoringChapter("teacher", scope, project.id, target.id, target.revision, beforePlan.revision - 1, newPlan), /已变化/);
+  let replanned = await replanAuthoringChapter("teacher", scope, project.id, target.id, target.revision, beforePlan.revision, newPlan);
+  assert.equal(replanned.chapters[0].content, null); assert.equal(replanned.chapters[0].status, "pending");
+  assert.equal(replanned.plan!.chapters[0].title, newPlan.title); assert.equal(JSON.stringify(replanned.chapters[1]), preserved);
+  assert.equal(replanned.workCoverage!.ready, false); assert.ok(replanned.chapters[0].history!.some(version => version.revision === target.revision));
+  replanned = await controlAuthoringProject("teacher", scope, project.id, replanned.revision, "pause");
+  const pausedCalls = calls.length; await kickAuthoringChapters(); assert.equal(calls.length, pausedCalls);
+  await controlAuthoringProject("teacher", scope, project.id, replanned.revision, "resume"); await kickAuthoringChapters();
+  const completedAgain = read(project.id); assert.equal(completedAgain.chapters[0].status, "complete"); assert.equal(JSON.stringify(completedAgain.chapters[1]), preserved);
+  approveAuthoringChapter("teacher", scope, project.id, target.id, completedAgain.chapters[0].revision, "");
+  assert.equal(readyAuthoringProject("teacher", scope, project.id).workCoverage!.ready, true);
 
   const stale = await create();
   stealing = () => db.prepare("UPDATE authoring_chapters SET lease_owner='replacement',error='replacement-owned' WHERE id=?").run(stale.chapters[0].id);

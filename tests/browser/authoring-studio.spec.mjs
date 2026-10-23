@@ -189,6 +189,10 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   await page.getByLabel(/人工核对说明/).fill('已经逐项检查公式条件、例题和练习的推导，确认正确。');
   await page.getByRole('button',{name:'已核对，采用本章'}).click();
   await expect(page.getByRole('link',{name:'学生版 PDF',exact:true})).toBeVisible();
+  await page.locator('.studio-work-coverage summary').click();
+  await expect(page.locator('.studio-work-coverage')).toContainText('1/1 个考点完成核对');
+  await expect(page.locator('.studio-work-coverage')).toContainText('教师已采用 2/2 道题');
+  await page.locator('.studio-work-coverage').screenshot({path:'tmp/teacher-pilot/work-coverage-browser.png'});
   await page.getByRole('link',{name:'预览整份作品'}).click();
   await expect(page.locator('.authoring-document')).toHaveAttribute('data-pagination-ready','true');
   await expect(page.locator('.authoring-document')).toContainText('教师补充说明');
@@ -203,5 +207,16 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
    expect(full).toContain('教师补充说明');expect(full.includes('练习专用答案标记')).toBe(answers);expect(full).not.toContain('返回备课工作台');await task.destroy();
   }
   expect((await request.get(`/api/authoring/${id}/pdf?${scope}`,{headers:{'oai-authenticated-user-id':'other'}})).status()).toBe(404);
+  await page.goto('/studio');await page.getByRole('button',{name:new RegExp(plan.title)}).click();
+  await page.getByRole('button',{name:'调整本章计划',exact:true}).click();
+  await page.getByRole('textbox',{name:'本章标题',exact:true}).fill('周期概念与计算：补充易错点');
+  await page.getByRole('textbox',{name:'本章讲解与衔接要求',exact:true}).fill('加强角系数和振幅非零条件的讲解，并说明最小性。');
+  await page.locator('.studio-replacement').screenshot({path:'tmp/teacher-pilot/chapter-plan-browser.png'});
+  await page.getByRole('button',{name:'保存计划并重做本章',exact:true}).click();
+  await expect(page.getByRole('link',{name:'学生版 PDF',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'1. 周期概念与计算：补充易错点',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'已核对，采用本章'})).toBeEnabled({timeout:45000});
+  await expect(page.locator('.studio-work-coverage')).toContainText('0/1 个考点完成核对');
+  await page.getByRole('button',{name:'已核对，采用本章'}).click();await expect(page.getByRole('link',{name:'学生版 PDF',exact:true})).toBeVisible();
  }finally{await new Promise(resolve=>model.close(resolve));}
 });

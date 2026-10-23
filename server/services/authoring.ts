@@ -4,11 +4,11 @@ import { randomUUID } from "node:crypto";
 import { getSqlite } from "../../db";
 import { ensureDatabase } from "../../db/bootstrap";
 import type { EducationScope } from "../../lib/education-scope";
-import { authoringPlanSystemPrompt, validateAuthoringPlan, validateAuthoringRequest, planSummary, type AuthoringRequest, type AuthoringPlan } from "../../lib/authoring-plan";
-import { knowledgeCatalog, curriculumSource } from "../../lib/knowledge-catalog";
-import { parseModelJson } from "../../lib/question-classification";
-import { loadRetrievalRows, rankQuestions } from "../../lib/knowledge-retrieval";
-import { callTextModel } from "../../lib/text-model";
+import { authoringPlanSystemPrompt, validateAuthoringPlan, validateAuthoringRequest, planSummary, assumedPrerequisites, type AuthoringRequest, type AuthoringPlan } from "../../lib/authoring-plan";
+import { knowledgeCatalog, curriculumSource, expandKnowledgeIds } from "../../lib/knowledge-catalog";
+import { loadRetrievalRows, matchQuestions, fingerprintRow } from "../../lib/knowledge-retrieval";
+import { authoringModel } from "./authoring-model";
+import { allocateUniqueQuestions, inspectWorkCoverage, questionStemKey } from "../../lib/authoring-coverage";
 import { resolveModelProfile } from "../../lib/model-profiles";
 import { getPaperData, getUploadedPaperData } from "../../lib/question-repository";
 import type { AuthoringChapter, SavedChapterContent } from "../../lib/authoring-content";
@@ -42,8 +42,13 @@ export function readAuthoringProject(ownerId: string, scope: EducationScope, id:
         status: item.status, revision: item.revision, attempt: item.attempt, stage: item.stage, error: item.error, runId: item.run_id, promotedQuestionId: item.promoted_question_id,
         candidate: item.candidate_json ? { id: item.candidate_id, question: JSON.parse(item.candidate_json as string), review: JSON.parse(item.review_json as string) } : null } as WholePaperVariationItem;
     }) } : null;
+  const request = JSON.parse(row.request_json) as AuthoringRequest;
+  const selectedIds = [...new Set(chapters.flatMap(chapter => chapter.content?.items.map(item => item.questionId) ?? []))];
+  const fingerprints = new Map(loadRetrievalRows(sqlite, ownerId, scope, request.documentIds.length ? request.documentIds : undefined, selectedIds).map(question => [question.id, fingerprintRow(question, scope)]));
+  const stale = [...new Set(chapters.flatMap(chapter => chapter.content?.items.filter(item => !fingerprints.has(item.questionId) || fingerprints.get(item.questionId) !== chapter.content!.questionFingerprints[item.questionId]).map(item => item.questionId) ?? []))];
   return { variation, id: row.id, title: row.title, subject: row.subject, stage: row.stage, kind: row.kind, status: row.status, revision: row.revision, error: row.error,
-    createdAt: row.created_at, updatedAt: row.updated_at, request: JSON.parse(row.request_json) as AuthoringRequest, plan, chapters, paperId: row.paper_id, summary: plan ? planSummary(plan) : null };
+    createdAt: row.created_at, updatedAt: row.updated_at, request, plan, chapters, paperId: row.paper_id, summary: plan ? planSummary(plan) : null,
+    assumedPrerequisites: plan ? assumedPrerequisites(plan, scope) : [], workCoverage: plan ? inspectWorkCoverage(plan, request, chapters, scope, stale) : null };
 }
 export async function createAuthoringProject(ownerId: string, scope: EducationScope, value: unknown) {
   await ensureDatabase();
@@ -89,14 +94,23 @@ export function inspectAuthoringCoverage(ownerId: string, scope: EducationScope,
   const project = readAuthoringProject(ownerId, scope, id);
   if (!project?.plan) throw new Error("作品还没有可检查的大纲");
   const rows = loadRetrievalRows(getSqlite(), ownerId, scope, project.request.documentIds.length ? project.request.documentIds : undefined);
-  const cached = new Map<string, ReturnType<typeof rankQuestions>>();
-  return project.plan.chapters.map(chapter => ({ id: chapter.id, title: chapter.title, slots: chapter.slots.map(slot => {
+  const cached = new Map<string, ReturnType<typeof matchQuestions>>(), catalog = knowledgeCatalog(scope.subject, scope.stage);
+  const matching = project.plan.chapters.flatMap(chapter => chapter.slots.map(slot => {
     const key = JSON.stringify([slot.knowledgeIds.slice().sort(), slot.type]);
-    const result = cached.get(key) ?? rankQuestions(rows, scope, { knowledgeIds: slot.knowledgeIds, match: "all", types: slot.type === "any" ? undefined : [slot.type], limit: 100 });
+    const result = cached.get(key) ?? matchQuestions(rows, scope, { knowledgeIds: slot.knowledgeIds, match: "all", types: slot.type === "any" ? undefined : [slot.type] });
     cached.set(key, result);
     const counts = result.difficultyCounts.find(count => count.difficulty === slot.difficulty)!;
+    const eligible = result.hits.filter(hit => hit.classification?.difficulty === slot.difficulty && slot.knowledgeIds.every(id => expandKnowledgeIds([id], catalog).some(id => hit.matchedKnowledgeIds.includes(id))));
+    return { slot, result, counts, eligible };
+  }));
+  const allocate = (confirmed: boolean) => allocateUniqueQuestions(matching.map(({ slot, eligible }) => ({ count: slot.count,
+    candidates: eligible.filter(hit => !confirmed || hit.classificationStatus === "confirmed").map(hit => ({ id: hit.id, key: questionStemKey(hit.stem) })) })));
+  const confirmed = allocate(true), classified = allocate(false); let index = 0;
+  return project.plan.chapters.map(chapter => ({ id: chapter.id, title: chapter.title, slots: chapter.slots.map(() => {
+    const at = index++, { slot, result, counts } = matching[at];
     return { ...slot, candidateCount: result.total, difficultyMatchedCount: counts.classified, confirmedCount: counts.confirmed,
-      shortage: Math.max(0, slot.count - counts.confirmed), candidates: result.hits.slice(0, 12) };
+      allocatedConfirmedCount: confirmed[at].length, allocatedClassifiedCount: classified[at].length,
+      shortage: Math.max(0, slot.count - confirmed[at].length), taggedShortage: Math.max(0, slot.count - classified[at].length), candidates: result.hits.slice(0, 12) };
   }) }));
 }
 
@@ -117,10 +131,10 @@ export async function kickAuthoringPlanning() {
     const inventory = loadRetrievalRows(sqlite, job.owner_id, scope, request.documentIds.length ? request.documentIds : undefined);
     const counts = inventory.reduce((result, question) => { result[question.type] = (result[question.type] ?? 0) + 1; return result; }, {} as Record<string, number>);
     const sourcePaper = await variationSource(job.owner_id, scope, request);
-    const result = await callTextModel({ ownerId: job.owner_id, profileId: request.profileId, system: authoringPlanSystemPrompt,
+    const result = await authoringModel({ ownerId: job.owner_id, profileId: request.profileId, system: authoringPlanSystemPrompt,
       text: JSON.stringify({ scope, request, sourcePaper, catalog: knowledgeCatalog(scope.subject, scope.stage), reference: scope.subject === "数学" && scope.stage === "high" ? curriculumSource : null, availableQuestionCounts: counts }),
-      purpose: "authoring_plan", jsonMode: true, maxOutputTokens: 14000, timeoutMs: 240000 });
-    const plan = validateAuthoringPlan(parseModelJson(result.content), scope, request);
+      purpose: "authoring_plan", jsonMode: true, maxOutputTokens: 14000, timeoutMs: 240000 }, value => validateAuthoringPlan(value, scope, request));
+    const plan = result.value;
     sqlite.prepare(`UPDATE authoring_projects SET title=?,plan_json=?,status='planned',revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='planning'`)
       .run(plan.title, JSON.stringify(plan), new Date().toISOString(), job.id, token);
   } catch (error) {

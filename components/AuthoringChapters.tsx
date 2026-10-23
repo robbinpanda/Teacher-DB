@@ -2,14 +2,15 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { MathText } from "./MathText";
+import { ChapterPlanFields } from "./ChapterPlanFields";
 import { studioRequest } from "./KnowledgeWorkbench";
 import type { AuthoringChapter, SavedChapterContent } from "../lib/authoring-content";
 import type { RetrievalHit } from "../lib/knowledge-retrieval";
 import type { QuestionWithSource } from "../lib/types";
 
 const labels: Record<AuthoringChapter["status"], string> = { pending: "等待处理", running: "正在选题、编写与审校", complete: "审校通过，待核对", needs_review: "有缺口或审校问题", failed: "处理失败", approved: "教师已采用" };
-export function AuthoringChapters({ projectId, projectStatus, chapters, scopeQuery, documentIds, onUpdate, onDirty }: {
-  projectId: string; projectStatus: string; chapters: AuthoringChapter[]; scopeQuery: string; documentIds: string[];
+export function AuthoringChapters({ projectId, projectRevision, projectStatus, chapters, scopeQuery, documentIds, onUpdate, onDirty }: {
+  projectId: string; projectRevision: number; projectStatus: string; chapters: AuthoringChapter[]; scopeQuery: string; documentIds: string[];
   onUpdate: (project: unknown) => void; onDirty: (dirty: boolean) => void;
 }) {
   const [selected, setSelected] = useState(chapters[0]?.id ?? ""), [dirty, setDirty] = useState(false);
@@ -17,15 +18,16 @@ export function AuthoringChapters({ projectId, projectStatus, chapters, scopeQue
   if (!active) return null;
   return <section className="studio-generated"><h2>章节内容</h2><p>{chapters.filter(chapter => chapter.status === "approved").length} / {chapters.length} 章已采用。核对全部章节后可导出正式作品。</p>
     <nav aria-label="章节目录">{chapters.map(chapter => <button type="button" className={chapter.id === active.id ? "active" : ""} disabled={dirty && chapter.id !== active.id} key={chapter.id} onClick={() => setSelected(chapter.id)}>{chapter.position + 1}. {chapter.plan.title}<small>{labels[chapter.status]}</small></button>)}</nav>
-    <ChapterEditor key={`${active.id}:${active.revision}`} chapter={active} projectId={projectId} projectStatus={projectStatus} scopeQuery={scopeQuery} documentIds={documentIds} onUpdate={onUpdate} onDirty={value => { setDirty(value); onDirty(value); }} />
+    <ChapterEditor key={`${active.id}:${active.revision}`} chapter={active} projectId={projectId} projectRevision={projectRevision} projectStatus={projectStatus} scopeQuery={scopeQuery} documentIds={documentIds} onUpdate={onUpdate} onDirty={value => { setDirty(value); onDirty(value); }} />
   </section>;
 }
-function ChapterEditor({ chapter, projectId, projectStatus, scopeQuery, documentIds, onUpdate, onDirty }: {
-  chapter: AuthoringChapter; projectId: string; projectStatus: string; scopeQuery: string; documentIds: string[];
+function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, scopeQuery, documentIds, onUpdate, onDirty }: {
+  chapter: AuthoringChapter; projectId: string; projectRevision: number; projectStatus: string; scopeQuery: string; documentIds: string[];
   onUpdate: (project: unknown) => void; onDirty: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState(chapter.content), [editing, setEditing] = useState(false), [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [note, setNote] = useState("");
+  const [planning, setPlanning] = useState(false), [planDraft, setPlanDraft] = useState(chapter.plan);
   const [historical, setHistorical] = useState<{ id: string; content: SavedChapterContent } | null>(null);
   const [lookup, setLookup] = useState<{ slot: number; replace: number | null } | null>(null), [query, setQuery] = useState(""), [hits, setHits] = useState<RetrievalHit[]>([]);
   const url = `/api/authoring/${projectId}/chapters/${chapter.id}?${scopeQuery}`;
@@ -51,13 +53,19 @@ function ChapterEditor({ chapter, projectId, projectStatus, scopeQuery, document
     {chapter.error && <p className="studio-error" role="alert">{chapter.error}</p>}{error && <p className="studio-error" role="alert">{error}</p>}
     {working && <p role="status">本章第 {chapter.attempt || 1} 次处理。进度保存在后台，可以刷新后继续查看。</p>}
     {!working && <div className="studio-plan-actions">
+      <button className="btn" disabled={busy || dirty || projectStatus === "generating"} onClick={()=>{setPlanning(true);setEditing(false);setDirty(true);notifyDirty(true);}}>调整本章计划</button>
       <button className="btn" disabled={busy || dirty || projectStatus === "paused"} onClick={() => { if (!draft || window.confirm("重新生成会替换本章当前内容，其他章节会保留。继续吗？")) void operate(() => action("retry")); }}>重新生成本章</button>
       {!!chapter.history?.length && <details className="studio-history"><summary>已保存的历史版本（{chapter.history.length}）</summary>{chapter.history.map(version => <p key={version.id}>版本 {version.revision} · {new Date(version.createdAt).toLocaleString()} · {version.reason} <button className="btn" disabled={busy} onClick={() => void operate(async () => { const result = await studioRequest<{ content: SavedChapterContent }>(`${url}&version=${version.id}`); setHistorical({ id: version.id, content: result.content }); })}>查看此版</button></p>)}</details>}
     {historical && <section className="studio-historical-content"><h4>历史版本预览</h4><p><MathText text={historical.content.introduction} /></p>{historical.content.knowledge.map(k => <section key={k.id}><h4>{k.title}</h4><p><MathText text={k.explanation} /></p></section>)}{historical.content.items.map(item => <p key={item.questionId}><strong>{historical.content.questions.find(q => q.id === item.questionId)?.number} 题讲解：</strong><MathText text={item.teachingExplanation} /></p>)}<p><MathText text={historical.content.conclusion} /></p><button className="btn" onClick={() => setHistorical(null)}>关闭历史预览</button><button className="btn" disabled={busy || dirty || working || projectStatus === "generating"} onClick={() => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "POST", { action: "restore", revision: chapter.revision, versionId: historical.id }); onUpdate(result.project); })}>恢复此版并重新核对</button></section>}
     {draft && <>{!draft.review.passed && <button className="btn btn-primary" disabled={busy || dirty || projectStatus === "paused"} onClick={() => void operate(() => action("revise"))}>按审校意见修订正文</button>}<button className="btn" disabled={busy || dirty || projectStatus === "paused"} onClick={() => void operate(() => action("review"))}>重新审校</button>
-        <button className="btn" disabled={busy || projectStatus === "generating"} onClick={() => setEditing(!editing)}>{editing ? "收起编辑" : "修改正文与选题"}</button>
-        <button className="btn btn-primary" disabled={busy || !dirty} onClick={() => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "PATCH", { revision: chapter.revision, content: draft }); setDirty(false); notifyDirty(false); onUpdate(result.project); })}>保存本章修改</button></>}
+        <button className="btn" disabled={busy || planning || projectStatus === "generating"} onClick={() => setEditing(!editing)}>{editing ? "收起编辑" : "修改正文与选题"}</button>
+        <button className="btn btn-primary" disabled={busy || planning || !dirty} onClick={() => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "PATCH", { revision: chapter.revision, content: draft }); setDirty(false); notifyDirty(false); onUpdate(result.project); })}>保存本章修改</button></>}
     </div>}
+    {planning && <section className="studio-replacement"><h4>调整本章计划</h4><p>保存后仅重新选题、编写与审校本章；其他章节保留。本章当前正文会存入历史版本，采用状态撤销。</p>
+      <ChapterPlanFields plan={planDraft} onChange={setPlanDraft}/>
+      <div className="studio-plan-actions"><button className="btn btn-primary" disabled={busy} onClick={()=>void operate(async()=>{const result=await studioRequest<{project:unknown}>(url,"POST",{action:"replan",revision:chapter.revision,projectRevision,plan:planDraft});setPlanning(false);setDirty(false);notifyDirty(false);onUpdate(result.project);})}>保存计划并重做本章</button>
+      <button className="btn" disabled={busy} onClick={()=>{setPlanning(false);setPlanDraft(chapter.plan);setDirty(false);notifyDirty(false);}}>取消计划修改</button></div>
+    </section>}
     {draft && <>
       {draft.review.checks?.length ? <details><summary>逐项学科核查（{draft.review.checks.filter(check => check.passed).length} / {draft.review.checks.length} 项通过）</summary>{draft.review.checks.map(check => <p key={check.id}><strong>{check.passed ? "通过" : "需修正"}：</strong>{check.reason}<br />原文：{check.evidence}</p>)}</details> : null}
       {draft.gaps.length > 0 && <div className="studio-error"><strong>尚未满足题量</strong>{draft.gaps.map(gap => <p key={gap.slotIndex}>第 {gap.slotIndex + 1} 组：{gap.reason}</p>)}</div>}

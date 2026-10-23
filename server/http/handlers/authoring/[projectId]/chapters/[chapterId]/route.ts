@@ -3,7 +3,8 @@ import { ensureDatabase } from "../../../../../../../db/bootstrap";
 import { requestOwner } from "../../../../../../../lib/server";
 import { requestEducationScope } from "../../../../../../../lib/education-scope";
 import { readAuthoringProject } from "../../../../../../services/authoring";
-import { approveAuthoringChapter, editAuthoringChapter, retryAuthoringChapter, restoreAuthoringChapter } from "../../../../../../services/authoring-chapters";
+import { approveAuthoringChapter, editAuthoringChapter, retryAuthoringChapter, restoreAuthoringChapter, replanAuthoringChapter } from "../../../../../../services/authoring-chapters";
+import { authoringChapterSchema } from "../../../../../../../lib/authoring-plan";
 
 import { readAuthoringChapterVersion } from "../../../../../../services/authoring-history";
 
@@ -11,6 +12,7 @@ type Context = { params: Promise<{ projectId: string; chapterId: string }> };
 const command = z.union([
   z.object({ action: z.enum(["retry", "review", "revise", "approve"]), revision: z.number().int().min(1), note: z.string().max(2000).default("") }).strict(),
   z.object({ action: z.literal("restore"), revision: z.number().int().min(1), versionId: z.string().min(1).max(100) }).strict(),
+  z.object({ action: z.literal("replan"), revision: z.number().int().min(1), projectRevision: z.number().int().min(1), plan: authoringChapterSchema }).strict(),
 ]);
 export async function GET(request: Request, context: Context) {
   await ensureDatabase();
@@ -26,6 +28,7 @@ export async function POST(request: Request, context: Context) {
   if (!parsed.success) return Response.json({ error: "章节操作格式无效" }, { status: 400 });
   try {
     const project = parsed.data.action === "approve" ? approveAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.note)
+      : parsed.data.action === "replan" ? await replanAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.projectRevision, parsed.data.plan)
       : parsed.data.action === "restore" ? await restoreAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.versionId)
       : await retryAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.action === "retry" ? "generate" : parsed.data.action);
     return Response.json({ project });

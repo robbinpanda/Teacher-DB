@@ -30,7 +30,7 @@ export function chromiumExecutable() {
   return detected;
 }
 
-export async function renderUrlToPdf(url: string, timeoutMs = 60000) {
+export async function renderUrlToPdf(url: string, timeoutMs = 60000, options: { pageNumbers?: boolean } = {}) {
   globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ ??= 0;
   if (globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ >= 2) throw new PdfExportBusyError("PDF 生成任务较多，请稍后重试");
   globalThis.__JIANTI_ACTIVE_PDF_EXPORTS__ += 1;
@@ -53,7 +53,8 @@ export async function renderUrlToPdf(url: string, timeoutMs = 60000) {
         await Promise.all(images.map(image => image.decode()));
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       });
-      return page.pdf({ preferCSSPageSize: true, printBackground: true, displayHeaderFooter: false });
+      return page.pdf({ preferCSSPageSize: true, printBackground: true, displayHeaderFooter: Boolean(options.pageNumbers),
+        ...(options.pageNumbers ? { headerTemplate: "<span></span>", footerTemplate: '<div style="width:100%;text-align:center;font-size:9px;color:#444"><span class="pageNumber"></span> / <span class="totalPages"></span></div>' } : {}) });
     };
     return await Promise.race([
       work(),
