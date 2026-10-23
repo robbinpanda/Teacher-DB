@@ -12,6 +12,42 @@ const profile={knowledge:[{id:period,evidence:'题干要求求函数的最小正
 function row(id,extra={}) {return {id,type:'fill',stem:'求函数 $y=sin(2x)$ 的最小正周期。',answer:'π',analysis:'使用周期公式',optionsJson:null,documentId:'d',documentName:'试卷',grade:'高一',tagsJson:'[]',assetsJson:'[]',classificationJson:null,classificationFingerprint:null,classificationStatus:null,...extra};}
 function classified(id,status='confirmed') {const r=row(id,{classificationJson:JSON.stringify(profile),classificationStatus:status});r.classificationFingerprint=fingerprintRow(r,scope);return r;}
 
+test('三角函数式结合题干任务召回候选，未确认线索不充当难度或覆盖标签',()=>{
+ for(const [topic,stem] of [
+  ['model',String.raw`摩天轮高度为 $h=12-10\cos t$，求指定时刻的高度。`],
+  ['parameters',String.raw`将 $y=\sin x$ 向右平移一个单位，写出新的函数。`],
+  ['monotonicity',String.raw`求 $y=\sin(2x)$ 的单调递增区间。`],
+  ['extrema',String.raw`求 $y=\cos x$ 在指定区间上的值域。`],
+  ['graphs',String.raw`求 $y=\sin x$ 图像上的最低点。`],
+  ['symmetry',String.raw`判断 $y=\cos x$ 是否为偶函数。`],
+  ['same-angle',String.raw`已知 $\tan\theta=2$，求 $\sin\theta+\cos\theta$。`],
+  ['same-angle',String.raw`已知 $\sin\frac{\theta}{2}+\cos\frac{\theta}{2}=a$，求值。`],
+ ]){
+  const candidate=row('q',{stem,analysis:''}),options={knowledgeIds:[`${root}.${topic}`]};
+  const result=rankQuestions([candidate],scope,options);
+  assert.equal(result.total,1,topic);assert.equal(result.hits[0].evidenceKind,'keyword');
+  assert.deepEqual(result.hits[0].matchedKnowledgeIds,[]);assert.ok(result.hits[0].reasons.some(reason=>reason.includes('待核对')));
+  assert.equal(result.difficultyCounts.reduce((n,d)=>n+d.classified+d.confirmed,0),0);
+  assert.equal(rankQuestions([candidate],scope,{...options,confirmedOnly:true}).total,0);
+  assert.equal(rankQuestions([candidate],scope,{...options,difficulty:2}).total,0);
+  assert.equal(rankQuestions([candidate],scope,{...options,methods:['公式变形']}).total,0);
+ }
+});
+
+test('选项中的函数参与发现，但解答中的三角函数不能把几何与对数任务误作三角性质',()=>{
+ const choice=row('choice',{stem:'下列函数的最大值为一的是',analysis:'',optionsJson:JSON.stringify([{key:'A',content:String.raw`$y=\sin x$`},{key:'B',content:'$y=x$'}])});
+ assert.equal(rankQuestions([choice],scope,{knowledgeIds:[`${root}.extrema`]}).total,1);
+ assert.equal(rankQuestions([choice],scope,{query:'sin'}).total,1);
+ for(const [topic,stem] of [['graphs','求双曲线的渐近线。'],['symmetry','求点关于直线的对称点。'],['monotonicity','求对数函数的单调区间。']]){
+  const candidate=row('q',{stem,analysis:String.raw`辅助计算用到了 $\sin\alpha=1/2$。`});
+  assert.equal(rankQuestions([candidate],scope,{knowledgeIds:[`${root}.${topic}`]}).total,0);
+ }
+ for(const stem of [String.raw`求 $\sin\alpha+\cos\beta$。`,String.raw`求 $\sin(2x)+\cos x$。`,String.raw`求 $\sin(\alpha+\beta)+\cos\alpha$。`]){
+  assert.equal(rankQuestions([row('q',{stem,analysis:''})],scope,{knowledgeIds:[`${root}.same-angle`]}).total,0);
+ }
+ assert.doesNotThrow(()=>rankQuestions([row('q',{optionsJson:'invalid'})],scope));
+});
+
 test('知识目录无悬空前置条件，父节点扩展而具体考点不扩展兄弟节点',()=>{
  const nodes=knowledgeCatalog('数学','high'),ids=new Set(nodes.map(n=>n.id));assert.equal(ids.size,nodes.length);
  for(const n of nodes){if(n.parentId)assert.ok(ids.has(n.parentId));for(const p of n.prerequisites)assert.ok(ids.has(p));}

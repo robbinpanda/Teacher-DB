@@ -62,9 +62,21 @@ export function parseAuthoringRequirements(value: unknown, scope: EducationScope
     while (node?.parentId) node = catalog.find(parent => parent.id === node!.parentId);
     return node?.id;
   };
+  const mentionedRoots = (text: string) => new Set(catalog.filter(node => [node.label, ...node.aliases].some(term => term.length >= 2 && text.includes(term))).map(node => rootOf(node.id)));
   if (!editedByTeacher) for (const item of result.knowledge) {
-    const mentionedRoots = new Set(catalog.filter(node => [node.label, ...node.aliases].some(term => term.length >= 2 && item.evidence.includes(term))).map(node => rootOf(node.id)));
-    if (mentionedRoots.size && !mentionedRoots.has(rootOf(item.id))) issues.push(`知识范围“${catalog.find(node => node.id === item.id)?.label ?? item.id}”的引用“${item.evidence}”只明确提到其他知识大类，不应擅自扩大范围；删去该项，仅保留明确要求的目录范围`);
+    const roots = mentionedRoots(item.evidence);
+    if (roots.size && !roots.has(rootOf(item.id))) issues.push(`知识范围“${catalog.find(node => node.id === item.id)?.label ?? item.id}”的引用“${item.evidence}”只明确提到其他知识大类，不应擅自扩大范围；删去该项，仅保留明确要求的目录范围`);
+  }
+  if (!editedByTeacher) for (const item of result.questions) {
+    const stated = mentionedRoots(instruction);
+    const resolvedParent = result.knowledge.some(knowledge => {
+      const node = catalog.find(node => node.id === knowledge.id);
+      return node && catalog.some(child => child.parentId === node.id) && [node.label, ...node.aliases].some(term => item.evidence.includes(term));
+    });
+    const additions = [...mentionedRoots(item.question)].filter(root => root && !stated.has(root));
+    if (resolvedParent && additions.length && /包含|包括|纳入|涵盖|扩展|扩大|加上|增加|加入/.test(item.question)) {
+      issues.push(`不应为未要求的同级知识范围阻塞规划：“${item.evidence}”已有目录范围，不能追问是否加入“${additions.map(id => catalog.find(node => node.id === id)!.label).join("、")}”。删去这项追问，按明确范围展开；可在 assumptions 说明边界，不新增覆盖要求`);
+    }
   }
   for (const item of result.numeric) {
     if (!editedByTeacher && !statedNumbers(item.evidence, item.metric).some(number => Math.abs(number - item.value) < 1e-6)) issues.push(`数值要求在所引原文中找不到：${item.metric}/${item.scope}=${item.value}，引用“${item.evidence}”。应扩大连续引用片段包含对应数字；不要把推算的总数或建议时长另列为硬性要求`);
@@ -136,5 +148,6 @@ questions 是题数，score 是筛选后题目的总分，scorePerQuestion 是�
 questionTypes 表达整份题型限制，例如“全部为填空题”=>{types:["fill"],evidence:"全部为填空题"}；“只出选择题”=>single和multiple。没有明确限制则留空。范围上下限分成 min/max；超过用 gt，少于用 lt；不要把“至少”当成恰好。数字可为中文，小时需换算；含糊如“一百多道”不要假装精确，放入 questions 询问。
 难度是教学估计：1基础辨认、2直接应用、3方法迁移、4综合推理、5拓展探究。若明确使用基础/中档/提高占比，可分别以 [1,2]/[3]/[4,5] 表示，并在 assumptions 写明映射供教师核对。
 knowledge 只能使用给定目录 ID。完整覆盖三角函数等父范围时只用父 ID math.high.trigonometry，后续程序会展开全部叶节点；周期专题只提取 period，不额外加入 graphs、parameters 等前置或相关节点。
+目录中的同级范围默认独立：完整覆盖某父范围就是覆盖其子节点，不包含其他根节点，也不需要追问是否附带同级范围。例如“三角函数”与“解三角形”是两个独立根节点，前者没有要求后者时直接按前者规划，在 assumptions 说明边界即可；教师明确同时要求两者时才同时提取。不能因“完整”二字无限扩展主题。
 questions 只记录真实冲突或无法确定的硬性数值，不能用来重复确认已经明确的原话，不能追问模型可自行决定的教学常规。全是填空题无需再确认；60%基础+40%提高无需追问中档题；按前置知识安排的并列考点顺序可自行决定；知识讲解、适用条件、易错点、难度递进等常规教学要求交给后续大纲落实，最多写入 assumptions，不要因此阻塞规划。
 evidence 必须直接复制原文，包括中文数字，绝不改写为阿拉伯数字；“六道单选每题五分”可以同时作为题数6和每题5分的依据。未指定数字不提取默认值，也不要增加通过加减乘除推算的数字约束：两例四练只提取2和4，不再添加每章6题；完整知识范围由 knowledge 表达，不从目录叶节点数推算章节数/总题量。只有小时换算分钟、成数换算百分数允许单位换算。`;

@@ -123,6 +123,27 @@ test('教师可核对标签、按考点难度检索，再将选题带入原有�
  await page.screenshot({path:'tmp/teacher-pilot/search-browser.png',fullPage:true});
 });
 
+test('未标注三角函数候选可由选项和任务线索发现，但不能冒充确认标签或难度',async({page,context,request})=>{
+ const {id,doc}=await prepare(context);
+ const db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
+ db.prepare("UPDATE questions SET stem='下列函数的最大值为一的是',options_json=?,analysis='比较各函数的取值。' WHERE id=?").run(JSON.stringify([{key:'A',content:'$y=\\sin x$'},{key:'B',content:'$y=x$'}]),id);db.close();
+ await page.goto('/studio');await page.getByRole('button',{name:'精准选题与标注'}).click();
+ await page.getByRole('combobox',{name:'来源资料',exact:true}).selectOption(doc);
+ await page.getByRole('combobox',{name:'知识点',exact:true}).selectOption('math.high.trigonometry.extrema');
+ await page.getByRole('button',{name:'检索',exact:true}).click();
+ await expect(page.locator('.studio-results article')).toHaveCount(1);
+ await expect(page.locator('.studio-results article')).toContainText('题干或选项线索');
+ await expect(page.locator('.studio-results article')).toContainText('待标注');
+ const results=await (await request.post(`/api/knowledge?${scope}`,{data:{knowledgeIds:['math.high.trigonometry.extrema'],documentIds:[doc]}})).json();
+ expect(results.hits[0].id).toBe(id);expect(results.hits[0].matchedKnowledgeIds).toEqual([]);expect(results.hits[0].classification).toBeNull();
+ expect(results.difficultyCounts.every(level=>level.classified===0&&level.confirmed===0)).toBe(true);
+ await page.screenshot({path:'tmp/teacher-pilot/discovery-browser.png',fullPage:true});
+ await page.getByLabel('仅教师确认标签').check();await page.getByRole('button',{name:'检索',exact:true}).click();
+ await expect(page.locator('.studio-results article')).toHaveCount(0);
+ await page.getByLabel('仅教师确认标签').uncheck();await page.getByRole('combobox',{name:'难度',exact:true}).selectOption('2');
+ await page.getByRole('button',{name:'检索',exact:true}).click();await expect(page.locator('.studio-results article')).toHaveCount(0);
+});
+
 test('自然语言规划通过后台模型调用持久化，可刷新恢复、修改题量、检查缺口并阻止旧版本覆盖',async({page,context,request})=>{
  test.setTimeout(60000);const {doc}=await prepare(context);
  const seed=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));

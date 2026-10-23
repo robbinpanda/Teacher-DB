@@ -39,6 +39,18 @@ test('总题数、各题型题数、每题分数、总分、时长分别核算�
  assert.equal(inspectPlanRequirements(plan,requirements([item(0,{types:['multiple']})]))[0].passed,true);
  assert.equal(inspectPlanRequirements(plan,requirements([item(5,{metric:'scorePerQuestion',types:['multiple']})]))[0].passed,false);
 });
+
+test('明确父范围不因追问是否增加同级范围而阻塞，真实歧义和教师修订保留',()=>{
+ const text='完整覆盖三角函数全部知识点，每章两道例题。';
+ const value={...requirements([]),knowledge:[{id:'math.high.trigonometry',evidence:'完整覆盖三角函数全部知识点'}],questions:[{evidence:'完整覆盖三角函数全部知识点',question:'是否包含解三角形的正弦定理和余弦定理？'}]};
+ assert.throws(()=>parseAuthoringRequirements(value,scope,text),/不应为未要求的同级知识范围阻塞/);
+ assert.equal(parseAuthoringRequirements(value,scope,text,true).questions.length,1,'explicit teacher clarification is preserved');
+ assert.equal(parseAuthoringRequirements(value,scope,text+'另外考虑加入解三角形，但范围还未确定。').questions.length,1);
+ const numeric={...value,questions:[{evidence:'每章两道例题',question:'两道例题各占多少分，还是统一不设置分值？'}]};
+ assert.equal(parseAuthoringRequirements(numeric,scope,text).questions.length,1,'this guard does not silently discard other question types');
+ const ambiguous={...requirements([]),questions:[{evidence:'函数专题',question:'函数专题是否包括三角函数？'}]};
+ assert.equal(parseAuthoringRequirements(ambiguous,scope,'做函数专题讲义，范围待确定。').questions.length,1);
+});
 test('每章和每个考点分别核算，不能用平均题量掩盖某章缺额',()=>{
  assert.equal(inspectPlanRequirements(plan,requirements([item(1,{metric:'knowledgePoints',scope:'eachChapter'})]))[0].passed,true);
  const second={...chapter,id:'transfer',title:'迁移练习',slots:[{...slot,count:1},{...chapter.slots[1],count:5}]};

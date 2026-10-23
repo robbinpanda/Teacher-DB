@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { documentScopeSql, type EducationScope } from "./education-scope.ts";
 import { classificationFingerprint, parseClassification, type QuestionClassification } from "./question-classification.ts";
 import { expandKnowledgeIds, knowledgeCatalog, resolveKnowledgeTerms } from "./knowledge-catalog.ts";
+import { questionOptionText, trigonometryDiscoveryClues } from "./trigonometry-discovery.ts";
 
 export type RetrievalRow = {
   id: string; type: string; stem: string; optionsJson: string | null; answer: string; analysis: string;
@@ -69,7 +70,9 @@ export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, opti
     const exactIds = new Set(classification?.knowledge.map(item => item.id) ?? []);
     // Legacy strings may aid discovery, but never count as a confirmed knowledge assessment.
     const legacyIds = new Set(nodes.filter(node => tags.some(tag => node.label === tag || node.aliases.includes(tag))).map(node => node.id));
-    const text = `${row.stem}\n${row.analysis}`.normalize("NFKC").replace(/图像/g, "图象");
+    const optionText = questionOptionText(row.optionsJson);
+    const text = `${row.stem}\n${optionText}\n${row.analysis}`.normalize("NFKC").replace(/图像/g, "图象");
+    let discoveryClues: Map<string, string> | undefined;
     const reasons: string[] = [];
     const matched = new Set<string>();
     let score = 0;
@@ -90,6 +93,13 @@ export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, opti
       for (const id of group) {
         const node = byId.get(id)!;
         if ([node.label, ...node.aliases].some(term => text.includes(term))) { score += 10; reasons.push(`文字命中：${node.label}（待核对）`); return true; }
+      }
+      if (scope.subject === "数学" && scope.stage === "high") {
+        discoveryClues ??= trigonometryDiscoveryClues(row.stem, optionText);
+        for (const id of group) {
+          const clue = discoveryClues.get(id);
+          if (clue) { score += 11; reasons.push(`题干或选项线索：${byId.get(id)!.label}；${clue}（待核对）`); return true; }
+        }
       }
       return false;
     });
