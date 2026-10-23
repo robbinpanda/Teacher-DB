@@ -36,7 +36,10 @@ export default async function RootLayout({
   const initialMode = anonymousRemote ? "personal" : await getTeacherMode(requestHeaders.get("oai-authenticated-user-id") ?? "local-demo");
   return (
     <html lang="zh-CN">
-      <body><RuntimeDiagnostics /><AppShell initialMode={initialMode} initialScope={scopeFromCookieHeader(requestHeaders.get("cookie"))}>{children}</AppShell></body>
+      <body><RuntimeDiagnostics /><AppShell initialMode={initialMode} initialScope={scopeFromCookieHeader(requestHeaders.get("cookie"))}>
+        {process.env.JIANTI_PILOT_COPY === "1" && <aside className="no-print" style={{ padding: "10px 16px", marginBottom: 16, background: "#fff5d6", color: "#664d03", borderRadius: 8 }} aria-label="试用环境说明">试用副本 · 这里的修改独立保存，不会同步到 3050 题库。生成内容须核对后采用。</aside>}
+        {children}
+      </AppShell></body>
     </html>
   );
 }
