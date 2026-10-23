@@ -337,3 +337,17 @@
   .wb-import-dialog .wb-dialog-header { padding: 16px; }
   .wb-import-dialog .wb-dialog-footer { padding: 12px 16px; }
 }
+
+/* Image pages are assembled into one paper in the visible order. */
+.wb-import-kind { display:flex; gap:8px; margin:10px 0 16px; }
+.wb-import-kind [aria-pressed="true"] { background:#e6f2eb; border-color:#75a98b; color:#205b3e; }
+.wb-image-split { display:flex; align-items:center; gap:8px; margin:12px 0; font-size:12px; }
+.wb-image-split input { width:auto; }
+.wb-image-pages-heading { display:flex; align-items:center; justify-content:space-between; margin:14px 0 8px; font-size:12px; }
+.wb-image-pages { list-style:none; padding:0; margin:0; max-height:390px; overflow-y:auto; }
+.wb-image-pages li { display:grid; grid-template-columns:72px minmax(0,1fr) auto; align-items:center; gap:12px; padding:10px 4px; border-top:1px solid #e1e7e3; }
+.wb-image-pages img { width:72px; height:96px; object-fit:contain; background:#f3f5f3; border:1px solid #dce3de; }
+.wb-image-pages strong, .wb-image-pages span, .wb-image-pages small { display:block; font-size:12px; }
+.wb-image-pages span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:5px; color:#65776c; }
+.wb-image-pages small { font-size:10px; color:#7b8981; margin-top:4px; }
+.wb-image-page-actions { display:flex; flex-wrap:wrap; max-width:90px; }

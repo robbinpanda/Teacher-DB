@@ -14,6 +14,8 @@ import { WorkbenchDialog } from "./WorkbenchDialog";
 import { MAX_IMPORT_BATCH_SIZE } from "../lib/import-paper-name";
 import { browserPdfConcurrency, renderPdfPages, PDF_RESOURCE_OPTIONS, type RenderedPage } from "../lib/pdf-render";
 import { reportBrowserRuntime, changeActivePdfCount } from "../lib/browser-runtime";
+import { ImagePaperInput } from "./ImagePaperInput";
+import { imagePaperFile, type PreparedImagePage } from "../lib/client-image-paper";
 
 type Stage = "idle" | "rendering" | "uploading" | "error";
 type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; documentId?: string; renderer?: string; modelDisplayName?: string };
@@ -64,6 +66,10 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
   const { subject, stage } = useEducationScope();
   useEffect(() => { void readPendingUploads().then(items => setRecoverable(items.filter(item => item.metadata.subject === subject && stageFromGrade(item.metadata.grade) === stage))).catch(() => undefined); }, [subject, stage]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [importKind, setImportKind] = useState<"pdf" | "images">("pdf");
+  const [imagePages, setImagePages] = useState<PreparedImagePage[]>([]);
+  const [imageTitle, setImageTitle] = useState("");
+  const [imageBusy, setImageBusy] = useState(false);
   const [fileError, setFileError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -320,8 +326,8 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
   }
 
   async function processFiles(files: File[]) {
-    if (!files.length || uploadDisabled) return;
-    if (files.length > MAX_IMPORT_BATCH_SIZE) { setFileError(`每批最多导入 ${MAX_IMPORT_BATCH_SIZE} 份试卷，请分批上传。`); return; }
+    if (!files.length || uploadDisabled) return false;
+    if (files.length > MAX_IMPORT_BATCH_SIZE) { setFileError(`每批最多导入 ${MAX_IMPORT_BATCH_SIZE} 份试卷，请分批上传。`); return false; }
     setNamingWarnings([]);
     setBatchActive(true);
     const metadata = { ...sourceMeta };
@@ -329,7 +335,7 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
     const batchProfile = modelProfiles.find((profile) => profile.id === batchProfileId);
     const queued = files.map((file) => ({ id: crypto.randomUUID(), file, fileName: file.name, metadata, profileId: batchProfileId }));
     try { await persistPendingUploads(queued); }
-    catch { setBatchActive(false); setSelectedFiles(files); setFileError("浏览器无法保存待上传文件，请释放本地空间后重试；文件尚未开始上传。"); return; }
+    catch { setBatchActive(false); setSelectedFiles(files); setFileError("浏览器无法保存待上传文件，请释放本地空间后重试；文件尚未开始上传。"); return false; }
     setRecoverable(queued);
     setImportNotice("");
     setTasks(queued.map((item) => ({
@@ -348,6 +354,7 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
       if (batchControllerRef.current === controller) batchControllerRef.current = null;
       setBatchActive(false);
     }
+    return true;
   }
 
   async function resumePendingUploads() {
@@ -379,14 +386,17 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
   }
 
   async function startImport() {
-    if (!selectedFiles.length || uploadDisabled || submitting || modelError) return;
+    if (!(importKind === "images" ? imagePages.length : selectedFiles.length) || uploadDisabled || submitting || imageBusy || modelError) return;
     setSubmitting(true);
     try {
       if (concurrencyDraftDirtyRef.current && !await applyConcurrency()) return;
-      const files = [...selectedFiles];
+      const files = importKind === "images" ? [await imagePaperFile(imagePages, imageTitle || imagePages[0].sourceName.replace(/\.[^.]+$/, ""))] : [...selectedFiles];
       setSelectedFiles([]);
       setFileError("");
-      await processFiles(files);
+      const persisted = await processFiles(files);
+      if (persisted && importKind === "images") { setImagePages([]); setImageTitle(""); }
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "导入失败，请重试");
     } finally { setSubmitting(false); }
   }
 
@@ -397,13 +407,14 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
   const selectedModel = modelProfiles.find(profile => profile.id === selectedProfileId);
   const unconfiguredModel = !modelLoading && !modelError && !selectedModel?.apiKeyMask;
   const uploadInBrowser = batchActive || submitting;
+  const selectedCount = importKind === "images" ? (imagePages.length ? 1 : 0) : selectedFiles.length;
 
   return <>
     {recoverable.length > 0 && !batchActive && <button className="wb-button" type="button" onClick={() => { setOpen(true); void resumePendingUploads(); }}>恢复未完成导入（{recoverable.length}）</button>}
     {uploadInBrowser && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}><LoaderCircle size={14} className="spin" />正在导入 · {tasks.length}</button>}
     <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
     <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" onClose={() => setOpen(false)}>
-      <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>批量上传 PDF，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
+      <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>上传 PDF 或图片，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
       <div className="wb-dialog-body wb-import-layout">
         <section className="wb-import-settings" aria-labelledby="import-settings-title">
           <section className="wb-import-destination" aria-label="目标题库">
@@ -436,7 +447,15 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
         </section>
         <section className="wb-import-files" aria-labelledby="import-files-title">
           <div className="wb-import-section-heading"><h3 id="import-files-title">试卷文件</h3><p>批量添加试卷，确认文件后开始导入</p></div>
-        <div className="wb-field wb-import-upload"><span>PDF 文件</span>
+        <div className="wb-import-kind" role="group" aria-label="导入方式">
+          <button type="button" className="wb-button" aria-pressed={importKind === "pdf"} disabled={uploadInBrowser || imageBusy} onClick={() => { setImportKind("pdf"); setFileError(""); }}>PDF 试卷</button>
+          <button type="button" className="wb-button" aria-pressed={importKind === "images"} disabled={uploadInBrowser || imageBusy} onClick={() => { setImportKind("images"); setFileError(""); }}>图片组卷</button>
+        </div>
+        {importKind === "images" ? <div className="wb-field wb-import-upload">
+          <label htmlFor="image-paper-title">试卷名称</label><input id="image-paper-title" value={imageTitle} maxLength={160} placeholder="例如：九年级数学周练" disabled={uploadInBrowser || imageBusy} onChange={event => setImageTitle(event.target.value)} />
+          <ImagePaperInput pages={imagePages} onChange={setImagePages} disabled={uploadInBrowser} onBusy={setImageBusy} onError={setFileError} />
+          {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
+        </div> : <div className="wb-field wb-import-upload"><span>PDF 文件</span>
           <input ref={inputRef} className="wb-sr-only" type="file" multiple accept=".pdf,application/pdf" aria-label="选择 PDF 文件" disabled={uploadInBrowser} onChange={event => { chooseFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <button type="button" className={`wb-drop-zone${dragging ? " dragging" : ""}`} disabled={uploadInBrowser} onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); if (!uploadInBrowser) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); chooseFiles(Array.from(event.dataTransfer.files)); }}>
             <UploadCloud size={26} /><strong>点击选择或拖放 PDF</strong><span>支持多选，每批最多 {MAX_IMPORT_BATCH_SIZE} 份</span>
@@ -444,7 +463,7 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
           {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
           <p className="wb-field-hint">单份文件最大 100 MB。试卷名称会自动整理，识别进度可在工作台查看。</p>
           {selectedFiles.length > 0 && <div className="wb-file-selection"><div><strong>已选 {selectedFiles.length} 份</strong><button className="wb-text-button" type="button" disabled={uploadInBrowser} onClick={() => setSelectedFiles([])}>清空</button></div><ul>{selectedFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><FileText size={16} /><span title={file.name}>{file.name}<small>{file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(file.size / 1024))} KB`}</small></span><button type="button" className="wb-icon-button" aria-label={`移除 ${file.name}`} disabled={uploadInBrowser} onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}><X size={15} /></button></li>)}</ul></div>}
-        </div>
+        </div>}
         {importNotice && <p className="wb-field-hint" role="status">{importNotice}</p>}
         {namingWarnings.length > 0 && <details className="wb-field-hint"><summary>{namingWarnings.length} 份试卷未能自动整理名称，已保留原名</summary><ul>{namingWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
         {tasks.length > 0 && <section className="wb-upload-tasks" aria-label="导入任务"><h3>导入任务 <span>{tasks.length}</span></h3>
@@ -456,7 +475,7 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
         </section>}
         </section>
       </div>
-      <footer className="wb-dialog-footer"><span>目标：{targetBank} · {selectedFiles.length ? `已选 ${selectedFiles.length} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "部分文件导入失败，请查看提示" : importNotice ? "后续进度请在试卷管理中查看" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length || importNotice ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedFiles.length || uploadDisabled || submitting || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
+      <footer className="wb-dialog-footer"><span>目标：{targetBank} · {selectedCount ? importKind === "images" ? `${imagePages.length} 页图片合成 1 份试卷` : `已选 ${selectedCount} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "部分文件导入失败，请查看提示" : importNotice ? "后续进度请在试卷管理中查看" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length || importNotice ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedCount || uploadDisabled || submitting || imageBusy || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
     </WorkbenchDialog>
   </>;
 }

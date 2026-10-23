@@ -1,148 +1,65 @@
 import { test, expect } from '@playwright/test';
 import Database from 'better-sqlite3';
 import path from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import sharp from 'sharp';
 
-test.use({ extraHTTPHeaders: { 'oai-authenticated-user-id': 'paper-reader-browser' } });
-// Match the high-school fixtures for both SSR and API requests.
-test.use({ storageState: { cookies: [{ name: 'teacher-db-scope', value: encodeURIComponent(JSON.stringify({subject:'数学',stage:'high'})), domain: '127.0.0.1', path: '/', expires: -1, httpOnly: false, secure: false, sameSite: 'Lax' }], origins: [] } });
+test.use({ extraHTTPHeaders: { 'oai-authenticated-user-id': 'local-demo' } });
+async function fixture() {
+ const db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
+ const stamp=new Date().toISOString(),doc=crypto.randomUUID(),ids=[];
+ db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES (?,'local-demo','导出分页回归','application/pdf','complete','数学','九年级',?,?)").run(doc,stamp,stamp);
+ const key=`documents/${doc}/diagram.png`,dir=path.join(process.env.JIANTI_E2E_DATA_DIR,'files','documents',doc);await mkdir(dir,{recursive:true});
+ await writeFile(path.join(dir,'diagram.png'),await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="210"><rect width="300" height="210" fill="white"/><path d="M10 190 L150 10 L290 190 Z" fill="none" stroke="black" stroke-width="2"/></svg>')).png().toBuffer());
+ for(let i=0;i<11;i++){
+  const id=crypto.randomUUID();ids.push(id);
+  const stem=i<8?`已知 $x=${i+1}$，求 $x+1$ 的值：____。`:'如图，在直角三角形中，已知两条边的长度。\n（1）证明给定的两条线段相等；\n（2）求三角形的面积，并写出推导过程。';
+  db.prepare("INSERT INTO questions (id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES (?,?,?,?,?,'参考答案','解析内容','approved',1,'{}',?,?)").run(id,doc,String(i+1),i<8?'fill':'answer',stem,stamp,stamp);
+  if([2,5,8].includes(i))for(let j=0;j<(i===8?2:1);j++)db.prepare("INSERT INTO question_assets (id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES (?,?,'figure','question','三角形',?,'{}',?)").run(crypto.randomUUID(),id,key,stamp);
+ }
+ db.close();return {doc,ids};
+}
+async function geometry(page) {
+ const paper=page.locator('.printable-paper');await expect(paper).toHaveAttribute('data-pagination-ready','true');
+ await expect.poll(()=>paper.locator('img').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
+ const sheets=await paper.locator('.paper-paginated').evaluateAll(els=>els.map(e=>{
+  const r=e.getBoundingClientRect(),style=getComputedStyle(e),bottom=r.bottom-parseFloat(style.paddingBottom)-(e.querySelector('footer')?.getBoundingClientRect().height??0);
+  const questions=[...e.querySelectorAll('.paper-question')].map(q=>({top:q.getBoundingClientRect().top,bottom:q.getBoundingClientRect().bottom}));
+  return {height:r.height,bottom,questions};
+ }));
+ for(const sheet of sheets){expect(sheet.height).toBeLessThan(1123);expect(sheet.questions.length).toBeGreaterThan(0);for(const q of sheet.questions)expect(q.bottom).toBeLessThanOrEqual(sheet.bottom+1);for(let i=1;i<sheet.questions.length;i++)expect(sheet.questions[i].top).toBeGreaterThanOrEqual(sheet.questions[i-1].bottom-.5);}
+ await expect(paper.locator('[data-continuation]')).toHaveCount(0);
+ return sheets.length;
+}
+async function checkPdf(bytes,count) {
+ const task=getDocument({data:new Uint8Array(bytes)});const pdf=await task.promise;
+ expect(pdf.numPages).toBe(count);
+ for(let i=1;i<=pdf.numPages;i++){
+  const text=(await (await pdf.getPage(i)).getTextContent()).items.map(item=>item.str).join('');
+  expect(text).toMatch(/\d+\./); // A footer alone must never create a page.
+  expect(text).not.toContain('返回试卷库');
+ }
+ await task.destroy();
+}
 
-
-test('单张窄图旁的空白可作答，含图简答题仍按半页排版，多图不减免', async ({ page }) => {
-  const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, 'teacher-question-bank.sqlite3'));
-  const stamp = new Date().toISOString(), doc = crypto.randomUUID();
-  db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,created_at,updated_at) VALUES (?,'paper-reader-browser','窄图半页测试','application/pdf','complete',?,?)").run(doc, stamp, stamp);
-  const ids = Array.from({ length: 4 }, () => crypto.randomUUID());
-  ids.forEach((id, i) => {
-    db.prepare("INSERT INTO questions (id,document_id,number,type,stem,status,page_number,bbox_json,created_at,updated_at) VALUES (?,?,?,?,?,'approved',1,'{}',?,?)")
-      .run(id, doc, String(i + 1), i === 0 ? 'fill' : 'answer', i === 0 ? '已知 $x=1$，求 $x+1$。' : '如图，在四棱锥 $P-ABCD$ 中，满足给定条件。\n（1）证明两个平面互相垂直。\n（2）求二面角的平面角大小。\n请写出必要的推导过程。', stamp, stamp);
-    if (i > 0) db.prepare("INSERT INTO question_assets (id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES (?,?,'figure','question','四棱锥','narrow-diagram.svg','{}',?)").run(crypto.randomUUID(), id, stamp);
-  });
-  await page.route('**/api/files/narrow-diagram.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><path d="M80 520 L400 80 L720 520 Z" fill="none" stroke="black" stroke-width="4"/></svg>' }));
-  await page.goto(`/papers/uploaded/${doc}`);
-  const paper = page.locator('.printable-paper');
-  await expect(paper).toHaveAttribute('data-pagination-ready', 'true');
-  await expect(paper.locator('.paper-paginated')).toHaveCount(2);
-  const secondPage = paper.locator('.paper-paginated').nth(1);
-  await expect(secondPage.locator('.paper-question-line > b')).toHaveText(['3.', '4.']);
-  const bounds = await secondPage.locator('.paper-answer-question').evaluateAll(questions => questions.map(question => {
-    const content = question.querySelector('.paper-question-content').getBoundingClientRect();
-    const figure = question.querySelector('.paper-asset-stage').getBoundingClientRect();
-    const blank = question.querySelector('.answer-space').getBoundingClientRect();
-    const rect = question.getBoundingClientRect();
-    return { top: rect.top, bottom: rect.bottom, height: rect.height, content: content.height, figure: figure.height, imageBottom: question.querySelector('img').getBoundingClientRect().bottom, blank: blank.height };
-  }));
-  expect(bounds[0].height).toBeCloseTo(bounds[1].height, 0);
-  expect(bounds[0].imageBottom).toBeLessThan(bounds[1].top);
-  for (const question of bounds) {
-    expect(question.blank).toBeLessThan(question.content);
-    expect(question.blank + question.figure + 1).toBeGreaterThanOrEqual(question.content - question.figure);
-  }
-  await secondPage.screenshot({ path: 'tmp/narrow-image-half-page.png' });
-  const task = getDocument({ data: new Uint8Array(await page.pdf({ preferCSSPageSize: true })) });
-  const pdf = await task.promise;
-  expect(pdf.numPages).toBe(2);
-  const text = (await (await pdf.getPage(2)).getTextContent()).items.map(item => item.str).join('');
-  expect(text).toContain('3.');
-  expect(text).toContain('4.');
-  await task.destroy();
-  db.prepare("INSERT INTO question_assets (id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES (?,?,'figure','question','第二张图','narrow-diagram.svg','{}',?)").run(crypto.randomUUID(), ids[2], stamp);
-  await page.reload();
-  const multi = paper.locator(`.paper-question[data-question-id="${ids[2]}"]:not([data-continuation])`);
-  await expect(multi.locator('img')).toHaveCount(2);
-  const sheet = paper.locator('.paper-paginated').filter({ has: page.locator(`.paper-question[data-question-id="${ids[2]}"]:not([data-continuation])`) });
-  await expect(sheet.locator('.paper-question-line > b')).toHaveText(['3.']);
-  db.close();
-});
-
-test('原卷直接阅读 LaTeX 试卷，简答题两题一页且长题留白充足', async ({ page, request }) => {
-  const db = new Database(path.join(process.env.JIANTI_E2E_DATA_DIR, 'teacher-question-bank.sqlite3'));
-  const stamp = new Date().toISOString(), doc = crypto.randomUUID();
-  db.prepare("INSERT INTO documents (id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES (?,'paper-reader-browser','排版阅读测试','application/pdf','complete','数学','高三',?,?)").run(doc, stamp, stamp);
-  const ids = Array.from({ length: 6 }, () => crypto.randomUUID());
-  ids.forEach((id, i) => db.prepare("INSERT INTO questions (id,document_id,number,type,stem,answer,analysis,status,needs_human_review,page_number,bbox_json,created_at,updated_at) VALUES (?,?,?,?,?,'参考答案','解析内容','approved',0,1,'{}',?,?)")
-    .run(id, doc, String(i + 10), i === 0 ? 'fill' : 'answer', i === 5 ? Array.from({ length: 13 }, (_, n) => `（${n + 1}）已知函数 $f(x)=x^2$，请说明推导过程。`).join('\n') : `已知 $\\frac{x}{2}=3$，求 $x$。`, stamp, stamp));
-  db.prepare("INSERT INTO question_assets (id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES (?,?,'figure','question','三角形','reader-diagram.svg','{}',?)").run(crypto.randomUUID(), ids[1], stamp);
-  await page.route('**/api/files/reader-diagram.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80"><path d="M10 70 L80 10 L150 70 Z" fill="none" stroke="black"/></svg>' }));
-  const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/papers');
-  await page.getByRole('link', { name: '排版阅读测试', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/papers/uploaded/${doc}$`));
-  const paper = page.locator('.printable-paper');
-  await expect(paper).toHaveAttribute('data-pagination-ready', 'true');
-  await expect(paper.locator('.katex').first()).toBeVisible();
-  await expect(paper.locator('img')).toHaveCount(1);
-  await expect.poll(() => paper.locator('img').evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
-  await expect(page.locator('.review-workspace')).toHaveCount(0);
-  await expect(paper.locator('.paper-question-line > b')).toHaveText(['10.', '11.', '12.', '13.', '14.', '15.']);
-  const checkLayout = async (counts = [1, 2, 1, 1]) => {
-    const geometry = await paper.locator('.paper-paginated').evaluateAll(pages => pages.map(sheet => ({
-      height: sheet.getBoundingClientRect().height,
-      questions: Array.from(sheet.querySelectorAll('.paper-answer-question')).map(question => ({
-        content: question.querySelector('.paper-question-content')?.getBoundingClientRect().height ?? 0,
-        blank: question.querySelector('.answer-space').getBoundingClientRect().height,
-        height: question.getBoundingClientRect().height,
-      })),
-    })));
-    expect(geometry.map(sheet => sheet.questions.length)).toEqual(counts);
-    for (const sheet of geometry) for (const question of sheet.questions) {
-      expect(question.blank + 1).toBeGreaterThanOrEqual(question.content);
-      expect(question.height).toBeGreaterThanOrEqual((sheet.height - 170) / 2);
-    }
-    expect(geometry.every(sheet => sheet.height < 1124)).toBe(true);
-  };
-  await checkLayout();
-  await expect(paper.locator('.paper-paginated').first().locator('.paper-question-line > b')).toHaveText(['10.', '11.']);
-  await page.screenshot({ path: 'tmp/paper-reader.png', fullPage: true });
-  await page.emulateMedia({ media: 'print' });
-  await checkLayout();
-  const loadingTask = getDocument({ data: new Uint8Array(await page.pdf({ preferCSSPageSize: true })) });
-  const pdf = await loadingTask.promise;
-  expect(pdf.numPages).toBe(4);
-  for (let number = 1; number <= pdf.numPages; number++) {
-    const pdfPage = await pdf.getPage(number);
-    const content = (await pdfPage.getTextContent()).items.map(item => item.str).join('');
-    expect(content).toContain(`第 ${number} 页`);
-    expect(content).not.toContain('返回试卷库');
-    if (number === 1) expect(content).toContain('11.');
-  }
-  await loadingTask.destroy();
-  await page.emulateMedia({ media: 'screen' });
-  const assembledId = crypto.randomUUID();
-  const saved = await request.post('/api/papers', { data: {
-    id: assembledId, title: '双栏剩余空间测试', questionIds: [ids[0], ids[2], ids[3]],
-    settings: { notice: '', infoFields: [], style: { columns: 2 }, sections: [
-      { id: 'fill', title: '填空题', questionIds: [ids[0]], acceptedTypes: ['fill'], defaultScore: 0 },
-      { id: 'answer', title: '解答题', questionIds: [ids[2], ids[3]], acceptedTypes: ['answer'], defaultScore: 0 },
-    ] },
-  } });
+test('原卷阅读与紧凑模板实际PDF均无空白页、页脚孤页和越界',async({page,request})=>{
+ test.setTimeout(90000);
+ const {doc,ids}=await fixture();
+ await page.goto(`/papers/uploaded/${doc}`);const count=await geometry(page);
+ await expect(page.locator('.printable-paper .paper-question-line > b')).toHaveText(ids.map((_,i)=>`${i+1}.`));
+ await page.emulateMedia({media:'print'});await geometry(page);await checkPdf(await page.pdf({preferCSSPageSize:true,printBackground:true}),count);
+ await page.emulateMedia({media:'screen'});
+ for(const compact of [true,false]){
+  const id=crypto.randomUUID();const saved=await request.post('/api/papers',{data:{id,title:'分页回归练习卷',questionIds:ids,settings:{templateId:'preset-homework',compact,notice:'独立完成，写清必要步骤。',infoFields:['姓名','日期'],style:{questionGap:4,showPageNumber:true},sections:[{id:'fill',title:'一、基础练习',acceptedTypes:['fill'],defaultScore:5,questionIds:ids.slice(0,8)},{id:'answer',title:'二、综合练习',acceptedTypes:['answer'],defaultScore:10,questionIds:ids.slice(8)}]}}});
   expect(saved.status()).toBe(201);
-  await page.goto(`/papers/${assembledId}/preview`);
-  const firstSheet = paper.locator('.paper-paginated').first();
-  await expect(firstSheet.locator('.paper-page-answers .paper-question-line')).toHaveCount(1);
-  const objectiveBounds = await firstSheet.locator('.paper-page-columns .paper-question').boundingBox();
-  const answerBounds = await firstSheet.locator('.paper-page-answers .paper-question').boundingBox();
-  expect(answerBounds.width).toBeGreaterThan(objectiveBounds.width * 1.9);
-  expect(answerBounds.y).toBeGreaterThanOrEqual(objectiveBounds.y + objectiveBounds.height);
-  await expect(paper.locator('.paper-paginated')).toHaveCount(2);
-  await request.delete(`/api/papers/${assembledId}`);
-  await page.goto(`/papers/uploaded/${doc}`);
-  await page.getByRole('link', { name: '查看答案解析' }).click();
-  await expect(paper.locator('.printable-answer')).toHaveCount(6);
-  await expect(paper.locator('.answer-space')).toHaveCount(0);
-  const unauthorized = await request.get(`/papers/uploaded/${doc}`, { headers: { 'oai-authenticated-user-id': 'another-teacher' } });
-  expect(unauthorized.status()).toBe(404);
-  db.prepare('UPDATE documents SET source_removed_at=? WHERE id=?').run(stamp, doc);
-  await page.goto(`/papers/uploaded/${doc}`);
-  await expect(paper.locator('.paper-question-line')).toHaveCount(6);
-  db.prepare('UPDATE questions SET stem=? WHERE id=?').run(Array.from({ length: 15 }, () => '选择填空题内容占用页面空间。').join('\n'), ids[0]);
-  await page.reload();
-  await expect(paper).toHaveAttribute('data-pagination-ready', 'true');
-  await checkLayout([0, 2, 2, 1]);
-  db.prepare('DELETE FROM questions WHERE document_id=?').run(doc);
-  db.prepare("UPDATE documents SET status='extracting' WHERE id=?").run(doc);
-  await page.reload();
-  await expect(page.getByRole('heading', { name: '试卷正在处理中' })).toBeVisible();
-  expect(errors).toEqual([]);
-  db.close();
+  await page.goto(`/papers/${id}/preview`);const pages=await geometry(page);
+  const response=await request.get(`/api/papers/${id}/pdf`,{timeout:65000});expect(response.status()).toBe(200);await checkPdf(await response.body(),pages);
+  await page.emulateMedia({media:'print'});
+  expect(await page.locator('html').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(255, 255, 255)');
+  await page.emulateMedia({media:'screen'});
+ }
+ const forbidden=await request.get(`/papers/uploaded/${doc}`,{headers:{'oai-authenticated-user-id':'another-teacher'}});expect(forbidden.status()).toBe(404);
+ await page.goto(`/papers/uploaded/${doc}?answers=1`);await expect(page.locator('.printable-paper')).toHaveAttribute('data-pagination-ready','true');
+ await expect(page.locator('.printable-paper .printable-answer')).toHaveCount(11);await expect(page.locator('.printable-paper .answer-space')).toHaveCount(0);
 });

@@ -16,7 +16,7 @@ test('repeated PDF batches release workers, including parse and upload failures'
   const events=[], ids=new Map(); let uploadedPages=0;
   await page.route('**/api/model-profiles',route=>route.fulfill({json:{profiles:[],selectedProfileId:''}}));
   await page.route('**/api/extraction-queue?summary=1',route=>route.fulfill({json:{concurrency:30,activeCount:0,queuedCount:0,paused:false}}));
-  await page.route('**/api/documents',route=>{
+  await page.route(/\/api\/documents(?:\?.*)?$/,route=>{
     if(route.request().method()!=='POST') return route.continue();
     const name=route.request().postDataBuffer().toString().match(/filename="([^"]+)"/)?.[1];
     if(!ids.has(name)) ids.set(name, name?.includes('fail-upload')?'fail-upload':crypto.randomUUID());

@@ -31,13 +31,18 @@ export function PaperPages({ className, variables, header, binding, blocks, foot
     if (!root) return;
     let active = true;
     let frame = 0;
+    let assetsReady = false;
+    setReady(false);
     const measure = () => {
       if (!active) return;
       const body = root.querySelector<HTMLElement>(".paper-page-body")!;
       const headerElement = root.querySelector<HTMLElement>(".paper-measure-header")!;
       const styles = getComputedStyle(root);
+      const scale = root.getBoundingClientRect().width / parseFloat(styles.width) || 1;
+      const height = (element: HTMLElement) => element.getBoundingClientRect().height / scale;
       const gap = parseFloat(getComputedStyle(root.querySelector(".paper-measure-gap")!).height);
-      const available = parseFloat(styles.minHeight) - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom) - (footerText || showPageNumber ? 32 : 0);
+      // Leave one CSS pixel for Chromium's mm-to-device-pixel print rounding.
+      const available = parseFloat(styles.minHeight) - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom) - (footerText || showPageNumber ? 32 : 0) - 1;
       const measurements = Array.from(body.querySelectorAll<HTMLElement>(".paper-measure-block")).map((element, index) => {
         const content = element.querySelector<HTMLElement>(".paper-question-content")!;
         const figures = content.querySelectorAll<HTMLElement>(".paper-asset-stage");
@@ -53,20 +58,21 @@ export function PaperPages({ className, variables, header, binding, blocks, foot
           if (image?.complete && image.naturalWidth > 0 && drawing && bounds.width > 0
             && drawing.left >= bounds.left && bounds.right - drawing.right >= bounds.width / 2
             && drawing.top >= row.top - 0.5 && drawing.bottom <= row.bottom + 0.5) {
-            sideAnswerHeight = figure.offsetHeight;
+            sideAnswerHeight = height(figure);
           }
         }
         return {
           sectionId: blocks[index].sectionId,
-          contentHeight: content.offsetHeight,
-          headingHeight: element.querySelector<HTMLElement>(".paper-heading-wrap")!.offsetHeight,
+          contentHeight: height(content),
+          headingHeight: height(element.querySelector<HTMLElement>(".paper-heading-wrap")!),
           answer: blocks[index].answer,
           minimumBlank: blocks[index].minimumBlank,
           sideAnswerHeight,
+          figureHeight: Array.from(figures).reduce((sum, figure) => sum + height(figure), 0),
         };
       });
-      setPages(paginatePaper(measurements, available, headerElement.offsetHeight, gap, columns));
-      setReady(true);
+      setPages(paginatePaper(measurements, available, height(headerElement), gap, columns));
+      setReady(assetsReady);
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule);
@@ -74,7 +80,9 @@ export function PaperPages({ className, variables, header, binding, blocks, foot
     root.querySelectorAll(".paper-question-content, .paper-heading-wrap, .paper-measure-header").forEach(element => observer.observe(element));
     const images = Array.from(root.querySelectorAll("img"));
     images.forEach(img => { img.addEventListener("load", schedule); img.addEventListener("error", schedule); });
-    void document.fonts.ready.then(schedule);
+    void Promise.all([document.fonts.ready, ...images.map(img => img.decode().catch(() => undefined))]).then(() => {
+      if (active) { assetsReady = true; schedule(); }
+    });
     // Measure synchronously for print snapshots; font/image changes trigger another pass.
     measure();
     window.addEventListener("beforeprint", measure);
