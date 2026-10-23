@@ -16,10 +16,11 @@ db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grad
 for(let i=1;i<=2;i++)db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,score,created_at,updated_at) VALUES(?,'doc',?,'fill',?,'2','代入计算。','approved',1,'{}',?,?,?)").run(`q${i}`,String(i*3),`若 x=${i}，求 x+1。`,i*5,now,now);
 const request={kind:"variation",instruction:"保留原题知识目标，改变数值与设问，保持原卷难度。",sourcePaperKind:"uploaded",sourcePaperId:"doc",profileId:"model"};
 const read=(id:string)=>readAuthoringProject("teacher",scope,id)!;
-let calls=0,steal:(()=>void)|undefined, fail=false, duplicate=false, malformedGeneration=false;
+let calls=0,steal:(()=>void)|undefined, fail=false, duplicate=false, malformedGeneration=false, feedbackSeen=false;
 globalThis.fetch=async(_url,init)=>{
   calls++;
   const body=JSON.parse(String(init?.body)),text=JSON.stringify(body.messages??body.input);
+  if(text.includes('上次未通过的检查记录') && text.includes('重复'))feedbackSeen=true;
   if(fail)return Response.json({error:"unauthorized"},{status:401});
   const offset=!duplicate && text.includes('若 x=2，求 x+1。') ? 10 : 0;
   const variations=[3+offset,5+offset].map(value=>({stem:`若 x=${value}，求 2x+1。`,type:"fill",options:[],answer:String(2*value+1),analysis:`代入计算，2×${value}+1=${2*value+1}。`,tags:[],changeNote:"改变数值与计算表达式",diagram:null}));
@@ -84,4 +85,5 @@ const repeated=await create();duplicate=true;await kickWholePaperVariations();aw
 assert.match(read(repeated.id).variation!.items[1].error!,/重复/);
 const brokenItem=read(repeated.id).variation!.items[1];await retryWholePaperItem("teacher",scope,repeated.id,brokenItem.id,brokenItem.revision);
 malformedGeneration=true;const beforeRepair=calls;await kickWholePaperVariations();assert.equal(calls-beforeRepair,5,"invalid generation gets exactly one bounded correction");assert.equal(read(repeated.id).variation!.items[1].status,"awaiting_teacher");
+assert.equal(feedbackSeen,true,"retry must include the previous concrete failure rather than repeating the same prompt");
 console.log("Whole-paper variation: source order/scores, independent model pipeline, adoption, leases, isolation and publishing passed.");
