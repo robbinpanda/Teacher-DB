@@ -37,7 +37,11 @@ export type AuthoringChapter = {
   id: string; position: number; plan: AuthoringChapterPlan; content: SavedChapterContent | null;
   status: "pending" | "running" | "complete" | "needs_review" | "failed" | "approved";
   revision: number; attempt: number; error: string | null;
-  history?: Array<{ id: string; revision: number; reason: string; createdAt: string }>;
+  history?: Array<{ id: string; revision: number; reason: string; createdAt: string; hasPlan: boolean; hasContent: boolean }>;
+};
+export type AuthoringChapterVersion = {
+  id: string; revision: number; reason: string; createdAt: string;
+  plan: AuthoringChapterPlan | null; content: SavedChapterContent | null;
 };
 
 export function validateChapterContent(value: unknown, plan: AuthoringChapterPlan, kind: AuthoringRequest["kind"], pools: string[][], excluded: Set<string>) {

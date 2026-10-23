@@ -11,14 +11,14 @@ import { readAuthoringChapterVersion } from "../../../../../../services/authorin
 type Context = { params: Promise<{ projectId: string; chapterId: string }> };
 const command = z.union([
   z.object({ action: z.enum(["retry", "review", "revise", "approve"]), revision: z.number().int().min(1), note: z.string().max(2000).default("") }).strict(),
-  z.object({ action: z.literal("restore"), revision: z.number().int().min(1), versionId: z.string().min(1).max(100) }).strict(),
+  z.object({ action: z.literal("restore"), revision: z.number().int().min(1), projectRevision: z.number().int().min(1), versionId: z.string().min(1).max(100) }).strict(),
   z.object({ action: z.literal("replan"), revision: z.number().int().min(1), projectRevision: z.number().int().min(1), plan: authoringChapterSchema }).strict(),
 ]);
 export async function GET(request: Request, context: Context) {
   await ensureDatabase();
   const { projectId, chapterId } = await context.params;
-  const content = readAuthoringChapterVersion(requestOwner(request), requestEducationScope(request), projectId, chapterId, new URL(request.url).searchParams.get("version") ?? "");
-  return content ? Response.json({ content }) : Response.json({ error: "版本不存在" }, { status: 404 });
+  const version = readAuthoringChapterVersion(requestOwner(request), requestEducationScope(request), projectId, chapterId, new URL(request.url).searchParams.get("version") ?? "");
+  return version ? Response.json({ version, content: version.content }) : Response.json({ error: "版本不存在" }, { status: 404 });
 }
 export async function POST(request: Request, context: Context) {
   await ensureDatabase();
@@ -29,7 +29,7 @@ export async function POST(request: Request, context: Context) {
   try {
     const project = parsed.data.action === "approve" ? approveAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.note)
       : parsed.data.action === "replan" ? await replanAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.projectRevision, parsed.data.plan)
-      : parsed.data.action === "restore" ? await restoreAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.versionId)
+      : parsed.data.action === "restore" ? await restoreAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.projectRevision, parsed.data.versionId)
       : await retryAuthoringChapter(owner, scope, projectId, chapterId, parsed.data.revision, parsed.data.action === "retry" ? "generate" : parsed.data.action);
     return Response.json({ project });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "章节操作失败" }, { status: 409 }); }

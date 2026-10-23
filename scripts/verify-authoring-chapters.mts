@@ -118,14 +118,14 @@ try {
   assert.equal((await view("authoring-print", paper.id, token)).status, 404);
 
   const currentChapter = read(project.id).chapters[0];
-  const previous = currentChapter.history!.find(version => readAuthoringChapterVersion("teacher", scope, project.id, currentChapter.id, version.id)?.conclusion === c.content!.conclusion)!;
+  const previous = currentChapter.history!.find(version => readAuthoringChapterVersion("teacher", scope, project.id, currentChapter.id, version.id)?.content?.conclusion === c.content!.conclusion)!;
   assert.ok(previous);
   assert.equal(readAuthoringChapterVersion("other", scope, project.id, currentChapter.id, previous.id), null);
-  const restored = await restoreAuthoringChapter("teacher", scope, project.id, currentChapter.id, currentChapter.revision, previous.id);
+  const restored = await restoreAuthoringChapter("teacher", scope, project.id, currentChapter.id, currentChapter.revision, read(project.id).revision, previous.id);
   assert.equal(restored.chapters[0].content!.conclusion, c.content!.conclusion);
   assert.equal(restored.chapters[0].status, "needs_review", "restore invalidates approval");
   assert.ok(restored.chapters[0].history!.some(version => version.revision === currentChapter.revision), "restoring preserves the replaced version");
-  await assert.rejects(() => restoreAuthoringChapter("teacher", scope, project.id, currentChapter.id, currentChapter.revision, previous.id), /变化/);
+  await assert.rejects(() => restoreAuthoringChapter("teacher", scope, project.id, currentChapter.id, currentChapter.revision, read(project.id).revision, previous.id), /变化/);
 
   const beforePlan = read(project.id), target = beforePlan.chapters[0], preserved = JSON.stringify(beforePlan.chapters[1]);
   const newPlan = { ...target.plan, title: "周期计算与易错回顾", teachingNotes: "增加角系数非零和最小性证明的讲解。", slots: target.plan.slots.map(slot => ({ ...slot, score: 3 })) };

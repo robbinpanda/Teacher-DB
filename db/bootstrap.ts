@@ -527,7 +527,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 17;
+export const DATABASE_VERSION = 18;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -674,6 +674,9 @@ function initialize() {
     `) },
     { version: 17, name: "authoring-requirements", checksum: "authoring-requirements-v1", up: sqlite => sqlite.exec(`
       ALTER TABLE authoring_projects ADD COLUMN requirements_json TEXT;
+    `) },
+    { version: 18, name: "authoring-chapter-plan-history", checksum: "authoring-chapter-plan-history-v1", up: sqlite => sqlite.exec(`
+      ALTER TABLE authoring_chapter_versions ADD COLUMN plan_json TEXT;
     `) },
   ]);
   initialized = true;

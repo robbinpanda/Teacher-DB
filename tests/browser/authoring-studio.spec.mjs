@@ -217,8 +217,10 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   }
   expect((await request.get(`/api/authoring/${id}/pdf?${scope}`,{headers:{'oai-authenticated-user-id':'other'}})).status()).toBe(404);
   await page.goto('/studio');await page.getByRole('button',{name:new RegExp(plan.title)}).click();
+  const beforeReplan=(await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project;
   await page.getByRole('button',{name:'调整本章计划',exact:true}).click();
   await page.getByRole('textbox',{name:'本章标题',exact:true}).fill('周期概念与计算：补充易错点');
+  await page.getByLabel('本章第 1 组分值',{exact:true}).fill('3');
   await page.getByRole('textbox',{name:'本章讲解与衔接要求',exact:true}).fill('加强角系数和振幅非零条件的讲解，并说明最小性。');
   await page.locator('.studio-replacement').screenshot({path:'tmp/teacher-pilot/chapter-plan-browser.png'});
   await page.getByRole('button',{name:'保存计划并重做本章',exact:true}).click();
@@ -226,6 +228,27 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   await expect(page.getByRole('heading',{name:'1. 周期概念与计算：补充易错点',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'已核对，采用本章'})).toBeEnabled({timeout:45000});
   await expect(page.locator('.studio-work-coverage')).toContainText('0/1 个考点完成核对');
+  const afterReplan=(await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project;
+  expect(afterReplan.plan.chapters[0].slots[0].score).toBe(3);
+  const oldVersion=afterReplan.chapters[0].history.find(version=>version.revision===beforeReplan.chapters[0].revision);
+  expect(oldVersion.hasPlan).toBe(true);expect(oldVersion.hasContent).toBe(true);
+  const historyUrl=`/api/authoring/${id}/chapters/${afterReplan.chapters[0].id}?${scope}&version=${oldVersion.id}`;
+  expect((await request.get(historyUrl,{headers:{'oai-authenticated-user-id':'other'}})).status()).toBe(404);
+  const snapshot=(await (await request.get(historyUrl)).json()).version;
+  expect(snapshot.plan.slots[0].score).toBe(0);expect(snapshot.content.conclusion).toContain('教师补充说明');
+  await page.locator('.studio-history summary').click();
+  await page.getByRole('button',{name:`查看版本 ${oldVersion.revision}`,exact:true}).click();
+  await expect(page.getByRole('region',{name:`历史版本 ${oldVersion.revision}`,exact:true})).toContainText('当时的章节计划');
+  await page.locator('.studio-historical-content').screenshot({path:'tmp/teacher-pilot/history-preview-browser.png'});
+  await page.getByRole('button',{name:'恢复计划与正文',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'1. 周期概念与计算',exact:true})).toBeVisible();
+  await expect(page.getByText('已恢复历史计划与正文，请重新审校或核对后采用。',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'已核对，采用本章'})).toBeDisabled();
+  const restored=(await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project;
+  expect(restored.plan.chapters[0].slots[0].score).toBe(0);
+  expect(restored.chapters[0].content.teacherApproval).toBeUndefined();
+  expect(restored.chapters[0].history.some(version=>version.revision===afterReplan.chapters[0].revision)).toBe(true);
+  await page.getByLabel(/人工核对说明/).fill('已核对恢复的章节计划、分值和原题解析，确认内容正确。');
   await page.getByRole('button',{name:'已核对，采用本章'}).click();await expect(page.getByRole('link',{name:'学生版 PDF',exact:true})).toBeVisible();
  }finally{await new Promise(resolve=>model.close(resolve));}
 });

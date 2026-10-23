@@ -110,10 +110,43 @@ export async function editAuthoringChapter(owner: string, scope: EducationScope,
   return requireProject(owner, scope, id);
 }
 
-export async function restoreAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, versionId: string) {
-  const content = readAuthoringChapterVersion(owner, scope, id, chapterId, versionId);
-  if (!content) throw new Error("历史版本不存在");
-  return editAuthoringChapter(owner, scope, id, chapterId, revision, content);
+export async function restoreAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, projectRevision: number, versionId: string) {
+  const project = requireProject(owner, scope, id), chapter = project.chapters.find(item => item.id === chapterId);
+  const version = readAuthoringChapterVersion(owner, scope, id, chapterId, versionId);
+  if (!chapter || !version || !version.plan && !version.content) throw new Error("历史版本不存在或没有可恢复内容");
+  const assertEditable = (current: Project) => {
+    if (current.revision !== projectRevision || current.chapters.find(item => item.id === chapterId)?.revision !== revision) throw new Error("作品或章节已变化，请刷新后恢复");
+    if (current.status === "generating" || current.chapters.some(item => item.status === "running")) throw new Error("请先暂停任务并等待当前章结束，再恢复历史版本");
+  };
+  assertEditable(project);
+  const replacement = version.plan ?? chapter.plan;
+  if (replacement.id !== chapter.plan.id) throw new Error("历史计划的章节编号不匹配");
+  const plan = validateAuthoringPlan({ ...project.plan, chapters: project.plan!.chapters.map(item => item.id === chapter.plan.id ? replacement : item) }, scope, project.request, project.requirements);
+  let saved: SavedChapterContent | null = null;
+  if (version.content) {
+    // Never pair old explanations with a newer, silently changed source question.
+    assertSourceSnapshots(owner, scope, version.content, project.request.documentIds);
+    const ids = version.content.items.map(item => item.questionId);
+    const excluded = new Set(project.chapters.filter(item => item.id !== chapterId).flatMap(item => item.content?.items.map(question => question.questionId) ?? []));
+    const content = validateChapterContent(version.content, replacement, project.request.kind, replacement.slots.map(() => ids), excluded);
+    const questions = await getApprovedQuestions(owner, ids, scope);
+    assertQuestionTypes(content.items, questions, replacement.slots);
+    assertNoDuplicateStems(questions, project, chapterId);
+    saved = { ...content, questions, questionFingerprints: version.content.questionFingerprints, traceId: version.content.traceId,
+      review: { passed: false, issues: [version.plan ? "已恢复历史计划与正文，请重新审校或核对后采用。" : "此旧版仅保存正文，已按当前计划核验；请重新审校或核对后采用。"] } };
+  }
+  return getSqlite().transaction(() => {
+    const current = requireProject(owner, scope, id), db = getSqlite();
+    assertEditable(current);
+    if (saved) { assertSourceSnapshots(owner, scope, saved, current.request.documentIds); assertNoDuplicateStems(saved.questions, current, chapterId); }
+    archiveAuthoringChapter(chapterId, "恢复历史版本前的计划与正文");
+    db.prepare("UPDATE authoring_chapters SET plan_json=?,content_json=?,status=?,job_kind='generate',revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?")
+      .run(JSON.stringify(replacement), saved ? JSON.stringify(saved) : null, saved ? "needs_review" : "pending", time(), chapterId);
+    db.prepare("UPDATE authoring_projects SET plan_json=?,paper_id=NULL,status=?,revision=revision+1,updated_at=? WHERE id=?")
+      .run(JSON.stringify(plan), current.status === "paused" ? "paused" : saved ? "reviewing" : "generating", time(), id);
+    if (saved) updateProjectProgress(id);
+    return requireProject(owner, scope, id);
+  })();
 }
 
 export async function replanAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, projectRevision: number, value: unknown) {

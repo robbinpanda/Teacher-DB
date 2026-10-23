@@ -32,7 +32,7 @@ export function readAuthoringProject(ownerId: string, scope: EducationScope, id:
   const requirements = row.requirements_json ? JSON.parse(row.requirements_json) as AuthoringRequirements : null;
   const chapters = (sqlite.prepare("SELECT * FROM authoring_chapters WHERE project_id=? ORDER BY position").all(id) as Array<{ id: string; position: number; plan_json: string; content_json: string | null; status: AuthoringChapter["status"]; revision: number; attempt: number; error: string | null }>).map(chapter => ({
     id: chapter.id, position: chapter.position, plan: JSON.parse(chapter.plan_json), content: chapter.content_json ? JSON.parse(chapter.content_json) as SavedChapterContent : null,
-    history: sqlite.prepare("SELECT id,revision,reason,created_at AS createdAt FROM authoring_chapter_versions WHERE chapter_id=? ORDER BY revision DESC").all(chapter.id),
+    history: (sqlite.prepare("SELECT id,revision,reason,created_at AS createdAt,plan_json IS NOT NULL AS hasPlan,content_json != 'null' AS hasContent FROM authoring_chapter_versions WHERE chapter_id=? ORDER BY revision DESC").all(chapter.id) as Array<{ id: string; revision: number; reason: string; createdAt: string; hasPlan: number; hasContent: number }>).map(version => ({ ...version, hasPlan: Boolean(version.hasPlan), hasContent: Boolean(version.hasContent) })),
     status: chapter.status, revision: chapter.revision, attempt: chapter.attempt, error: chapter.error,
   })) as AuthoringChapter[];
   const sourceSnapshot = sqlite.prepare("SELECT snapshot_json FROM authoring_variation_sources WHERE project_id=?").get(id) as { snapshot_json: string } | undefined;

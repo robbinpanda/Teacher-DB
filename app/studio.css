@@ -31,3 +31,12 @@
 .studio-requirements fieldset input[type="checkbox"] { width: auto; }
 
 .studio-chapter td:first-child select { display: block; width: 110px; margin-top: 8px; }
+
+.studio-chapter-history { margin: 16px 0; }
+.studio-chapter-history small { display: inline-block; margin: 0 12px; color: #637267; }
+.studio-historical-content { padding: 20px; margin-top: 12px; border: 1px solid #bdcdbf; border-radius: 10px; background: #fafcf9; }
+.studio-historical-content > section { border-top: 1px solid #dbe3dd; padding-top: 12px; margin-top: 12px; }
+.studio-historical-content h5 { font-size: 15px; margin: 16px 0 8px; }
+.studio-history-table { overflow-x: auto; }
+.studio-history-table table { width: 100%; min-width: 480px; border-collapse: collapse; }
+.studio-history-table th,.studio-history-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #dbe3dd; }

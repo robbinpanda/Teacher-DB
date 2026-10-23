@@ -2,9 +2,10 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { MathText } from "./MathText";
+import { ChapterHistory } from "./ChapterHistory";
 import { ChapterPlanFields } from "./ChapterPlanFields";
 import { studioRequest } from "./KnowledgeWorkbench";
-import type { AuthoringChapter, SavedChapterContent } from "../lib/authoring-content";
+import type { AuthoringChapter, SavedChapterContent, AuthoringChapterVersion } from "../lib/authoring-content";
 import type { RetrievalHit } from "../lib/knowledge-retrieval";
 import type { QuestionWithSource } from "../lib/types";
 
@@ -28,7 +29,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
   const [draft, setDraft] = useState(chapter.content), [editing, setEditing] = useState(false), [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [note, setNote] = useState("");
   const [planning, setPlanning] = useState(false), [planDraft, setPlanDraft] = useState(chapter.plan);
-  const [historical, setHistorical] = useState<{ id: string; content: SavedChapterContent } | null>(null);
+  const [historical, setHistorical] = useState<AuthoringChapterVersion | null>(null);
   const [lookup, setLookup] = useState<{ slot: number; replace: number | null } | null>(null), [query, setQuery] = useState(""), [hits, setHits] = useState<RetrievalHit[]>([]);
   const url = `/api/authoring/${projectId}/chapters/${chapter.id}?${scopeQuery}`;
   const working = ["pending", "running"].includes(chapter.status);
@@ -52,11 +53,12 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
     <header><h3>{chapter.position + 1}. {chapter.plan.title}</h3><span>{labels[chapter.status]}</span></header>
     {chapter.error && <p className="studio-error" role="alert">{chapter.error}</p>}{error && <p className="studio-error" role="alert">{error}</p>}
     {working && <p role="status">本章第 {chapter.attempt || 1} 次处理。进度保存在后台，可以刷新后继续查看。</p>}
+    {!!chapter.history?.length && <ChapterHistory history={chapter.history} version={historical} busy={busy} canRestore={!dirty && projectStatus !== "generating" && chapter.status !== "running" && (chapter.status !== "pending" || projectStatus === "paused")}
+      onView={versionId => void operate(async () => { const result = await studioRequest<{ version: AuthoringChapterVersion }>(`${url}&version=${versionId}`); setHistorical(result.version); })}
+      onClose={() => setHistorical(null)} onRestore={versionId => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "POST", { action: "restore", revision: chapter.revision, projectRevision, versionId }); onUpdate(result.project); })}/>}
     {!working && <div className="studio-plan-actions">
       <button className="btn" disabled={busy || dirty || projectStatus === "generating"} onClick={()=>{setPlanning(true);setEditing(false);setDirty(true);notifyDirty(true);}}>调整本章计划</button>
       <button className="btn" disabled={busy || dirty || projectStatus === "paused"} onClick={() => { if (!draft || window.confirm("重新生成会替换本章当前内容，其他章节会保留。继续吗？")) void operate(() => action("retry")); }}>重新生成本章</button>
-      {!!chapter.history?.length && <details className="studio-history"><summary>已保存的历史版本（{chapter.history.length}）</summary>{chapter.history.map(version => <p key={version.id}>版本 {version.revision} · {new Date(version.createdAt).toLocaleString()} · {version.reason} <button className="btn" disabled={busy} onClick={() => void operate(async () => { const result = await studioRequest<{ content: SavedChapterContent }>(`${url}&version=${version.id}`); setHistorical({ id: version.id, content: result.content }); })}>查看此版</button></p>)}</details>}
-    {historical && <section className="studio-historical-content"><h4>历史版本预览</h4><p><MathText text={historical.content.introduction} /></p>{historical.content.knowledge.map(k => <section key={k.id}><h4>{k.title}</h4><p><MathText text={k.explanation} /></p></section>)}{historical.content.items.map(item => <p key={item.questionId}><strong>{historical.content.questions.find(q => q.id === item.questionId)?.number} 题讲解：</strong><MathText text={item.teachingExplanation} /></p>)}<p><MathText text={historical.content.conclusion} /></p><button className="btn" onClick={() => setHistorical(null)}>关闭历史预览</button><button className="btn" disabled={busy || dirty || working || projectStatus === "generating"} onClick={() => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "POST", { action: "restore", revision: chapter.revision, versionId: historical.id }); onUpdate(result.project); })}>恢复此版并重新核对</button></section>}
     {draft && <>{!draft.review.passed && <button className="btn btn-primary" disabled={busy || dirty || projectStatus === "paused"} onClick={() => void operate(() => action("revise"))}>按审校意见修订正文</button>}<button className="btn" disabled={busy || dirty || projectStatus === "paused"} onClick={() => void operate(() => action("review"))}>重新审校</button>
         <button className="btn" disabled={busy || planning || projectStatus === "generating"} onClick={() => setEditing(!editing)}>{editing ? "收起编辑" : "修改正文与选题"}</button>
         <button className="btn btn-primary" disabled={busy || planning || !dirty} onClick={() => void operate(async () => { const result = await studioRequest<{ project: unknown }>(url, "PATCH", { revision: chapter.revision, content: draft }); setDirty(false); notifyDirty(false); onUpdate(result.project); })}>保存本章修改</button></>}
