@@ -25,11 +25,13 @@ async function geometry(page) {
  await expect.poll(()=>paper.locator('img').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
  const sheets=await paper.locator('.paper-paginated').evaluateAll(els=>els.map(e=>{
   const r=e.getBoundingClientRect(),style=getComputedStyle(e),bottom=r.bottom-parseFloat(style.paddingBottom)-(e.querySelector('footer')?.getBoundingClientRect().height??0);
-  const questions=[...e.querySelectorAll('.paper-question')].map(q=>({top:q.getBoundingClientRect().top,bottom:q.getBoundingClientRect().bottom,answer:q.classList.contains('paper-answer-question'),continuation:q.hasAttribute('data-continuation')}));
+  const questions=[...e.querySelectorAll('.paper-question')].map(q=>({top:q.getBoundingClientRect().top,bottom:q.getBoundingClientRect().bottom,id:q.dataset.questionId,blank:q.querySelector('.answer-space')?.getBoundingClientRect().height??0,answer:q.classList.contains('paper-answer-question'),continuation:q.hasAttribute('data-continuation')}));
   return {height:r.height,bottom,halfPage:(bottom-r.top-parseFloat(style.paddingTop)-1)/2,questions};
  }));
  for(const sheet of sheets){expect(sheet.height).toBeLessThan(1123);expect(sheet.questions.length).toBeGreaterThan(0);for(const q of sheet.questions)expect(q.bottom).toBeLessThanOrEqual(sheet.bottom+1);for(let i=1;i<sheet.questions.length;i++)expect(sheet.questions[i].top).toBeGreaterThanOrEqual(sheet.questions[i-1].bottom-.5);}
- for(const sheet of sheets)for(const q of sheet.questions)if(q.answer&&!q.continuation)expect(q.bottom-q.top).toBeGreaterThanOrEqual(sheet.halfPage-1);
+ const writing = new Map();
+ for(const sheet of sheets)for(const q of sheet.questions)if(q.answer)writing.set(q.id,(writing.get(q.id)??0)+q.blank);
+ for(const total of writing.values())expect(total).toBeGreaterThanOrEqual(sheets[0].halfPage-1);
  // A labelled writing continuation is valid; an orphan footer is not.
  return sheets.length;
 }
@@ -55,7 +57,10 @@ test('原卷阅读与紧凑模板实际PDF均无空白页、页脚孤页和越�
   const id=crypto.randomUUID();const saved=await request.post('/api/papers',{data:{id,title:'分页回归练习卷',questionIds:ids,settings:{templateId:'preset-homework',compact,notice:'独立完成，写清必要步骤。',infoFields:['姓名','日期'],style:{questionGap:4,showPageNumber:true},sections:[{id:'fill',title:'一、基础练习',acceptedTypes:['fill'],defaultScore:5,questionIds:ids.slice(0,8)},{id:'answer',title:'二、综合练习',acceptedTypes:['answer'],defaultScore:10,questionIds:ids.slice(8)}]}}});
   expect(saved.status()).toBe(201);
   await page.goto(`/papers/${id}/preview`);const pages=await geometry(page);
-  const response=await request.get(`/api/papers/${id}/pdf`,{timeout:65000});expect(response.status()).toBe(200);await checkPdf(await response.body(),pages);
+  const response=await request.get(`/api/papers/${id}/pdf`,{timeout:65000});expect(response.status()).toBe(200);const pdfBytes=await response.body();await checkPdf(pdfBytes,pages);
+  await mkdir('tmp/paper-writing-space',{recursive:true});
+  await writeFile(`tmp/paper-writing-space/${compact?'compact':'formal'}.pdf`,pdfBytes);
+  await page.locator('.printable-paper .paper-paginated').last().screenshot({path:`tmp/paper-writing-space/${compact?'compact':'formal'}-last.png`});
   await page.emulateMedia({media:'print'});
   expect(await page.locator('html').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(255, 255, 255)');
   await page.emulateMedia({media:'screen'});
