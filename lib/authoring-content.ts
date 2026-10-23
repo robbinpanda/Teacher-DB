@@ -3,6 +3,7 @@ import type { AuthoringChapterPlan, AuthoringRequest } from "./authoring-plan.ts
 import type { QuestionWithSource } from "./types.ts";
 import type { AuthoringReviewCheck } from "./authoring-review-checks.ts";
 import { chapterReviewEvidence, chapterReviewPassages } from "./authoring-review-evidence.ts";
+import type { SelectionAudit } from "./authoring-candidates.ts";
 
 export const chapterContentSchema = z.object({
   introduction: z.string().trim().min(10).max(3000),
@@ -31,6 +32,7 @@ export type SavedChapterContent = ChapterContent & {
   questionFingerprints: Record<string, string>;
   review: ChapterReview;
   traceId: string;
+  selectionAudit?: SelectionAudit;
   revisionNotes?: string[];
   teacherApproval?: { at: string; note: string };
 };

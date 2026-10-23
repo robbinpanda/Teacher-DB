@@ -71,7 +71,8 @@ export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, opti
     // Legacy strings may aid discovery, but never count as a confirmed knowledge assessment.
     const legacyIds = new Set(nodes.filter(node => tags.some(tag => node.label === tag || node.aliases.includes(tag))).map(node => node.id));
     const optionText = questionOptionText(row.optionsJson);
-    const text = `${row.stem}\n${optionText}\n${row.analysis}`.normalize("NFKC").replace(/图像/g, "图象");
+    const questionText = `${row.stem}\n${optionText}`.normalize("NFKC").replace(/图像/g, "图象");
+    const text = `${questionText}\n${row.analysis}`.normalize("NFKC").replace(/图像/g, "图象");
     let discoveryClues: Map<string, string> | undefined;
     const reasons: string[] = [];
     const matched = new Set<string>();
@@ -92,14 +93,18 @@ export function matchQuestions(rows: RetrievalRow[], scope: EducationScope, opti
       }
       for (const id of group) {
         const node = byId.get(id)!;
-        if ([node.label, ...node.aliases].some(term => text.includes(term))) { score += 10; reasons.push(`文字命中：${node.label}（待核对）`); return true; }
+        if ([node.label, ...node.aliases].some(term => questionText.includes(term))) { score += 20; reasons.push(`题干或选项命中：${node.label}（待核对）`); return true; }
       }
       if (scope.subject === "数学" && scope.stage === "high") {
         discoveryClues ??= trigonometryDiscoveryClues(row.stem, optionText);
         for (const id of group) {
           const clue = discoveryClues.get(id);
-          if (clue) { score += 11; reasons.push(`题干或选项线索：${byId.get(id)!.label}；${clue}（待核对）`); return true; }
+          if (clue) { score += 18; reasons.push(`题干或选项线索：${byId.get(id)!.label}；${clue}（待核对）`); return true; }
         }
+      }
+      for (const id of group) {
+        const node = byId.get(id)!;
+        if ([node.label, ...node.aliases].some(term => text.includes(term))) { score += 10; reasons.push(`解析文字命中：${node.label}（待核对）`); return true; }
       }
       return false;
     });

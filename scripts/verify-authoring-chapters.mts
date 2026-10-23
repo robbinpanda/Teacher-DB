@@ -12,6 +12,7 @@ import { readAuthoringChapterVersion } from "../server/services/authoring-histor
 import { getAuthoringDocument } from "../server/services/authoring-output.ts";
 import { readModel } from "../server/http/read-models.ts";
 import { createPaperExportToken } from "../lib/paper-export-token.ts";
+import { fingerprintRow, loadRetrievalRows } from "../lib/knowledge-retrieval.ts";
 
 await ensureDatabase();
 const db = getSqlite(), scope = { subject: "数学", stage: "high" as const }, now = new Date().toISOString();
@@ -28,7 +29,7 @@ const slot = { role: "example", knowledgeIds: [period], difficulty: 2, type: "fi
 const chapter = { id: "period", title: "周期计算", knowledgeIds: [period], prerequisites: [], objectives: ["能够计算最小正周期"], teachingNotes: "从图象到公式说明周期的本质。", slots: [slot, { ...slot, role: "practice" }] };
 const plan = { title: "周期专题讲义", audience: "高三学生", approach: "定义理解、例题示范、变式迁移逐步递进。", estimatedMinutes: 45, assumptions: [], chapters: [chapter, { ...chapter, id: "transfer", title: "周期方法迁移" }] };
 const calls: string[] = [];
-let reviewError = false, reviewReject = false, malformedSelection = false, stealing: (() => void) | undefined;
+let reviewError = false, reviewReject = false, malformedSelection = false, lateSelection = false, stealing: (() => void) | undefined;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (_url, init) => {
   const body = JSON.parse(String(init?.body)), messages = body.messages;
@@ -41,9 +42,14 @@ globalThis.fetch = async (_url, init) => {
   else if (system.includes("输出 JSON {items:")) {
     calls.push("select"); const chosen = new Set<string>();
     output = { items: input.pools.flatMap((pool: string[], slotIndex: number) => {
-      const id = pool.find(id => !chosen.has(id)); if (!id) return []; chosen.add(id);
+      const id = pool.find(id => !chosen.has(id) && (!lateSelection || ['late-130','late-131'].includes(id))); if (!id) return []; chosen.add(id);
       return [{ slotIndex, questionId: id, selectionReason: "从角系数的识别到周期公式代入，符合本组的计算目标。" }];
     }), gaps: [] };
+    if (lateSelection) {
+      assert.ok(input.candidates.every((candidate: {id:string;assessment:{difficulty:number|null}}) => candidate.id !== 'late-000' && candidate.assessment.difficulty === null), 'valid difficulty-5 question must not enter difficulty-2 pools');
+      const selected = output as {items:Array<{slotIndex:number}>;gaps:Array<{slotIndex:number;reason:string}>};
+      selected.gaps = input.chapter.slots.flatMap((_:unknown,slotIndex:number) => selected.items.some(item=>item.slotIndex===slotIndex)?[]:[{slotIndex,reason:'本批候选尚不满足本组教学要求，继续比较后续题目。'}]);
+    }
     if (malformedSelection) { (output as { gaps: unknown[] }).gaps = [{ slotIndex: 0, reason: "已经足量却错误报告缺题，须拒绝并修正。" }]; malformedSelection = false; }
   } else if (system.includes("独立审校教师")) {
     calls.push("review"); reviewModels.push(body.model); if (reviewError) return Response.json({ error: "temporary test failure" }, { status: 503 });
@@ -57,8 +63,8 @@ globalThis.fetch = async (_url, init) => {
   return Response.json({ choices: [{ message: { content: JSON.stringify(output) } }] });
 };
 const read = (id: string) => readAuthoringProject("teacher", scope, id)!;
-async function create(kind = "handout") {
-  const project = await createAuthoringProject("teacher", scope, { kind, instruction: "按照周期概念、例题、练习逐步生成详尽讲义。", documentIds: ["doc"], profileId: "model", reviewerProfileId: "reviewer" });
+async function create(kind = "handout", documentId = "doc") {
+  const project = await createAuthoringProject("teacher", scope, { kind, instruction: "按照周期概念、例题、练习逐步生成详尽讲义。", documentIds: [documentId], profileId: "model", reviewerProfileId: "reviewer" });
   await kickAuthoringPlanning();
   return controlAuthoringProject("teacher", scope, project.id, read(project.id).revision, "generate");
 }
@@ -109,6 +115,7 @@ try {
   const c = read(project.id).chapters[0];
   const edited = await editAuthoringChapter("teacher", scope, project.id, c.id, c.revision, { ...c.content, conclusion: "教师补充：结合图象检查结果，区分周期和最小正周期。" });
   assert.equal(edited.chapters[0].status, "needs_review");
+  assert.deepEqual(edited.chapters[0].content!.selectionAudit,c.content!.selectionAudit,'teacher editing preserves the actual comparison record');
   await assert.rejects(() => editAuthoringChapter("teacher", scope, project.id, c.id, c.revision, c.content), /变化/);
   assert.throws(() => approveAuthoringChapter("teacher", scope, project.id, c.id, edited.chapters[0].revision, ""), /核对/);
   approveAuthoringChapter("teacher", scope, project.id, c.id, edited.chapters[0].revision, "已逐项核对公式条件及例题推导，内容可以使用。");
@@ -213,5 +220,17 @@ try {
   assert.equal(read(stale.id).chapters[0].error, "replacement-owned");
   assert.equal(read(stale.id).chapters[0].content, null, "stale worker must not save checkpoint");
   const liveCalls = calls.length; await kickAuthoringChapters(); assert.equal(calls.length, liveCalls, "live lease prevents another chapter racing");
+  stealing=undefined;lateSelection=true;
+  db.prepare("UPDATE authoring_projects SET status='paused' WHERE status='generating'").run();
+  db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES('late-doc','teacher','分批候选','application/pdf','complete','数学','高三',?,?)").run(now,now);
+  for(let i=0;i<132;i++)db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,'late-doc',?,'fill',?,'参考答案','最小正周期公式','approved',1,'{}',?,?)").run(`late-${String(i).padStart(3,'0')}`,String(i),`求函数 sin(${i+100}x) 的最小正周期。`,now,now);
+  const wrong=loadRetrievalRows(db,'teacher',scope,['late-doc'],['late-000'])[0];
+  const classification={knowledge:[{id:period,evidence:'题干考查最小正周期的计算'}],methods:['公式变形'],competencies:['数学运算'],difficulty:5,difficultyReason:'此处模拟教师确认的高难度标签',prerequisites:[],confidence:.9};
+  db.prepare("INSERT INTO question_classifications(question_id,owner_id,fingerprint,catalog_version,content_json,status,created_at,updated_at) VALUES('late-000','teacher',?,'test',?,'confirmed',?,?)").run(fingerprintRow(wrong,scope),JSON.stringify(classification),now,now);
+  const late=await create('handout','late-doc');await kickAuthoringChapters();const lateChapter=read(late.id).chapters[0];
+  assert.equal(lateChapter.status,'complete',lateChapter.error??'');
+  assert.deepEqual(new Set(lateChapter.content!.items.map(item=>item.questionId)),new Set(['late-130','late-131']));
+  assert.equal(lateChapter.content!.selectionAudit!.rounds,6);assert.ok(lateChapter.content!.selectionAudit!.slots.every(slot=>slot.eligible===131&&slot.compared===131&&slot.remaining===0));
+  assert.equal(lateChapter.content!.selectionAudit!.traceIds.length,6);
   console.log("chapter workflow passed: selection, writing, review, pause/resume, cross-chapter deduplication, teacher edits, source freshness, checkpoint recovery, publication editions, print capability isolation, stale worker rejection");
 } finally { globalThis.fetch = originalFetch; db.close(); }

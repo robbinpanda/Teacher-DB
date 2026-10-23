@@ -212,6 +212,12 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   await page.getByRole('button',{name:'确认大纲，逐章生成'}).click();
   await expect(page.getByRole('button',{name:'已核对，采用本章'})).toBeEnabled({timeout:45000});
   await expect(page.locator('.studio-selected-question')).toHaveCount(2);
+  const selectionRecord=page.locator('details').filter({has:page.locator('summary',{hasText:'自动选题比较记录'})});
+  await selectionRecord.locator('summary').click();
+  await expect(selectionRecord).toContainText('尚未比较 0 道');
+  await expect(selectionRecord.locator('li')).toHaveCount(2);
+  await selectionRecord.screenshot({path:'tmp/teacher-pilot/selection-record-browser.png'});
+  await selectionRecord.locator('summary').click();
   expect(reviewModels).toContain('review-mock');
   await expect(page.locator('.studio-review-model')).toContainText(reviewerName);
   await page.locator('.studio-review-checks > summary').click();
