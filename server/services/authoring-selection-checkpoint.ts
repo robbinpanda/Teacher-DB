@@ -6,7 +6,7 @@ import { fingerprintRow, type RetrievalRow, type RetrievalHit } from '../../lib/
 import { validateSelectionCheckpoint, type SelectionCheckpoint } from '../../lib/authoring-candidates';
 
 export function selectionFingerprint(context:unknown,scope:EducationScope,rows:RetrievalRow[],lists:RetrievalHit[][]) {
-  const hash=createHash('sha256').update('selection-v1\n').update(JSON.stringify(context));
+  const hash=createHash('sha256').update('selection-v2-question-identity\n').update(JSON.stringify(context));
   const ids=new Set(lists.flatMap(list=>list.map(hit=>hit.id)));
   hash.update(JSON.stringify(lists.map(list=>list.map(hit=>hit.id))));
   for(const row of rows.filter(row=>ids.has(row.id)).sort((a,b)=>a.id.localeCompare(b.id)))hash.update(JSON.stringify([

@@ -2,13 +2,13 @@ import { matchQuestions, type RetrievalRow, type RetrievalHit } from './knowledg
 import type { EducationScope } from './education-scope.ts';
 import type { AuthoringChapterPlan } from './authoring-plan.ts';
 import { z } from 'zod';
+import { comparableQuestionText, questionIdentityKey } from './question-identity.ts';
 
 type Slot = AuthoringChapterPlan['slots'][number];
 type Selection = { items: Array<{slotIndex:number;questionId:string;selectionReason:string}>; gaps:Array<{slotIndex:number;reason:string}> };
-const stemKey = (stem:string) => stem.normalize('NFKC').replace(/[\s$\\{}]/g,'');
 
 /** Preserve evidence priority, but prevent one source dominating an equal-score batch. */
-export function diversifyCandidates(hits: RetrievalHit[]) {
+export function diversifyCandidates(hits: RetrievalHit[], keyFor: (hit: RetrievalHit) => string = hit => comparableQuestionText(hit.stem)) {
   const tiers = new Map<number, Map<string, RetrievalHit[]>>();
   for (const hit of hits) {
     const sources = tiers.get(hit.score) ?? new Map<string, RetrievalHit[]>();
@@ -18,8 +18,8 @@ export function diversifyCandidates(hits: RetrievalHit[]) {
   for (const [,sources] of [...tiers].sort(([a],[b])=>b-a)) {
     const groups = [...sources.values()];
     for (let index=0; groups.some(group=>index<group.length); index++) for (const group of groups) {
-      const hit=group[index]; if (!hit || stems.has(stemKey(hit.stem))) continue;
-      stems.add(stemKey(hit.stem)); result.push(hit);
+      const hit=group[index]; if (!hit || stems.has(keyFor(hit))) continue;
+      stems.add(keyFor(hit)); result.push(hit);
     }
   }
   return result;
@@ -27,13 +27,14 @@ export function diversifyCandidates(hits: RetrievalHit[]) {
 
 export function chapterCandidateLists(rows:RetrievalRow[],scope:EducationScope,slots:Slot[]) {
   const cache = new Map<string,RetrievalHit[]>();
+  const identities = new Map(rows.map(row => [row.id, questionIdentityKey(row)]));
   return slots.map(slot=>{
     const key=JSON.stringify([slot.knowledgeIds,slot.type]);
     let hits=cache.get(key);
     if(!hits){hits=matchQuestions(rows,scope,{knowledgeIds:slot.knowledgeIds,match:'all',types:slot.type==='any'?undefined:[slot.type]}).hits;cache.set(key,hits);}
     // A valid assessed difficulty cannot be overridden by the unfiltered fallback.
     // Stale/unknown labels remain candidates for explicit model/teacher judgement.
-    return diversifyCandidates(hits.filter(hit=>!hit.classification || hit.classification.difficulty===slot.difficulty));
+    return diversifyCandidates(hits.filter(hit=>!hit.classification || hit.classification.difficulty===slot.difficulty), hit => identities.get(hit.id)!);
   });
 }
 

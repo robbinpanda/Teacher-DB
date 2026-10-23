@@ -40,3 +40,16 @@ test('宽泛父标签不能证明所有子考点有选题，试卷父类只按�
  const required=inspectWorkCoverage(broad,{kind:'paper',requiredKnowledgeIds:[id]},data,scope);
  assert.equal(required.rows.find(row=>row.id===id).roles.assessment.selected,0);assert.equal(required.ready,false);
 });
+
+test('整份作品采用后同题干不同选项或题图仍计为不同题，真正复制阻止发布',()=>{
+ for(const kind of ['options','images','formula']){
+  const values=chapters(),a=values[0].content.questions[0],b=values[1].content.questions[0];
+  a.stem=b.stem='如图，选择正确的周期。';
+  if(kind==='options'){a.options=[{key:'A',content:'π'}];b.options=[{key:'A',content:'2π'}];}
+  if(kind==='images'){a.assets=[{role:'question',cropKey:'a.png'}];b.assets=[{role:'question',cropKey:'b.png'}];}
+  if(kind==='formula'){a.stem=String.raw`求 $\frac{1}{23}$`;b.stem=String.raw`求 $\frac{12}{3}$`;}
+  assert.equal(inspectWorkCoverage(plan,request,values,scope).ready,true);
+  values[1].content.questions[0]={...a,id:b.id};
+  assert.equal(inspectWorkCoverage(plan,request,values,scope).ready,false);
+ }
+});

@@ -2,8 +2,7 @@ import type { AuthoringPlan, AuthoringRequest } from "./authoring-plan.ts";
 import type { AuthoringChapter } from "./authoring-content.ts";
 import type { EducationScope } from "./education-scope.ts";
 import { expandKnowledgeIds, knowledgeCatalog } from "./knowledge-catalog.ts";
-
-export const questionStemKey = (text: string) => text.normalize("NFKC").replace(/[\s$\\{}]/g, "");
+import { questionIdentityKey } from "./question-identity.ts";
 
 /** Maximum matching: a shared question cannot satisfy two quotas. Reassign broad slots to protect narrow ones. */
 export function allocateUniqueQuestions(groups: Array<{ count: number; candidates: Array<{ id: string; key: string }> }>) {
@@ -61,7 +60,7 @@ export function inspectWorkCoverage(plan: AuthoringPlan, request: AuthoringReque
       for (const item of content?.items.filter(item => item.slotIndex === slotIndex) ?? []) {
         const question = content!.questions.find(question => question.id === item.questionId);
         if (!question || stale.has(item.questionId)) continue;
-        const stem = questionStemKey(question.stem);
+        const stem = questionIdentityKey(question);
         if (seenIds.has(question.id) || seenStems.has(stem)) { duplicates.push(question.id); continue; }
         seenIds.add(question.id); seenStems.add(stem); selectedQuestions++;
         if (adopted) adoptedQuestions++;

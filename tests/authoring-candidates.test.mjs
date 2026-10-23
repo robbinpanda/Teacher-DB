@@ -19,6 +19,18 @@ test('同分按来源轮换但确认依据优先，同题干只占一次候选�
  const result=diversifyCandidates([...hits,{...hits[0],id:'duplicate',score:1}]);
  assert.equal(result[0].id,'confirmed');assert.equal(result[2].id,'z-source');assert.equal(result.length,rows.length);
 });
+
+test('自动候选保留公式结构、选项及题图不同的题，真正复制只占一份',()=>{
+ const rows=[row('fraction-one',{stem:String.raw`求 $\sin(\frac{1}{23}x)$ 的最小正周期`}),row('fraction-two',{stem:String.raw`求 $\sin(\frac{12}{3}x)$ 的最小正周期`}),
+  row('options-one',{type:'single',stem:'以下哪个函数的最小正周期为π？',optionsJson:JSON.stringify([{key:'A',content:'sin x'},{key:'B',content:'sin 2x'}])}),
+  row('options-two',{type:'single',stem:'以下哪个函数的最小正周期为π？',optionsJson:JSON.stringify([{key:'A',content:'cos x'},{key:'B',content:'cos 2x'}])}),
+  row('image-one',{stem:'如图，求函数的最小正周期。',assetsJson:JSON.stringify([{id:'a',role:'question',cropKey:'a.png'}])}),
+  row('image-two',{stem:'如图，求函数的最小正周期。',assetsJson:JSON.stringify([{id:'b',role:'question',cropKey:'b.png'}])})];
+ const duplicate={...rows[0],id:'copy',stem:String.raw`求 $\sin(\dfrac {1} {23}x)$ 的最小正周期`};
+ const hits=chapterCandidateLists([...rows,duplicate],scope,[{...slot,type:'any'}])[0];
+ assert.equal(hits.length,6);assert.ok(hits.some(h=>h.id==='fraction-two'));assert.equal(hits.filter(h=>['fraction-one','copy'].includes(h.id)).length,1);
+ for(const id of ['options-one','options-two','image-one','image-two'])assert.ok(hits.some(hit=>hit.id===id));
+});
 test('缺题会检查超过旧 100 道上限的后续候选，最终记录真实比较数量',async()=>{
  const rows=Array.from({length:131},(_,i)=>row(String(i).padStart(3,'0')));
  const lists=chapterCandidateLists(rows,scope,[slot]);let calls=0;

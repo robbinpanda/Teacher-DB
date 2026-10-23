@@ -1,6 +1,7 @@
 import type { QuestionType, VariationReview } from "./types";
 import { parseQuestionDiagram, type QuestionDiagram } from "./question-diagrams.ts";
 import { parseStructuredModelJson } from "./model-json.ts";
+import { comparableQuestionText } from "./question-identity.ts";
 
 function objectValue(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
@@ -15,7 +16,7 @@ export function boundedText(value: unknown, limit: number, required = false) {
 }
 
 function comparableStem(value: string) {
-  return value.normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/[\s，。！？；：、,.!?;:'"“”‘’（）()【】\[\]]+/g, "");
+  return comparableQuestionText(value);
 }
 
 function hasBalancedMathDelimiters(value: string) {

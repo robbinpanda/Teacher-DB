@@ -6,7 +6,7 @@ import { putFile } from "../lib/file-storage.ts";
 import { ensureDatabase } from "../db/bootstrap.ts";
 import { getSqlite } from "../db/index.ts";
 import { encryptSecret } from "../lib/secret-box.ts";
-import { createAuthoringProject, readAuthoringProject, kickAuthoringPlanning, changeAuthoringModels } from "../server/services/authoring.ts";
+import { createAuthoringProject, readAuthoringProject, kickAuthoringPlanning, changeAuthoringModels, inspectAuthoringCoverage } from "../server/services/authoring.ts";
 import { controlAuthoringProject, kickAuthoringChapters, retryAuthoringChapter, editAuthoringChapter, restoreAuthoringChapter, replanAuthoringChapter, approveAuthoringChapter, readyAuthoringProject, publishAuthoringPaper } from "../server/services/authoring-chapters.ts";
 import { readAuthoringChapterVersion } from "../server/services/authoring-history.ts";
 import { getAuthoringDocument } from "../server/services/authoring-output.ts";
@@ -259,5 +259,33 @@ try {
   conflictingAnswerReview=true;const conflictProject=await create();const beforeConflict=calls.length;await kickAuthoringChapters();conflictingAnswerReview=false;
   const conflictChapter=read(conflictProject.id).chapters[0];assert.equal(conflictChapter.status,'failed');assert.match(conflictChapter.error!,/矛盾/);assert.ok(conflictChapter.content,'preserve the written chapter');
   assert.deepEqual(calls.slice(beforeConflict),['select','write','review'],'a contradictory academic verdict must not become a format-repair or automatic revision call');
-  console.log("chapter workflow passed: selection, writing, explicit answer checks, review, pause/resume, cross-chapter deduplication, teacher edits, source freshness, checkpoint recovery, publication editions, print capability isolation, stale worker rejection");
+  // Four distinct questions must survive all stages, including cross-chapter filtering.
+  db.prepare("UPDATE authoring_projects SET status='paused' WHERE status='generating'").run();
+  db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES('identity-doc','teacher','去重边界','application/pdf','complete','数学','高三',?,?)").run(now,now);
+  for(const [id,stem] of [
+    ['identity-a',String.raw`求函数 $y=\sin(\frac{1}{23}x)$ 的最小正周期。`],
+    ['identity-b',String.raw`求函数 $y=\sin(\frac{12}{3}x)$ 的最小正周期。`],
+    ['identity-c','如图，求函数的最小正周期。'],['identity-d','如图，求函数的最小正周期。'],
+    ['identity-copy',String.raw`求函数 $y=\sin(\dfrac {1} {23}x)$ 的最小正周期。`],
+  ]) db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,'identity-doc',?,'fill',?,'参考答案','求最小正周期并核对条件。','approved',1,'{}',?,?)").run(id,id,stem,now,now);
+  for(const [id,background] of [['identity-c','white'],['identity-d','black']]){
+    const key=`assets/${id}.png`;await putFile(key,await sharp({create:{width:40,height:20,channels:3,background}}).png().toBuffer());
+    db.prepare("INSERT INTO question_assets(id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES(?,?,'graph','question','题图',?,'{}',?)").run(id,id,key,now);
+  }
+  for(const row of loadRetrievalRows(db,'teacher',scope,['identity-doc']))db.prepare("INSERT INTO question_classifications(question_id,owner_id,fingerprint,catalog_version,content_json,status,created_at,updated_at) VALUES(?,'teacher',?,'test',?,'confirmed',?,?)").run(row.id,fingerprintRow(row,scope),JSON.stringify({...classification,difficulty:2}),now,now);
+  const identity=await create('handout','identity-doc');
+  assert.equal(inspectAuthoringCoverage('teacher',scope,identity.id).flatMap(chapter=>chapter.slots).reduce((n,slot)=>n+slot.allocatedConfirmedCount,0),4);
+  await kickAuthoringChapters();await kickAuthoringChapters();
+  const distinct=read(identity.id);assert.ok(distinct.chapters.every(chapter=>chapter.status==='complete'),JSON.stringify(distinct.chapters.map(c=>c.error)));
+  assert.equal(new Set(distinct.chapters.flatMap(chapter=>chapter.content!.items.map(item=>item.questionId))).size,4);
+  assert.equal(distinct.workCoverage!.selectedQuestions,4);assert.deepEqual(distinct.workCoverage!.duplicateQuestionIds,[]);
+  const second=distinct.chapters[1],copy={...second.content!,items:second.content!.items.map((item,index)=>index===0?{...item,questionId:'identity-copy'}:item)};
+  await assert.rejects(()=>editAuthoringChapter('teacher',scope,identity.id,second.id,second.revision,copy),/重复题/);
+  for(const chapter of distinct.chapters)approveAuthoringChapter('teacher',scope,identity.id,chapter.id,chapter.revision,'');
+  assert.equal(readyAuthoringProject('teacher',scope,identity.id).status,'completed');
+  const identityPrint=(await getAuthoringDocument('teacher',identity.id,scope,true))!;
+  assert.equal(identityPrint.chapters.flatMap(chapter=>chapter.content!.questions).length,4);
+  const figures=identityPrint.chapters.flatMap(chapter=>chapter.content!.questions).filter(question=>question.id==='identity-c'||question.id==='identity-d');
+  assert.equal(figures.length,2);assert.notEqual(figures[0].assets[0].url,figures[1].assets[0].url,'both distinct figures survive print preparation');
+  console.log("chapter workflow passed: selection, answer review, identity-aware cross-chapter filtering and supply, teacher edits, recovery, publication, source freshness and leases");
 } finally { globalThis.fetch = originalFetch; db.close(); }

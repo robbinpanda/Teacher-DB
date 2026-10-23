@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { comparableQuestionText } from "../../lib/question-identity";
 import { getSqlite } from "../../db";
 import { ensureDatabase } from "../../db/bootstrap";
 import type { EducationScope } from "../../lib/education-scope";
@@ -136,7 +137,7 @@ export async function kickWholePaperVariations() {
     }
     await freshSource(job.owner_id, scope, job.project_id);
     if (run?.status !== "awaiting_teacher" || run.candidates.length !== 1 || run.candidates[0].question.type !== item.source.type) throw new Error("候选题数量或题型与原卷不一致");
-    const stemKey = (value: unknown) => String(value ?? "").normalize("NFKC").replace(/[\s$\\{}]/g, "");
+    const stemKey = (value: unknown) => comparableQuestionText(String(value ?? ""));
     const current = requireProject(job.owner_id, scope, job.project_id);
     if (current.variation!.items.some(other => other.id !== item.id && ["awaiting_teacher", "accepting", "accepted"].includes(other.status) && other.candidate && stemKey(other.candidate.question.stem) === stemKey(run!.candidates[0].question.stem))) {
       throw new Error("这道变式与本卷其他候选题重复，请重新生成此题");

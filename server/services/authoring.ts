@@ -9,7 +9,8 @@ import { authoringPlanSystemPrompt, validateAuthoringPlan, validateAuthoringRequ
 import { knowledgeCatalog, curriculumSource, expandKnowledgeIds } from "../../lib/knowledge-catalog";
 import { loadRetrievalRows, matchQuestions, fingerprintRow } from "../../lib/knowledge-retrieval";
 import { authoringModel } from "./authoring-model";
-import { allocateUniqueQuestions, inspectWorkCoverage, questionStemKey } from "../../lib/authoring-coverage";
+import { allocateUniqueQuestions, inspectWorkCoverage } from "../../lib/authoring-coverage";
+import { questionIdentityKey } from "../../lib/question-identity";
 import { resolveModelProfile } from "../../lib/model-profiles";
 import { getPaperData, getUploadedPaperData } from "../../lib/question-repository";
 import type { AuthoringChapter, SavedChapterContent } from "../../lib/authoring-content";
@@ -122,6 +123,7 @@ export function inspectAuthoringCoverage(ownerId: string, scope: EducationScope,
   const project = readAuthoringProject(ownerId, scope, id);
   if (!project?.plan) throw new Error("作品还没有可检查的大纲");
   const rows = loadRetrievalRows(getSqlite(), ownerId, scope, project.request.documentIds.length ? project.request.documentIds : undefined);
+  const identities = new Map(rows.map(row => [row.id, questionIdentityKey(row)]));
   const cached = new Map<string, ReturnType<typeof matchQuestions>>(), catalog = knowledgeCatalog(scope.subject, scope.stage);
   const matching = project.plan.chapters.flatMap(chapter => chapter.slots.map(slot => {
     const key = JSON.stringify([slot.knowledgeIds.slice().sort(), slot.type]);
@@ -132,7 +134,7 @@ export function inspectAuthoringCoverage(ownerId: string, scope: EducationScope,
     return { slot, result, counts, eligible };
   }));
   const allocate = (confirmed: boolean) => allocateUniqueQuestions(matching.map(({ slot, eligible }) => ({ count: slot.count,
-    candidates: eligible.filter(hit => !confirmed || hit.classificationStatus === "confirmed").map(hit => ({ id: hit.id, key: questionStemKey(hit.stem) })) })));
+    candidates: eligible.filter(hit => !confirmed || hit.classificationStatus === "confirmed").map(hit => ({ id: hit.id, key: identities.get(hit.id)! })) })));
   const confirmed = allocate(true), classified = allocate(false); let index = 0;
   return project.plan.chapters.map(chapter => ({ id: chapter.id, title: chapter.title, slots: chapter.slots.map(() => {
     const at = index++, { slot, result, counts } = matching[at];

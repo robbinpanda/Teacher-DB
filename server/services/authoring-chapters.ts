@@ -19,11 +19,11 @@ import { loadSelectionCheckpoint, saveSelectionCheckpoint, selectionFingerprint 
 import { chapterContentSchema, chapterSystemPrompt, chapterReviewSystemPrompt, validateChapterContent, validateChapterReview, type SavedChapterContent, type AuthoringChapter } from "../../lib/authoring-content";
 import { validateAuthoringPlan } from "../../lib/authoring-plan";
 import type { QuestionWithSource } from "../../lib/types";
+import { questionIdentityKey } from "../../lib/question-identity";
 
 type Project = NonNullable<ReturnType<typeof readAuthoringProject>>;
 const time = () => new Date().toISOString();
 const errorMessage = (error: unknown) => error instanceof Error ? error.message.slice(0, 1800) : "章节处理失败";
-const stemKey = (text: string) => text.normalize("NFKC").replace(/[\s$\\{}]/g, "");
 class AuthoringPaused extends Error {}
 
 function requireProject(owner: string, scope: EducationScope, id: string): Project {
@@ -204,10 +204,10 @@ function assertQuestionTypes(items: SavedChapterContent["items"], questions: Que
   }
 }
 function assertNoDuplicateStems(questions: QuestionWithSource[], project: Project, chapterId: string) {
-  const used = new Set(project.chapters.filter(chapter => chapter.id !== chapterId).flatMap(chapter => chapter.content?.questions.map(question => stemKey(question.stem)) ?? []));
+  const used = new Set(project.chapters.filter(chapter => chapter.id !== chapterId).flatMap(chapter => chapter.content?.questions.map(questionIdentityKey) ?? []));
   for (const question of questions) {
-    const key = stemKey(question.stem);
-    if (used.has(key)) throw new Error("存在题干相同的重复题，请替换后再保存");
+    const key = questionIdentityKey(question);
+    if (used.has(key)) throw new Error("存在题干、选项与题图相同的重复题，请替换后再保存");
     used.add(key);
   }
 }
@@ -248,8 +248,8 @@ const selectionSchema = z.object({ items: z.array(z.object({ slotIndex: z.number
 async function generateChapter(owner: string, scope: EducationScope, project: Project, chapter: AuthoringChapter, checkpoint: (content: SavedChapterContent) => void, assertActive: (checkPause?:boolean) => void, token:string) {
   const rows = loadRetrievalRows(getSqlite(), owner, scope, project.request.documentIds.length ? project.request.documentIds : undefined);
   const other = project.chapters.filter(item => item.id !== chapter.id).flatMap(item => item.content?.questions ?? []);
-  const usedStems = new Set(other.map(question => stemKey(question.stem))), excluded = new Set(other.map(question => question.id));
-  const eligible = rows.filter(row => !usedStems.has(stemKey(row.stem)));
+  const usedStems = new Set(other.map(questionIdentityKey)), excluded = new Set(other.map(question => question.id));
+  const eligible = rows.filter(row => !usedStems.has(questionIdentityKey(row)));
   const lists = chapterCandidateLists(eligible, scope, chapter.plan.slots);
   const context=(model:Awaited<ReturnType<typeof resolveModelProfile>>)=>({owner,scope,projectId:project.id,chapterId:chapter.id,plan:chapter.plan,kind:project.kind,
     audience:project.plan!.audience,approach:project.plan!.approach,model:{id:model.id,model:model.model,provider:model.provider,service:model.service,baseUrl:model.baseUrl,isMultimodal:model.isMultimodal}});
@@ -257,7 +257,7 @@ async function generateChapter(owner: string, scope: EducationScope, project: Pr
   const resume=loadSelectionCheckpoint(getSqlite(),chapter.id,fingerprint,lists,chapter.plan.slots);
   const assertContext=async()=>{
     const profile=await resolveModelProfile(owner,project.request.profileId);
-    const current=loadRetrievalRows(getSqlite(),owner,scope,project.request.documentIds.length?project.request.documentIds:undefined).filter(row=>!usedStems.has(stemKey(row.stem)));
+    const current=loadRetrievalRows(getSqlite(),owner,scope,project.request.documentIds.length?project.request.documentIds:undefined).filter(row=>!usedStems.has(questionIdentityKey(row)));
     if(selectionFingerprint(context(profile),scope,current,chapterCandidateLists(current,scope,chapter.plan.slots))!==fingerprint)throw new Error("候选题或模型配置已变化，请重试本章以重新比较，旧进度不会用于新题目。");
   };
   const beforeSelectionRequest=async()=>{assertActive(true);await assertContext();assertActive(true);};
