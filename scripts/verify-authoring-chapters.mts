@@ -31,6 +31,8 @@ const plan = { title: "周期专题讲义", audience: "高三学生", approach: 
 const calls: string[] = [];
 let reviewError = false, reviewReject = false, malformedSelection = false, lateSelection = false, stealing: (() => void) | undefined;
 let pauseDuringWriting:string|undefined;
+let wrongPracticeAnswer=false;
+let conflictingAnswerReview=false;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (_url, init) => {
   const body = JSON.parse(String(init?.body)), messages = body.messages;
@@ -56,7 +58,8 @@ globalThis.fetch = async (_url, init) => {
     calls.push("review"); reviewModels.push(body.model); if (reviewError) return Response.json({ error: "temporary test failure" }, { status: 503 });
     assert.ok(input.evidenceSources.some((source: { ref: string; text: string }) => source.ref === "introduction:0" && source.text === input.content.introduction));
     assert.ok(input.evidenceSources.every((source: { path: string }) => !source.path.startsWith("review")));
-    output = { checks: (input.checks ?? []).map((check: { id: string }) => ({ id: check.id, passed: true, evidenceRefs: ["introduction:0"], reason: "已逐项核对该学科要求和本章对应内容。" })), knowledge: input.content.knowledge.map((item: { id: string }) => ({ id: item.id, correct: !reviewReject, complete: true, reason: "公式条件与本章知识要求逐项核对。" })), questions: input.content.items.map((item: { questionId: string }) => ({ id: item.questionId, aligned: true, difficultyAppropriate: true, explanationCorrect: true, reason: "题目条件明确，代入公式与计算过程一致。" })) };
+    output = { checks: (input.checks ?? []).map((check: { id: string }) => ({ id: check.id, passed: true, evidenceRefs: ["introduction:0"], reason: "已逐项核对该学科要求和本章对应内容。" })), knowledge: input.content.knowledge.map((item: { id: string }) => ({ id: item.id, correct: !reviewReject, complete: true, reason: "公式条件与本章知识要求逐项核对。" })), questions: input.content.items.map((item: { questionId: string },index:number) => ({ id: item.questionId, solvable: true, answerCorrect: !(wrongPracticeAnswer && index===1), computedAnswer: "$2\\pi$", aligned: true, difficultyAppropriate: true, explanationCorrect: true, reason: wrongPracticeAnswer && index===1 ? "原题参考答案与复算结果矛盾，须更换题目或修复原题。" : "题目条件明确，代入公式与计算过程一致。" })) };
+    if(conflictingAnswerReview)(output as {questions:Array<{reason:string}>}).questions[0].reason='复算结果与参考答案不符。修正：answerCorrect应为false。';
   } else if (system.includes("校本教辅编辑")) {
     calls.push(input.previousContent ? "revise" : "write"); stealing?.();
     if(pauseDuringWriting){const id=pauseDuringWriting;pauseDuringWriting=undefined;await controlAuthoringProject('teacher',scope,id,readAuthoringProject('teacher',scope,id)!.revision,'pause');}
@@ -117,6 +120,7 @@ try {
   const c = read(project.id).chapters[0];
   const edited = await editAuthoringChapter("teacher", scope, project.id, c.id, c.revision, { ...c.content, conclusion: "教师补充：结合图象检查结果，区分周期和最小正周期。" });
   assert.equal(edited.chapters[0].status, "needs_review");
+  assert.equal(edited.chapters[0].content!.review.questionChecks,undefined,'edited content must not retain stale per-question verification');
   assert.deepEqual(edited.chapters[0].content!.selectionAudit,c.content!.selectionAudit,'teacher editing preserves the actual comparison record');
   await assert.rejects(() => editAuthoringChapter("teacher", scope, project.id, c.id, c.revision, c.content), /变化/);
   assert.throws(() => approveAuthoringChapter("teacher", scope, project.id, c.id, edited.chapters[0].revision, ""), /核对/);
@@ -243,5 +247,17 @@ try {
   const selectionsBefore=calls.filter(call=>call==='select').length,writesBefore=calls.filter(call=>call==='write').length;
   await controlAuthoringProject('teacher',scope,writerState.id,writerState.revision,'resume');await kickAuthoringChapters();writerState=read(pausedWriter.id);
   assert.equal(writerState.chapters[0].status,'complete');assert.equal(calls.filter(call=>call==='select').length,selectionsBefore);assert.equal(calls.filter(call=>call==='write').length,writesBefore);assert.equal(calls.filter(call=>call==='review').length,reviewsBefore+1);
-  console.log("chapter workflow passed: selection, writing, review, pause/resume, cross-chapter deduplication, teacher edits, source freshness, checkpoint recovery, publication editions, print capability isolation, stale worker rejection");
+  db.prepare("UPDATE authoring_projects SET status='paused' WHERE status='generating'").run();
+  wrongPracticeAnswer=true;const badAnswerProject=await create();await kickAuthoringChapters();const badAnswerChapter=read(badAnswerProject.id).chapters[0];wrongPracticeAnswer=false;
+  assert.equal(badAnswerChapter.status,'needs_review');assert.equal(badAnswerChapter.content!.review.passed,false);
+  assert.equal(badAnswerChapter.content!.review.questionChecks!.length,2);
+  assert.equal(badAnswerChapter.content!.review.questionChecks![1].answerCorrect,false);
+  assert.ok(badAnswerChapter.content!.review.questionChecks![1].computedAnswer);
+  assert.equal(badAnswerChapter.content!.questions[1].answer,'参考答案','review/revision must not silently overwrite the bank answer');
+  assert.throws(()=>approveAuthoringChapter('teacher',scope,badAnswerProject.id,badAnswerChapter.id,badAnswerChapter.revision,''),/核对/);
+  db.prepare("UPDATE authoring_projects SET status='paused' WHERE status='generating'").run();
+  conflictingAnswerReview=true;const conflictProject=await create();const beforeConflict=calls.length;await kickAuthoringChapters();conflictingAnswerReview=false;
+  const conflictChapter=read(conflictProject.id).chapters[0];assert.equal(conflictChapter.status,'failed');assert.match(conflictChapter.error!,/矛盾/);assert.ok(conflictChapter.content,'preserve the written chapter');
+  assert.deepEqual(calls.slice(beforeConflict),['select','write','review'],'a contradictory academic verdict must not become a format-repair or automatic revision call');
+  console.log("chapter workflow passed: selection, writing, explicit answer checks, review, pause/resume, cross-chapter deduplication, teacher edits, source freshness, checkpoint recovery, publication editions, print capability isolation, stale worker rejection");
 } finally { globalThis.fetch = originalFetch; db.close(); }

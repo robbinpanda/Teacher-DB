@@ -1,5 +1,6 @@
 import { callTextModel } from "../../lib/text-model";
 import { parseModelJson } from "../../lib/question-classification";
+import { ChapterReviewConflictError } from "../../lib/authoring-content";
 
 /** Repair malformed/contradictory structured answers once, without weakening the plan. */
 export async function authoringModel<T>(input: Parameters<typeof callTextModel>[0], validate: (value: unknown) => T) {
@@ -12,6 +13,7 @@ export async function authoringModel<T>(input: Parameters<typeof callTextModel>[
     });
     try { return { value: validate(parseModelJson(result.content)), traceId: result.traceId, modelProfileId: result.profile.id, modelDisplayName: result.profile.displayName }; }
     catch (error) {
+      if (error instanceof ChapterReviewConflictError) throw error;
       if (attempt) throw error;
       repair = { error: error instanceof Error ? error.message.slice(0, 3000) : "返回格式不正确", previous: result.content.slice(0, 24000) };
     }

@@ -235,7 +235,7 @@ async function reviewChapter(project: Project, chapter: AuthoringChapter, conten
   const media = await questionImages(content.questions);
   const checks = authoringReviewChecks(chapter.plan.knowledgeIds);
   const result = await authoringModel({ ownerId: currentJobOwner(project.id), profileId: project.request.reviewerProfileId ?? project.request.profileId,
-    system: chapterReviewSystemPrompt, text: JSON.stringify({ plan: chapter.plan, checks, evidenceSources: chapterReviewEvidence(content), content: chapterContentSchema.parse(content), questions: content.questions.map(promptQuestion), imageMapping: media.mapping }),
+    system: chapterReviewSystemPrompt, text: JSON.stringify({ request: {kind:project.request.kind,instruction:project.request.instruction}, plan: chapter.plan, checks, evidenceSources: chapterReviewEvidence(content), content: chapterContentSchema.parse(content), questions: content.questions.map(promptQuestion), imageMapping: media.mapping }),
     images: media.images, purpose: "authoring_chapter_review", jsonMode: true, maxOutputTokens: 10000, timeoutMs: 240000, beforeRequest }, value => validateChapterReview(value, content, checks));
   return { ...result.value, traceId: result.traceId, modelProfileId: result.modelProfileId, modelDisplayName: result.modelDisplayName };
 }

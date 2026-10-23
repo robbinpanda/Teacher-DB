@@ -74,6 +74,14 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
     {draft && <>
       {draft.review.checks?.length ? <details className="studio-review-checks"><summary>逐项学科核查（{draft.review.checks.filter(check => check.passed).length} / {draft.review.checks.length} 项通过）</summary>{draft.review.checks.map(check => <section key={check.id}><p><strong>{check.passed ? "通过" : "需修正"}：</strong><MathText text={check.reason}/></p><details><summary>查看原文依据</summary><blockquote><MathText text={check.evidence}/></blockquote></details></section>)}</details> : null}
       {draft.gaps.length > 0 && <div className="studio-error"><strong>尚未满足题量</strong>{draft.gaps.map(gap => <p key={gap.slotIndex}>第 {gap.slotIndex + 1} 组：{gap.reason}</p>)}</div>}
+      {!!draft.review.questionChecks?.length && <details className="studio-question-checks"><summary>逐题答案与讲解核验（{draft.review.questionChecks.length} 题）</summary>{draft.review.questionChecks.map(check => {
+        const position=draft.items.findIndex(item=>item.questionId===check.id);
+        const source=draft.questions.find(question=>question.id===check.id);
+        return <section key={check.id}><h4>本章第 {position+1} 题{source ? ` · ${source.source.documentName} 第 ${source.number} 题` : ""}</h4>
+          <p>条件{check.solvable ? "可作答" : "不足或有矛盾"} · 原题答案{check.answerCorrect ? "通过" : "需核对"} · 解析与讲解{check.explanationCorrect ? "通过" : "需核对"}</p>
+          <p>模型复算答案（供核对）：<MathText text={check.computedAnswer}/></p><p><MathText text={check.reason}/></p>
+        </section>;
+      })}</details>}
       {!draft.review.passed && <div className="studio-error"><strong>待核对的问题</strong><ul>{draft.review.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></div>}
       {draft.selectionAudit && <details><summary>自动选题比较记录（{draft.selectionAudit.rounds} 批）</summary><p>只对已展示给模型的候选做了比较；题量满足后停止补查。教师修改内容不会改写这次记录。</p><ul>{draft.selectionAudit.slots.map(slot => <li key={slot.slotIndex}>第 {slot.slotIndex + 1} 组：符合检索条件 {slot.eligible} 道，已比较 {slot.compared} 道，尚未比较 {slot.remaining} 道。</li>)}</ul></details>}
       {!!draft.review.suggestions?.length && <details className="studio-review-suggestions"><summary>可选教学建议（不影响审校结论）</summary><ul>{draft.review.suggestions.map((suggestion,index)=><li key={index}><MathText text={suggestion}/></li>)}</ul></details>}

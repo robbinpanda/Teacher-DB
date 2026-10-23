@@ -30,7 +30,7 @@ test('拒绝虚构候选、跨章重复、配额不足不报告或无效缺口',
  assert.equal(validateChapterContent({...content,items:[content.items[0]],gaps:[{slotIndex:1,reason:'当前资料没有符合难度的独立练习题。'}]},plan,'handout',[['a'],[]],new Set()).gaps.length,1);
 });
 test('审校不能跳过题目或知识点；任一不通过均保留具体问题',()=>{
- const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'}))};
+ const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,solvable:true,answerCorrect:true,computedAnswer:"$2\\pi$",aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'}))};
  assert.equal(validateChapterReview(review,content).passed,true);
  const advisory=validateChapterReview({...review,suggestions:['可增加一个生活中的周期现象作引入。']},content);
  assert.equal(advisory.passed,true);assert.equal(advisory.issues.length,0);assert.equal(advisory.suggestions.length,1);
@@ -39,9 +39,33 @@ test('审校不能跳过题目或知识点；任一不通过均保留具体问�
  assert.equal(validateChapterReview({...review,suggestions:['可增加一个引入例子。'],knowledge:[{...review.knowledge[0],correct:false}]},content).passed,false);
 });
 
+test('没有讲解的练习仍需核验可解性和原题答案，保留逐题复算且不能默认缺失字段通过',()=>{
+ const review={knowledge:[{id,correct:true,complete:true,reason:'本章知识说明覆盖必要条件与教学目标。'}],questions:['a','b'].map(id=>({id,solvable:true,answerCorrect:true,computedAnswer:'$\\pi$',aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'角系数为2，非零振幅，最小正周期应为π。'}))};
+ assert.equal(content.items[1].teachingExplanation,'');
+ const saved=validateChapterReview(review,content);assert.deepEqual(saved.questionChecks,review.questions);
+ for(const field of ['solvable','answerCorrect']){
+  const changed=structuredClone(review);changed.questions[1][field]=false;
+  const rejected=validateChapterReview(changed,content);assert.equal(rejected.passed,false);assert.ok(rejected.issues.some(issue=>issue.startsWith('b：')));
+  for(const invalid of [undefined,'true',null]){changed.questions[1][field]=invalid;assert.throws(()=>validateChapterReview(changed,content));}
+ }
+ for(const computedAnswer of [undefined,'','   '])assert.throws(()=>validateChapterReview({...review,questions:[review.questions[0],{...review.questions[1],computedAnswer}]},content));
+ assert.equal(saved.questionChecks[1].computedAnswer,'$\\pi$');
+});
+
+test('审校文字明确自我纠正却未更新布尔字段时拒绝整份结果，不能静默翻转或放行',()=>{
+ const question={id:'a',solvable:true,answerCorrect:true,computedAnswer:'6小时',aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'T=2π/(π/6)=12小时。修正：answerCorrect应为false。'};
+ const input={knowledge:[],questions:[question]},practice={...content,knowledge:[],items:[content.items[0]]};
+ assert.throws(()=>validateChapterReview(input,practice),/未同步/);
+ for(const reason of ['原题答案错误，复算得到12小时。','本题答案本身错误，应当先修复题库。'])assert.throws(()=>validateChapterReview({...input,questions:[{...question,reason}]},practice),/矛盾/);
+ assert.throws(()=>validateChapterReview({...input,questions:[{...question,answerCorrect:false,reason:'本题答案本身正确，其他同题的答案有误。'}]},practice),/矛盾/);
+ const final={...question,answerCorrect:false,computedAnswer:'12小时',reason:'原题答案错误，T=2π/(π/6)=12小时。'};
+ const result=validateChapterReview({...input,questions:[final]},practice);assert.equal(result.passed,false);assert.equal(result.questionChecks[0].answerCorrect,false);
+ assert.equal(validateChapterReview({...input,questions:[{...question,computedAnswer:'12小时',reason:'原题答案正确，常见误区是漏掉周期公式分子中的2。'}]},practice).passed,true);
+});
+
  test('学科核查必须全部覆盖、引用原文，不能用笼统通过掩盖错误',()=>{
   const checks=[{id:'period.constant',requirement:'核验振幅与角系数非零条件'}];
-  const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'})),checks:[{id:'period.constant',passed:false,evidence:content.knowledge[0].formulas[0].conditions,reason:'需要结合原定义域核对退化为常函数时的最小正周期。'}]};
+  const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,solvable:true,answerCorrect:true,computedAnswer:"$2\\pi$",aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'})),checks:[{id:'period.constant',passed:false,evidence:content.knowledge[0].formulas[0].conditions,reason:'需要结合原定义域核对退化为常函数时的最小正周期。'}]};
   assert.equal(validateChapterReview(review,content,checks).passed,false);
   assert.equal(validateChapterReview({...review,checks:[{...review.checks[0],evidence:`'${review.checks[0].evidence}'`}]},content,checks).passed,false);
   assert.throws(()=>validateChapterReview({...review,checks:[{...review.checks[0],evidence:`'${review.checks[0].evidence}'。模型虚构的另一句原话。`}]},content,checks),/逐字引用/);
@@ -52,7 +76,7 @@ test('审校不能跳过题目或知识点；任一不通过均保留具体问�
 test('审校引用编号必须来自当前正文，原文由服务端还原，错误结论仍阻止通过',()=>{
  const checks=[{id:'period.constant',requirement:'核验振幅与角系数非零条件'}];
  const ref='knowledge.0.formulas.0.conditions:0';
- const base={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'})),checks:[{id:'period.constant',passed:false,evidenceRefs:[ref],reason:'原式退化后的定义域仍需核对，不能直接套用公式。'}]};
+ const base={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,solvable:true,answerCorrect:true,computedAnswer:"$2\\pi$",aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'})),checks:[{id:'period.constant',passed:false,evidenceRefs:[ref],reason:'原式退化后的定义域仍需核对，不能直接套用公式。'}]};
  const saved=validateChapterReview(base,content,checks);
  assert.equal(saved.passed,false);assert.deepEqual(saved.checks[0].evidenceRefs,[ref]);
  assert.equal(saved.checks[0].evidence,content.knowledge[0].formulas[0].conditions);

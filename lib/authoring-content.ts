@@ -26,6 +26,7 @@ export type ChapterContent = z.infer<typeof chapterContentSchema>;
 export type ChapterReview = {
   passed: boolean; issues: string[]; suggestions?: string[]; traceId?: string; modelProfileId?: string; modelDisplayName?: string;
   checks?: Array<{ id: string; passed: boolean; evidence: string; evidenceRefs?: string[]; reason: string }>;
+  questionChecks?: Array<{ id: string; solvable: boolean; answerCorrect: boolean; computedAnswer: string; aligned: boolean; difficultyAppropriate: boolean; explanationCorrect: boolean; reason: string }>;
 };
 export type SavedChapterContent = ChapterContent & {
   questions: QuestionWithSource[];
@@ -74,10 +75,23 @@ const reviewSchema = z.object({
   suggestions: z.array(z.string().trim().min(4).max(1200)).max(12).default([]),
   checks: z.array(z.object({ id: z.string(), passed: z.boolean(), evidence: z.string().trim().min(4).max(800).optional(), evidenceRefs: z.array(z.string().min(1).max(200)).min(1).max(4).optional(), reason: z.string().trim().min(8).max(1200) })).default([]),
   knowledge: z.array(z.object({ id: z.string(), correct: z.boolean(), complete: z.boolean(), reason: z.string().trim().min(8).max(1200) })),
-  questions: z.array(z.object({ id: z.string(), aligned: z.boolean(), difficultyAppropriate: z.boolean(), explanationCorrect: z.boolean(), reason: z.string().trim().min(8).max(1200) })),
+  questions: z.array(z.object({ id: z.string(), solvable: z.boolean(), answerCorrect: z.boolean(), computedAnswer: z.string().trim().min(1).max(2500), aligned: z.boolean(), difficultyAppropriate: z.boolean(), explanationCorrect: z.boolean(), reason: z.string().trim().min(8).max(1200) })),
 });
+/** A conflicting academic verdict requires attention, not a formatting retry that can erase the conflict. */
+export class ChapterReviewConflictError extends Error {}
 export function validateChapterReview(value: unknown, content: ChapterContent, checks: AuthoringReviewCheck[] = []): ChapterReview {
   const review = reviewSchema.parse(value);
+  for (const question of review.questions) {
+    // Catch explicit self-corrections left in the explanation; never infer or silently flip the verdict.
+    const fields = ['solvable','answerCorrect','aligned','difficultyAppropriate','explanationCorrect'] as const;
+    for (const field of fields) {
+      const corrections = [...question.reason.matchAll(new RegExp(`\\b${field}["']?\\s*(?:应(?:当)?(?:改|设)?为|应设置为|应是|[=:：])\\s*(true|false)\\b`, 'g'))];
+      if (corrections.some(match => (match[1] === 'true') !== question[field])) throw new ChapterReviewConflictError(`题目 ${question.id} 的 reason 明确要求 ${field} 改为另一个值，但 JSON 字段未同步。审校结论自相矛盾，已停止自动处理，请人工核对本题。正文已保留，可核对后重新审校；不能只改格式把矛盾消掉。`);
+    }
+    const saysCorrect = /(?:^|[。；\n])\s*(?:原题|题库|本题|原)答案(?:本身)?(?:是|为)?正确(?=[，。；,\s]|$)/.test(question.reason);
+    const saysWrong = /(?:^|[。；\n])\s*(?:原题|题库|本题|原)答案(?:本身)?(?:是|为)?(?:错误|不正确)(?=[，。；,\s]|$)/.test(question.reason);
+    if (saysCorrect && !question.answerCorrect || saysWrong && question.answerCorrect) throw new ChapterReviewConflictError(`题目 ${question.id} 的 answerCorrect 与 reason 对本题原答案的明确判断矛盾。已停止自动处理，请人工核对；其他题的错误不能改变本题判断，正文和原题数据保持不变。`);
+  }
   if (review.checks.length !== checks.length || new Set(review.checks.map(check => check.id)).size !== checks.length || checks.some(check => !review.checks.some(item => item.id === check.id))) throw new Error(`审校未逐项完成指定的学科核查。checks 的 id 必须恰好为 ${JSON.stringify(checks.map(check => check.id))}，每项一次；实际为 ${JSON.stringify(review.checks.map(check => check.id))}。`);
   const passages = chapterReviewPassages(content);
   const sources = new Map(chapterReviewEvidence(content).map(source => [source.ref, source.text]));
@@ -100,9 +114,9 @@ export function validateChapterReview(value: unknown, content: ChapterContent, c
     if (actual.length !== expected.length || new Set(actual).size !== actual.length || expected.some(id => !actual.includes(id))) throw new Error(`审校没有逐项覆盖知识讲解和所选题目。${field} 的 id 必须恰好为 ${JSON.stringify(expected)}，实际为 ${JSON.stringify(actual)}。没有选题时 questions 返回空数组。`);
   }
   const issues = [...review.knowledge.filter(item => !item.correct || !item.complete).map(item => `${item.id}：${item.reason}`),
-    ...review.questions.filter(item => !item.aligned || !item.difficultyAppropriate || !item.explanationCorrect).map(item => `${item.id}：${item.reason}`),
+    ...review.questions.filter(item => !item.solvable || !item.answerCorrect || !item.aligned || !item.difficultyAppropriate || !item.explanationCorrect).map(item => `${item.id}：${item.reason}`),
     ...groundedChecks.filter(item => !item.passed).map(item => `${item.id}：${item.reason}`)];
-  return { passed: !issues.length, issues, suggestions: review.suggestions, checks: groundedChecks };
+  return { passed: !issues.length, issues, suggestions: review.suggestions, checks: groundedChecks, questionChecks: review.questions };
 }
 
 export const chapterSystemPrompt = `你是校本教辅编辑。根据已确定的一章教学计划，认真比较给定题库候选，选题并编写可教学的讲义正文。
@@ -119,7 +133,10 @@ export const chapterReviewSystemPrompt = `你是独立审校教师。给定计�
 content 是本次待核查的不可变正文，本轮没有任何人替你修订正文。即使存在 repair，也只是在修复你上一轮审校 JSON 的格式或引用；repair.previous 不是新正文，更不是问题已经改正的证据。不得想象错误句已被删除或更正。每个结论必须重新对照当前 content 与所选 evidenceSources 原话；原话仍有错误就必须判 false。
 不要因为文字流畅就通过。图文条件不能确认、推导跳步导致错误、未覆盖计划要求时明确指出；给出简短可核对的依据，无需报告内部推理过程。
 区分必须修正的问题与可选教学建议：数学错误、缺少必要条件、未满足明确教学目标才判不通过。正确引用适用定理无需从头证明；已经对任意周期取特殊点推导必要条件是有效方法，省略显然的一步代入不能直接判为证明错误。增加例子、展开常规代数、润色等可选改进写入 suggestions，不改变正确性判断；真正的符号错误或定义域漏洞不能降为可选建议。
-返回 JSON：{knowledge:[{id,correct:boolean,complete:boolean,reason}],questions:[{id,aligned:boolean,difficultyAppropriate:boolean,explanationCorrect:boolean,reason}],suggestions:[]}。每个知识点和每道选入题必须恰好审校一次。
+无论例题还是练习，都必须先根据题干、选项和题图复算，不能把题库 answer/analysis 当作标准真值。逐题明确判定 solvable（条件足以作答）、answerCorrect（原题 answer 是否正确）、explanationCorrect（原题 analysis 与本章 teachingExplanation 的实质内容是否正确）。练习 teachingExplanation 为空不代表无需核对答案。开放题可有多个合理答案，按题意与评分要点判断，不强求唯一表述或字符串相等。
+区分解析缺少与解析错误：按 plan.slots[item.slotIndex].role 和教师 request.instruction 判断讲解要求。例题必须有完整教学讲解，教师明确要求每题详解时也必须检查完整性；普通练习或试卷题未要求详解时，空解析、空 teachingExplanation 或仅有“请核验答案”等占位提示不包含错误论断，不能仅因此把 explanationCorrect 判 false，可在 suggestions 建议补充。已有解析中任何实质错误仍必须判 false，不能借练习无需详解而忽略。
+computedAnswer 写你核验得到的答案或开放题评分要点；无法确定时说明缺失条件，不编造。reason 用简短的计算结果、必要条件或反例说明判断，不只复述“与参考答案一致”。选择题须核对选项键与实际选项内容。任何原题答案错误、条件不足或解析错误均使对应布尔项为 false，即使本章讲解是正确的也不能掩盖原题错误；正文修订不能改变题库原题，需提示教师更换或先修复原题。
+返回 JSON：{knowledge:[{id,correct:boolean,complete:boolean,reason}],questions:[{id,solvable:boolean,answerCorrect:boolean,computedAnswer,aligned:boolean,difficultyAppropriate:boolean,explanationCorrect:boolean,reason}],suggestions:[]}。每个知识点和每道选入题必须恰好审校一次；上述题目字段都必填，不能仅填写例题，不能用 knowledge 条目替代逐题核验。
 若输入有 checks，输出还必须包含 checks:[{id,passed:boolean,evidenceRefs:[原文编号],reason}]，逐条核查全部指定项。
 evidenceSources 是由本章正文生成的原文索引；每项 evidenceRefs 选择 1—4 个真实 ref，系统会填入对应原文。不要返回 evidence，不要自行改写、拼接引文，也不能把 checks.requirement 当作讲义原文。reason 写判断依据和具体修正建议。
 核查完整正文而非只看索引中的一条；索引分段不代表上下文被删除。缺少条件时引用最接近的相关表述并明确指出缺失。与 requirement 矛盾必须判 false。正文已经清楚表达的条件不能仅因措辞不同判错；不可用其他段落中的正确句子掩盖本文中的错误断言。`;
