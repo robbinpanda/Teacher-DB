@@ -16,6 +16,51 @@ async function prepare(context){
  db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,?,'1','fill','求函数 $y=sin(2x)$ 的最小正周期。','$\\pi$','由周期公式得 $T=2\\pi/2=\\pi$。','approved',1,'{}',?,?)").run(id,doc,time,time);db.close();return {id,doc};
 }
 
+test('选题中暂停保存批次，刷新继续及失败重试不重复已完成比较',async({page,context,request})=>{
+ test.setTimeout(100000);
+ const {doc}=await prepare(context),db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3')),now=new Date().toISOString();
+ for(let i=0;i<55;i++)db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,?,?,'fill',?,'参考答案','使用周期公式计算','approved',1,'{}',?,?)").run(crypto.randomUUID(),doc,String(i+2),`求函数 sin(${i+10}x) 的最小正周期。`,now,now);db.close();
+ const slot={role:'example',knowledgeIds:[period],difficulty:2,type:'fill',count:1,score:0,purpose:'比较周期的计算方法'};
+ const plan={title:'浏览器批次暂停恢复',audience:'高三学生',approach:'概念与例题配合练习逐步展开',estimatedMinutes:45,assumptions:[],chapters:[{id:'period',title:'周期计算',knowledgeIds:[period],prerequisites:[],objectives:['掌握周期公式的使用条件'],teachingNotes:'由概念到例题再到练习',slots:[slot,{...slot,role:'practice'}]}]};
+ const rounds=[];let releaseFirst,heldResponse,failedSecond=false;
+ const send=(res,output)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));};
+ const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{
+  const body=JSON.parse(raw),system=body.messages.find(m=>m.role==='system').content,user=body.messages.find(m=>m.role==='user').content,data=JSON.parse(typeof user==='string'?user:user.find(p=>p.type==='text').text);
+  if(system.includes('教学需求核对员'))return send(res,{numeric:[],knowledge:[],questions:[],assumptions:[]});
+  if(system.includes('输出 JSON {items:')){
+   rounds.push(data.round);const output={items:[],gaps:data.chapter.slots.map((_,slotIndex)=>({slotIndex,reason:'本批题目暂不符合教学目标，继续比较后续候选。'}))};
+   if(data.round===1){heldResponse=res;releaseFirst=()=>send(res,output);return;}
+   if(data.round===2&&!failedSecond){failedSecond=true;res.writeHead(503);res.end('fixture temporary selection failure');return;}
+   return send(res,output);
+  }
+  if(system.includes('校本教辅编辑')){res.writeHead(503);res.end('fixture writer failure');return;}
+  send(res,plan);
+ });});
+ await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
+ try{
+  const configured=await (await request.post('/api/model-profiles',{data:{displayName:`恢复测试-${crypto.randomUUID()}`,provider:'openai-compatible',baseUrl:`http://127.0.0.1:${model.address().port}/v1`,model:'mock',apiKey:'test-only',select:true}})).json();
+  const created=await (await request.post(`/api/authoring?${scope}`,{data:{kind:'handout',instruction:'制作周期专题讲义，包含例题和练习。',documentIds:[doc],profileId:configured.profile.id}})).json(),id=created.project.id;
+  const read=async()=>(await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project;
+  await expect.poll(async()=>(await read()).status,{timeout:30000}).toBe('planned');
+  await page.goto('/studio');await page.getByRole('button',{name:new RegExp(plan.title)}).click();await page.getByRole('button',{name:'确认大纲，逐章生成'}).click();
+  await expect.poll(()=>Boolean(releaseFirst)).toBe(true);await page.getByRole('button',{name:'暂停后续生成'}).click();
+  await expect.poll(async()=>(await read()).status).toBe('paused');releaseFirst();heldResponse=undefined;
+  await expect(page.getByRole('region',{name:'已保存的选题进度'})).toContainText('已保存 1 批比较');
+  await expect.poll(async()=>(await read()).chapters[0].status).toBe('pending');expect(rounds).toEqual([1]);
+  await page.reload();await page.getByRole('button',{name:new RegExp(plan.title)}).click();
+  await expect(page.getByRole('region',{name:'已保存的选题进度'})).toContainText('已保存 1 批比较');
+  await page.getByRole('button',{name:'调整本章计划',exact:true}).click();await page.getByRole('button',{name:'取消计划修改'}).click();
+  await page.getByRole('button',{name:'继续编写',exact:true}).click();
+  await expect(page.getByRole('button',{name:'继续上次生成'})).toBeEnabled({timeout:30000});expect(rounds).toEqual([1,2]);
+  await page.getByRole('button',{name:'继续上次生成'}).click();
+  await expect(page.getByRole('region',{name:'已保存的选题进度'})).toContainText('已保存 3 批比较',{timeout:30000});
+  await expect(page.getByRole('button',{name:'继续上次生成'})).toBeEnabled();expect(rounds).toEqual([1,2,2,3]);
+  await page.getByRole('region',{name:'已保存的选题进度'}).screenshot({path:'tmp/teacher-pilot/selection-progress-browser.png'});
+  const before=(await read()).chapters[0].revision;await page.getByRole('button',{name:'继续上次生成'}).click();
+  await expect.poll(async()=>{const c=(await read()).chapters[0];return c.status==='failed'&&c.revision>before;}).toBe(true);expect(rounds).toEqual([1,2,2,3]);
+ }finally{heldResponse?.destroy();model.closeAllConnections();await new Promise(resolve=>model.close(resolve));}
+});
+
 test('批量标注刷新后可核对确认，方法能力来源筛选与跨页选题有效',async({page,context,request})=>{
  test.setTimeout(90000);
  const {doc}=await prepare(context),db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3')),now=new Date().toISOString();
@@ -104,8 +149,9 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
  }finally{await new Promise(resolve=>model.close(resolve));}
 });
 test('教师可核对标签、按考点难度检索，再将选题带入原有组卷器',async({page,context,request})=>{
- const {id}=await prepare(context);await page.goto('/studio');
+ const {id,doc}=await prepare(context);await page.goto('/studio');
  await page.getByRole('button',{name:'精准选题与标注'}).click();
+ await page.getByRole('combobox',{name:'来源资料',exact:true}).selectOption(doc);await page.getByRole('button',{name:'检索',exact:true}).click();
  await page.locator('.studio-results article').filter({has:page.getByRole('checkbox',{name:`选择题目 ${id}`,exact:true})}).getByRole('button',{name:'查看题目与标签'}).click();
  await page.getByRole('button',{name:'手动标注',exact:true}).click();await page.getByRole('button',{name:'增加考点'}).click();
  await page.getByLabel('考点 1',{exact:true}).selectOption(period);

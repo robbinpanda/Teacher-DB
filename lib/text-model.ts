@@ -23,6 +23,7 @@ export async function callTextModel(input: {
   temperature?: number;
   timeoutMs?: number;
   minimumTimeoutMs?: number;
+  beforeRequest?: () => void | Promise<void>;
 }) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const controller = new AbortController();
@@ -46,6 +47,7 @@ export async function callTextModel(input: {
     });
     trace = new ModelCallTrace(dataDirectory(), { ownerId: input.ownerId, profileId: profile.id,
       provider: profile.provider, model: profile.model, purpose: input.purpose, documentId: input.documentId });
+    await input.beforeRequest?.();
     let response = await trace.fetch(request.endpoint, {
       method: "POST",
       headers: request.headers,
@@ -56,6 +58,7 @@ export async function callTextModel(input: {
       const detail = await response.text();
       if (isThinkingSettingError(detail)) throw new ModelCallError(thinkingDisabledMessage(profile.displayName), "thinking_mode_incompatible", false, 400);
       const fallback = compatibilityBody(request.body);
+      await input.beforeRequest?.();
       response = await trace.fetch(request.endpoint, {
         method: "POST",
         headers: request.headers,

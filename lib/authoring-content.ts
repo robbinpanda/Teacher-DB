@@ -3,7 +3,7 @@ import type { AuthoringChapterPlan, AuthoringRequest } from "./authoring-plan.ts
 import type { QuestionWithSource } from "./types.ts";
 import type { AuthoringReviewCheck } from "./authoring-review-checks.ts";
 import { chapterReviewEvidence, chapterReviewPassages } from "./authoring-review-evidence.ts";
-import type { SelectionAudit } from "./authoring-candidates.ts";
+import type { SelectionAudit, selectionProgressFromJson } from "./authoring-candidates.ts";
 
 export const chapterContentSchema = z.object({
   introduction: z.string().trim().min(10).max(3000),
@@ -40,6 +40,7 @@ export type AuthoringChapter = {
   id: string; position: number; plan: AuthoringChapterPlan; content: SavedChapterContent | null;
   status: "pending" | "running" | "complete" | "needs_review" | "failed" | "approved";
   revision: number; attempt: number; error: string | null;
+  selectionProgress?: ReturnType<typeof selectionProgressFromJson>;
   history?: Array<{ id: string; revision: number; reason: string; createdAt: string; hasPlan: boolean; hasContent: boolean }>;
 };
 export type AuthoringChapterVersion = {

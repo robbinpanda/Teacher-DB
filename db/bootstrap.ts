@@ -527,7 +527,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 18;
+export const DATABASE_VERSION = 19;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -677,6 +677,12 @@ function initialize() {
     `) },
     { version: 18, name: "authoring-chapter-plan-history", checksum: "authoring-chapter-plan-history-v1", up: sqlite => sqlite.exec(`
       ALTER TABLE authoring_chapter_versions ADD COLUMN plan_json TEXT;
+    `) },
+    { version: 19, name: "authoring-selection-checkpoints", checksum: "authoring-selection-checkpoints-v1", up: sqlite => sqlite.exec(`
+      CREATE TABLE authoring_selection_checkpoints (
+        chapter_id TEXT PRIMARY KEY REFERENCES authoring_chapters(id) ON DELETE CASCADE,
+        fingerprint TEXT NOT NULL, state_json TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
     `) },
   ]);
   initialized = true;

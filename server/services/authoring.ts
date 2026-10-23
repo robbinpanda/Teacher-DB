@@ -2,6 +2,7 @@ import { prepareWholePaperSource } from "./authoring-variation-source";
 import type { WholePaperSource, WholePaperVariation, WholePaperVariationItem } from "../../lib/authoring-variation";
 import { randomUUID } from "node:crypto";
 import { getSqlite } from "../../db";
+import { selectionProgressFromJson } from "../../lib/authoring-candidates";
 import { ensureDatabase } from "../../db/bootstrap";
 import type { EducationScope } from "../../lib/education-scope";
 import { authoringPlanSystemPrompt, validateAuthoringPlan, validateAuthoringRequest, planSummary, assumedPrerequisites, type AuthoringRequest, type AuthoringPlan } from "../../lib/authoring-plan";
@@ -30,10 +31,11 @@ export function readAuthoringProject(ownerId: string, scope: EducationScope, id:
   if (!row) return null;
   const plan = row.plan_json ? JSON.parse(row.plan_json) as AuthoringPlan : null;
   const requirements = row.requirements_json ? JSON.parse(row.requirements_json) as AuthoringRequirements : null;
-  const chapters = (sqlite.prepare("SELECT * FROM authoring_chapters WHERE project_id=? ORDER BY position").all(id) as Array<{ id: string; position: number; plan_json: string; content_json: string | null; status: AuthoringChapter["status"]; revision: number; attempt: number; error: string | null }>).map(chapter => ({
+  const chapters = (sqlite.prepare("SELECT c.*,s.state_json AS selection_state,s.updated_at AS selection_updated FROM authoring_chapters c LEFT JOIN authoring_selection_checkpoints s ON s.chapter_id=c.id WHERE c.project_id=? ORDER BY c.position").all(id) as Array<{ id: string; position: number; plan_json: string; content_json: string | null; status: AuthoringChapter["status"]; revision: number; attempt: number; error: string | null;selection_state:string|null;selection_updated:string|null }>).map(chapter => ({
     id: chapter.id, position: chapter.position, plan: JSON.parse(chapter.plan_json), content: chapter.content_json ? JSON.parse(chapter.content_json) as SavedChapterContent : null,
     history: (sqlite.prepare("SELECT id,revision,reason,created_at AS createdAt,plan_json IS NOT NULL AS hasPlan,content_json != 'null' AS hasContent FROM authoring_chapter_versions WHERE chapter_id=? ORDER BY revision DESC").all(chapter.id) as Array<{ id: string; revision: number; reason: string; createdAt: string; hasPlan: number; hasContent: number }>).map(version => ({ ...version, hasPlan: Boolean(version.hasPlan), hasContent: Boolean(version.hasContent) })),
     status: chapter.status, revision: chapter.revision, attempt: chapter.attempt, error: chapter.error,
+    selectionProgress: selectionProgressFromJson(chapter.selection_state,chapter.selection_updated),
   })) as AuthoringChapter[];
   const sourceSnapshot = sqlite.prepare("SELECT snapshot_json FROM authoring_variation_sources WHERE project_id=?").get(id) as { snapshot_json: string } | undefined;
   const variation: WholePaperVariation | null = sourceSnapshot ? { sourceTitle: (JSON.parse(sourceSnapshot.snapshot_json) as WholePaperSource).title,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chapterCandidateLists, diversifyCandidates, selectCandidateBatches } from '../lib/authoring-candidates.ts';
+import { chapterCandidateLists, diversifyCandidates, selectCandidateBatches,validateSelectionCheckpoint } from '../lib/authoring-candidates.ts';
 import { fingerprintRow,matchQuestions } from '../lib/knowledge-retrieval.ts';
 const scope={subject:'数学',stage:'high'},period='math.high.trigonometry.period';
 const slot={role:'example',knowledgeIds:[period],difficulty:2,type:'fill',count:1,score:5,purpose:'掌握周期公式的计算'};
@@ -57,4 +57,19 @@ test('多组共享候选按不同题目计整轮预算，不让重复 ID 耗尽�
   return {items,gaps};
  });
  assert.equal(calls,2);assert.equal(result.selection.items.length,30);assert.equal(result.selection.gaps.length,0);
+});
+test('失败批次不会推进已保存游标；重新加载后从下一未完成批次继续',async()=>{
+ const lists=chapterCandidateLists(Array.from({length:55},(_,i)=>row(String(i).padStart(3,'0'))),scope,[slot]);let saved;
+ await assert.rejects(selectCandidateBatches(lists,[slot],async(_pools,_previous,round)=>{if(round===2)throw new Error('network failure');return {items:[],gaps:[{slotIndex:0,reason:'本批不符合目标，继续查看后续'}],traceId:'first'};},{onCheckpoint:state=>{saved=structuredClone(state);}}),/network failure/);
+ assert.equal(saved.rounds,1);assert.equal(saved.positions[0],24);assert.equal(saved.seen[0].length,24);
+ const serialized=JSON.stringify(saved),rounds=[];
+ const resumed=await selectCandidateBatches(lists,[slot],async(pools,_previous,round)=>{rounds.push(round);assert.ok(!pools[0].includes('000'));return {items:[{slotIndex:0,questionId:'024',selectionReason:'后续批次符合要求'}],gaps:[],traceId:'second'};},{resume:JSON.parse(serialized),onCheckpoint:state=>{saved=state;}});
+ assert.deepEqual(rounds,[2]);assert.equal(resumed.audit.rounds,2);assert.equal(saved.finished,true);
+ const completed=await selectCandidateBatches(lists,[slot],async()=>{throw new Error('must not call');},{resume:saved});assert.equal(completed.selection.items[0].questionId,'024');
+ assert.equal(JSON.parse(serialized).positions[0],24,'loaded input checkpoint is immutable');
+});
+test('检查点拒绝越界游标、伪造完成、外来暂选题和未比较却跳过的候选',async()=>{
+ const lists=chapterCandidateLists(Array.from({length:55},(_,i)=>row(String(i).padStart(3,'0'))),scope,[slot]);let saved;
+ await assert.rejects(selectCandidateBatches(lists,[slot],async(_pools,_previous,round)=>{if(round>1)throw new Error('stop');return {items:[],gaps:[{slotIndex:0,reason:'尚需比较后续题目'}]};},{onCheckpoint:state=>{saved=structuredClone(state);}}),/stop/);
+ for(const patch of [{positions:[100]},{finished:true},{seen:[[]]},{selection:{items:[{slotIndex:0,questionId:'foreign',selectionReason:'foreign'}],gaps:[]}}])assert.throws(()=>validateSelectionCheckpoint({...saved,...patch},lists,[slot]));
 });
