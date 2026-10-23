@@ -10,82 +10,51 @@ test('答案解析模式不恢复学生卷设置的作答留白', () => {
   assert.equal(pages[0].columns[0][0].blank, 0);
 });
 
-test('简答题每页两题，题目和留白合计至少半页', () => {
+test('每道解答题下方独立保留半页，题干不抵扣留白', () => {
   const pages = paginatePaper(Array.from({ length: 5 }, () => answer()), 960, 0, 20);
-  assert.deepEqual(pages.map(page => page.columns[0].length), [2, 2, 1]);
-  for (const page of pages) for (const item of page.columns[0]) {
-    assert.ok(item.blank >= 100);
-    assert.ok(item.blank + 100 + (item.heading ? 40 : 0) >= 480);
+  assert.deepEqual(pages.map(page => page.columns[0].length), [1, 1, 1, 1, 1]);
+  for (const page of pages) assert.equal(page.columns[0][0].blank, 480);
+});
+
+test('含图题与长题也至少留半页，超长题留白不少于题干', () => {
+  for (const height of [100, 300, 350, 650]) {
+    const pages = paginatePaper([answer(height)], 960, 0, 20);
+    const items = pages.flatMap(page => page.columns.flat());
+    assert.equal(items.reduce((sum, item) => sum + item.blank, 0), Math.max(480, height));
+    assert.ok(pages.every(page => page.columns.flat().length));
+    if (height === 650) assert.equal(items[1].continuation, true);
   }
 });
 
-test('长题独占一页，留白不短于题干，不以固定高度截断', () => {
-  const pages = paginatePaper([answer(350), answer(300), answer(100)], 960, 0, 20);
-  assert.deepEqual(pages.map(page => page.columns[0].map(item => item.index)), [[0], [1], [2]]);
-  assert.equal(pages[0].columns[0][0].blank, 350);
-});
-
-test('超长题的留白跨页延续且总量不少于题干', () => {
-  const pages = paginatePaper([answer(650)], 960, 0, 20);
-  assert.equal(pages.length, 2);
-  assert.equal(pages[1].columns[0][0].continuation, true);
-  assert.equal(pages.flatMap(page => page.columns.flat()).reduce((sum, item) => sum + item.blank, 0), 650);
-});
-
-test('单张窄图右侧计入作答区，两道含图简答题仍可各占半页', () => {
-  const blocks = [answer(300, { sideAnswerHeight: 200 }), answer(300, { sideAnswerHeight: 200 })];
-  const pages = paginatePaper(blocks, 960, 0, 20);
-  assert.equal(pages.length, 1);
-  assert.equal(pages[0].columns[0].length, 2);
-  for (const item of pages[0].columns[0]) {
-    assert.equal(300 + item.blank + (item.heading ? 40 : 0), 480);
-    assert.ok(item.blank + 200 >= 300 - 200);
+test('手动较小留白不能压缩半页下限，较大设置完整保留', () => {
+  for (const minimumBlank of [0, 100, 400, 600, 1200]) {
+    const pages = paginatePaper([answer(300, { minimumBlank })], 960, 0, 20);
+    assert.equal(pages.flatMap(page => page.columns.flat()).reduce((sum, item) => sum + item.blank, 0), Math.max(480, minimumBlank));
   }
 });
 
-test('宽图和多图没有侧边作答区时仍保留完整留白', () => {
-  const pages = paginatePaper([answer(300), answer(300)], 960, 0, 20);
-  assert.equal(pages.length, 2);
-  assert.equal(pages[0].columns[0][0].blank, 300);
-});
-
-test('窄图不压缩明确设置的留白，也不能覆盖下一题', () => {
-  const pages = paginatePaper([answer(300, { sideAnswerHeight: 200, minimumBlank: 400 }), answer()], 960, 0, 20);
-  assert.equal(pages[0].columns[0][0].blank, 400);
-  assert.equal(pages.length, 2);
-  const tall = paginatePaper([answer(550, { sideAnswerHeight: 500 }), answer()], 960, 0, 20);
-  assert.equal(tall.length, 2);
-});
-
-test('双栏客观题后简答题另起单栏页，保留卷首空间和题序', () => {
+test('双栏客观题后解答题另起单栏，题序与半页留白不变', () => {
   const blocks = [answer(350, { answer: false, sectionId: 'fill' }), answer(350, { answer: false, sectionId: 'fill' }), answer(), answer()];
   const pages = paginatePaper(blocks, 960, 300, 20, 2);
-  assert.equal(pages[0].columns.length, 2);
   assert.deepEqual(pages[0].columns.map(column => column.map(item => item.index)), [[0], [1]]);
-  assert.equal(pages[1].columns.length, 1);
-  assert.deepEqual(pages[1].columns[0].map(item => item.index), [2, 3]);
+  assert.deepEqual(pages.slice(1).map(page => page.columns[0].map(item => item.index)), [[2], [3]]);
+  for (const page of pages.slice(1)) assert.equal(page.columns[0][0].blank, 480);
 });
 
-test('选择填空排完剩余恰好半页时，接排一道简答题，后续仍每页两题', () => {
-  const objective = answer(320, { answer: false, sectionId: 'fill' });
-  const pages = paginatePaper([objective, answer(), answer(), answer()], 960, 100, 20);
-  assert.deepEqual(pages.map(page => page.columns[0].map(item => item.index)), [[0, 1], [2, 3]]);
-  assert.equal(pages[0].columns[0][1].blank, 340);
+test('剩余恰好半页但放不下题干和半页作答区时整题换页', () => {
+  const pages = paginatePaper([answer(320, { answer: false, sectionId: 'fill' }), answer()], 960, 100, 20);
+  assert.deepEqual(pages.map(page => page.columns[0].map(item => item.index)), [[0], [1]]);
+  assert.equal(pages[1].columns[0][0].blank, 480);
 });
 
-test('剩余不足半页或长题加等高留白放不下时，整题换页', () => {
-  for (const [objectiveHeight, contentHeight, minimumBlank] of [[321, 100, 0], [320, 300, 0], [320, 100, 400]]) {
-    const pages = paginatePaper([answer(objectiveHeight, { answer: false, sectionId: 'fill' }), answer(contentHeight, { minimumBlank })], 960, 100, 20);
-    assert.deepEqual(pages.map(page => page.columns[0].map(item => item.index)), [[0], [1]]);
-    assert.ok(pages[1].columns[0][0].blank >= contentHeight);
+test('客观题后空间足够时接排，单栏双栏均保留完整半页作答区', () => {
+  for (const columns of [1, 2]) {
+    const pages = paginatePaper([answer(100, { answer: false, sectionId: 'fill' }), answer()], 960, 100, 20, columns);
+    assert.equal(pages.length, 1);
+    const items = [...pages[0].columns.flat(), ...(pages[0].answers ?? [])];
+    assert.deepEqual(items.map(item => item.index), [0, 1]);
+    assert.equal(items[1].blank, 480);
   }
-});
-
-test('双栏客观题下方剩余半页时，简答题跨整行接排', () => {
-  const pages = paginatePaper([answer(320, { answer: false, sectionId: 'fill' }), answer(), answer()], 960, 100, 20, 2);
-  assert.deepEqual(pages[0].columns.map(items => items.map(item => item.index)), [[0], []]);
-  assert.deepEqual(pages[0].answers.map(item => item.index), [1]);
-  assert.deepEqual(pages[1].columns[0].map(item => item.index), [2]);
 });
 
 test('双栏以较高的一栏为准，不能侵入另一栏已占用区域', () => {
