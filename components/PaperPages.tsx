@@ -68,7 +68,6 @@ export function PaperPages({ className, variables, header, binding, blocks, foot
           answer: blocks[index].answer,
           minimumBlank: blocks[index].minimumBlank,
           sideAnswerHeight,
-          figureHeight: Array.from(figures).reduce((sum, figure) => sum + height(figure), 0),
         };
       });
       setPages(paginatePaper(measurements, available, height(headerElement), gap, columns));

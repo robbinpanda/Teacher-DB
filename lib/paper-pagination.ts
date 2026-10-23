@@ -6,8 +6,6 @@ export type MeasuredPaperBlock = {
   minimumBlank: number;
   /** A single narrow image row also provides writing space to its right. */
   sideAnswerHeight?: number;
-  /** Figures occupy the page, but do not determine how much writing space is needed. */
-  figureHeight?: number;
 };
 
 export type PaperPageItem = { index: number; heading: boolean; blank: number; continuation?: boolean };
@@ -56,9 +54,10 @@ export function paginatePaper(blocks: MeasuredPaperBlock[], pageHeight: number, 
       const sideAnswerHeight = Math.min(block.contentHeight, Math.max(0, block.sideAnswerHeight ?? 0));
       // Do not count the same image row as both full-width question content and
       // required blank space. Keep its physical height so the next question cannot overlap it.
-      const textHeight = Math.max(0, block.contentHeight - (block.figureHeight ?? 0));
-      const automaticBlank = Math.max(0, Math.min(180, Math.max(80, textHeight * .75)) - sideAnswerHeight);
-      const blank = block.answer ? Math.max(automaticBlank, block.minimumBlank) : 0;
+      // Each answer question occupies at least half a page. Long prompts also
+      // receive an equally tall writing area, including usable space beside a narrow image.
+      const blank = block.answer ? Math.max(0, block.contentHeight - 2 * sideAnswerHeight,
+        block.minimumBlank, pageHeight / 2 - headingHeight - block.contentHeight) : 0;
       return { blank, height: headingHeight + block.contentHeight + blank + (block.answer ? 0 : gap) };
     };
     let dimensions = size();
@@ -67,8 +66,7 @@ export function paginatePaper(blocks: MeasuredPaperBlock[], pageHeight: number, 
       heading = true;
       dimensions = size();
     }
-    // Automatic whitespace never creates an otherwise empty continuation page.
-    // Only an explicitly requested writing area may continue on another page.
+    // Preserve the required writing area when a long question needs a continuation.
     if (used + dimensions.height > pageHeight + 0.5 && page.header && headerHeight > 0 && block.contentHeight + (heading ? block.headingHeight : 0) > pageHeight - used) {
       newPage(block.answer);
       heading = true;
@@ -80,7 +78,7 @@ export function paginatePaper(blocks: MeasuredPaperBlock[], pageHeight: number, 
     used += promptHeight + blank + (block.answer ? 0 : gap);
     if (!page.answers) columnHeights[column] = used;
     previousSection = block.sectionId;
-    let remainingBlank = block.answer ? Math.max(0, block.minimumBlank - blank) : 0;
+    let remainingBlank = Math.max(0, dimensions.blank - blank);
     while (remainingBlank > 0.5) {
       newPage(true);
       const part = Math.min(remainingBlank, pageHeight - 28);

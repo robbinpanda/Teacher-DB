@@ -25,11 +25,12 @@ async function geometry(page) {
  await expect.poll(()=>paper.locator('img').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
  const sheets=await paper.locator('.paper-paginated').evaluateAll(els=>els.map(e=>{
   const r=e.getBoundingClientRect(),style=getComputedStyle(e),bottom=r.bottom-parseFloat(style.paddingBottom)-(e.querySelector('footer')?.getBoundingClientRect().height??0);
-  const questions=[...e.querySelectorAll('.paper-question')].map(q=>({top:q.getBoundingClientRect().top,bottom:q.getBoundingClientRect().bottom}));
-  return {height:r.height,bottom,questions};
+  const questions=[...e.querySelectorAll('.paper-question')].map(q=>({top:q.getBoundingClientRect().top,bottom:q.getBoundingClientRect().bottom,answer:q.classList.contains('paper-answer-question'),continuation:q.hasAttribute('data-continuation')}));
+  return {height:r.height,bottom,halfPage:(bottom-r.top-parseFloat(style.paddingTop)-1)/2,questions};
  }));
  for(const sheet of sheets){expect(sheet.height).toBeLessThan(1123);expect(sheet.questions.length).toBeGreaterThan(0);for(const q of sheet.questions)expect(q.bottom).toBeLessThanOrEqual(sheet.bottom+1);for(let i=1;i<sheet.questions.length;i++)expect(sheet.questions[i].top).toBeGreaterThanOrEqual(sheet.questions[i-1].bottom-.5);}
- await expect(paper.locator('[data-continuation]')).toHaveCount(0);
+ for(const sheet of sheets)for(const q of sheet.questions)if(q.answer&&!q.continuation)expect(q.bottom-q.top).toBeGreaterThanOrEqual(sheet.halfPage-1);
+ // A labelled writing continuation is valid; an orphan footer is not.
  return sheets.length;
 }
 async function checkPdf(bytes,count) {
@@ -37,7 +38,7 @@ async function checkPdf(bytes,count) {
  expect(pdf.numPages).toBe(count);
  for(let i=1;i<=pdf.numPages;i++){
   const text=(await (await pdf.getPage(i)).getTextContent()).items.map(item=>item.str).join('');
-  expect(text).toMatch(/\d+\./); // A footer alone must never create a page.
+  expect(text).toMatch(/\d+\.|第\s*\d+\s*题作答区/); // A footer alone must never create a page.
   expect(text).not.toContain('返回试卷库');
  }
  await task.destroy();
