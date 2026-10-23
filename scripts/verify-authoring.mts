@@ -90,5 +90,18 @@ try {
  const stale=await createAuthoringProject("teacher",scope,input);
  globalThis.fetch=async()=>{db.prepare("UPDATE authoring_projects SET lease_owner='replacement',title='new owner' WHERE id=?").run(stale.id);return Response.json({choices:[{message:{content:JSON.stringify(plan)}}]});};
  await kickAuthoringPlanning();assert.equal(readAuthoringProject("teacher",scope,stale.id)!.title,"new owner");
- console.log("authoring verification passed: planning, tenant/scope isolation, stale labels, revision conflicts, failure, recovery, live leases, stale result rejection");
+ // Real SQL and project persistence for a school book drawing on more than 100 sources.
+ const documentIds=Array.from({length:105},(_,i)=>`book-source-${i}`);
+ for(const id of documentIds){
+  db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES(?,'teacher',?,'application/pdf','complete','数学','高三',?,?)").run(id,id,time,time);
+  db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,status,page_number,bbox_json,created_at,updated_at) VALUES(?,?,'1','fill',?,'π','approved',1,'{}',?,?)").run(`question-${id}`,id,`求 sin(2x) 的最小正周期。${id}`,time,time);
+ }
+ const book=await createAuthoringProject('teacher',scope,{...input,kind:'book',documentIds});
+ assert.deepEqual(readAuthoringProject('teacher',scope,book.id)!.request.documentIds,documentIds);
+ const bookRows=loadRetrievalRows(db,'teacher',scope,documentIds);
+ assert.equal(bookRows.length,105);assert.ok(bookRows.every(row=>documentIds.includes(row.documentId)));
+ db.prepare("UPDATE documents SET owner_id='other' WHERE id=?").run(documentIds[104]);
+ await assert.rejects(()=>createAuthoringProject('teacher',scope,{...input,documentIds}),/已审核/);
+ assert.equal(loadRetrievalRows(db,'teacher',scope,documentIds).length,104);
+ console.log("authoring verification passed: planning, tenant/scope isolation, stale labels, revision conflicts, recovery, leases, 105-source persistence and isolation");
 } finally {globalThis.fetch=originalFetch;db.close();}

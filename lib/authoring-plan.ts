@@ -3,10 +3,11 @@ import { expandKnowledgeIds, knowledgeCatalog } from "./knowledge-catalog.ts";
 import type { EducationScope } from "./education-scope.ts";
 import { assertPlanRequirements, type AuthoringRequirements } from "./authoring-requirements.ts";
 
+export const MAX_AUTHORING_SOURCES = 1000;
 export const authoringRequestSchema = z.object({
   kind: z.enum(["paper", "variation", "handout", "book"]),
   instruction: z.string().trim().min(8).max(6000),
-  documentIds: z.array(z.string().min(1).max(100)).max(100).default([]),
+  documentIds: z.array(z.string().min(1).max(100)).max(MAX_AUTHORING_SOURCES, `最多选择 ${MAX_AUTHORING_SOURCES} 份资料，也可使用整个当前题库`).default([]),
   requiredKnowledgeIds: z.array(z.string().min(1).max(150)).max(80).default([]),
   profileId: z.string().max(100).optional(),
   variationDifficulty: z.enum(["easier", "similar", "harder"]).default("similar"),

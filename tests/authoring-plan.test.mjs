@@ -6,6 +6,12 @@ const scope={subject:'数学',stage:'high'},period='math.high.trigonometry.perio
 const request=validateAuthoringRequest({kind:'handout',instruction:'给高三学生制作三角函数周期讲义',requiredKnowledgeIds:[period]},scope);
 const slot={role:'example',knowledgeIds:[period],difficulty:2,type:'fill',count:2,score:0,purpose:'直接运用周期公式'};
 const plan={title:'周期专题讲义',audience:'高三学生',approach:'由周期定义过渡到复合角周期计算',estimatedMinutes:45,assumptions:['学生已掌握弧度制'],chapters:[{id:'period',title:'周期的概念与计算',objectives:['理解最小正周期的意义'],knowledgeIds:[period],prerequisites:[],teachingNotes:'先观察单位圆运动，再由图象解释周期。',slots:[slot,{...slot,role:'practice',count:4}]}]};
+test('校本允许明确选择超过一百份资料，保留有界请求与整库语义',()=>{
+ const documentIds=Array.from({length:1000},(_,i)=>`document-${i}`);
+ assert.deepEqual(validateAuthoringRequest({...request,kind:'book',documentIds},scope).documentIds,documentIds);
+ assert.throws(()=>validateAuthoringRequest({...request,documentIds:[...documentIds,'overflow']},scope),/最多选择 1000/);
+ assert.deepEqual(validateAuthoringRequest({...request,documentIds:[]},scope).documentIds,[]);
+});
 test('讲义计划同时覆盖知识点、例题和练习，题量与分值可计算',()=>{
  assert.deepEqual(validateAuthoringPlan(plan,scope,request),plan);
  assert.deepEqual(planSummary(plan),{questionCount:6,totalScore:0,knowledgeCount:1});

@@ -8,6 +8,7 @@ import { AuthoringVariations } from "./AuthoringVariations";
 import { AuthoringRequirements } from "./AuthoringRequirements";
 import type { AuthoringRequirements as Requirements } from "../lib/authoring-requirements";
 import { AuthoringModelSettings } from "./AuthoringModelSettings";
+import { AuthoringSources } from "./AuthoringSources";
 import { AuthoringCoverage } from "./AuthoringCoverage";
 import type { WorkCoverage } from "../lib/authoring-coverage";
 import type { WholePaperVariation } from "../lib/authoring-variation";
@@ -106,7 +107,7 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
           <label>相对原卷难度<select value={variationDifficulty} onChange={event=>setVariationDifficulty(event.target.value)}><option value="easier">降低难度</option><option value="similar">保持难度</option><option value="harder">提高难度</option></select></label></>}
         <label>新作品审校模型<select value={reviewerProfileId} onChange={event=>setReviewerProfileId(event.target.value)}><option value="">使用本次模型独立复核</option>{models.map(model=><option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label>
         <label>教学要求<textarea rows={7} value={instruction} onChange={event => setInstruction(event.target.value)} placeholder="例如：给高三基础一般的学生做三角函数一轮复习讲义，按知识点逐步提高难度，每节有知识讲解、2 道例题和 4 道分层练习，覆盖公式、图象性质与实际应用。" /></label>
-        {kind !== "variation" && <><details><summary>选择资料范围（{sourceIds.length ? `已选 ${sourceIds.length} 份` : "整个当前题库"}）</summary><div className="studio-options">{sources.map(source => <label key={source.id}><input type="checkbox" checked={sourceIds.includes(source.id)} onChange={event => setSourceIds(event.target.checked ? [...sourceIds, source.id] : sourceIds.filter(id => id !== source.id))} />{source.name} · {source.questionCount} 题</label>)}</div></details>
+        {kind !== "variation" && <><AuthoringSources sources={sources} selected={sourceIds} onChange={setSourceIds} />
         <details><summary>必覆盖知识点（已选 {required.length} 项）</summary><div className="studio-options">{nodes.map(node => <label key={node.id}><input type="checkbox" checked={required.includes(node.id)} onChange={event => setRequired(event.target.checked ? [...required, node.id] : required.filter(id => id !== node.id))} />{node.parentId ? "　" : ""}{node.label}</label>)}</div></details>
         </>}
         <button className="btn btn-primary" disabled={busy || !profileId || instruction.trim().length < 8 || dirty || chapterDirty || kind === "variation" && !paperKey} onClick={() => void operate(async () => {

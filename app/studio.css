@@ -1,4 +1,5 @@
 .authoring-studio {max-width:1600px;margin:auto;--studio-border:#dce3df;}
+.studio-source-actions {display:flex;flex-wrap:wrap;gap:8px;}.studio-source-actions button {font-size:13px;padding:7px 10px;}.studio-source-picker p {font-size:13px;line-height:1.6;}.studio-source-picker>label {margin-top:12px;}
 .studio-header,.studio-topbar,.studio-detail>header,.studio-plan-actions,.studio-results header {display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}
 .studio-header h1 {font-size:28px;margin-bottom:8px;}.studio-header p,.studio-search>p {color:#5a6861;}
 .studio-topbar {margin:22px 0;border-bottom:1px solid var(--studio-border);padding-bottom:16px;}
