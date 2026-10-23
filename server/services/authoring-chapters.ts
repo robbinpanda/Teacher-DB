@@ -44,7 +44,10 @@ function assertSourceSnapshots(owner: string, scope: EducationScope, content: Sa
 export async function controlAuthoringProject(owner: string, scope: EducationScope, id: string, revision: number, action: "generate" | "pause" | "resume") {
   await ensureDatabase();
   const first = requireProject(owner, scope, id);
-  if (action !== "pause") await resolveModelProfile(owner, first.request.profileId);
+  if (action !== "pause") {
+    await resolveModelProfile(owner, first.request.profileId);
+    if (first.request.reviewerProfileId) await resolveModelProfile(owner, first.request.reviewerProfileId);
+  }
   return getSqlite().transaction(() => {
     const project = requireProject(owner, scope, id), db = getSqlite();
     if (project.revision !== revision) throw new Error("作品状态已变化，请刷新后重试");
@@ -59,12 +62,13 @@ export async function controlAuthoringProject(owner: string, scope: EducationSco
       .run(action === "pause" ? "paused" : "generating", time(), id);
     if (action === "resume") updateProjectProgress(id);
     return requireProject(owner, scope, id);
-  })();
+  }).immediate();
 }
 
 export async function retryAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, jobKind: "generate" | "review" | "revise" = "generate") {
   const project = requireProject(owner, scope, id);
-  await resolveModelProfile(owner, project.request.profileId);
+  await resolveModelProfile(owner, jobKind === "review" ? project.request.reviewerProfileId ?? project.request.profileId : project.request.profileId);
+  if (jobKind !== "review" && project.request.reviewerProfileId) await resolveModelProfile(owner, project.request.reviewerProfileId);
   return getSqlite().transaction(() => {
     const current = requireProject(owner, scope, id), chapter = current.chapters.find(item => item.id === chapterId);
     if (!chapter || chapter.revision !== revision || ["pending", "running"].includes(chapter.status)) throw new Error("章节已变化或正在处理，请刷新后重试");
@@ -75,7 +79,7 @@ export async function retryAuthoringChapter(owner: string, scope: EducationScope
       .run(jobKind, time(), chapterId);
     db.prepare("UPDATE authoring_projects SET status='generating',paper_id=NULL,revision=revision+1,updated_at=? WHERE id=?").run(time(), id);
     return requireProject(owner, scope, id);
-  })();
+  }).immediate();
 }
 
 export async function editAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, value: unknown) {
@@ -106,7 +110,7 @@ export async function editAuthoringChapter(owner: string, scope: EducationScope,
     // Existing published papers remain available; the revised project creates a new edition.
     getSqlite().prepare("UPDATE authoring_projects SET paper_id=NULL WHERE id=?").run(id);
     updateProjectProgress(id);
-  })();
+  }).immediate();
   return requireProject(owner, scope, id);
 }
 
@@ -146,12 +150,13 @@ export async function restoreAuthoringChapter(owner: string, scope: EducationSco
       .run(JSON.stringify(plan), current.status === "paused" ? "paused" : saved ? "reviewing" : "generating", time(), id);
     if (saved) updateProjectProgress(id);
     return requireProject(owner, scope, id);
-  })();
+  }).immediate();
 }
 
 export async function replanAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, projectRevision: number, value: unknown) {
   const first = requireProject(owner, scope, id);
   await resolveModelProfile(owner, first.request.profileId);
+  if (first.request.reviewerProfileId) await resolveModelProfile(owner, first.request.reviewerProfileId);
   return getSqlite().transaction(() => {
     const project = requireProject(owner, scope, id), chapter = project.chapters.find(chapter => chapter.id === chapterId), db = getSqlite();
     if (!chapter || chapter.revision !== revision || project.revision !== projectRevision) throw new Error("作品或章节已变化，请刷新后调整计划");
@@ -165,7 +170,7 @@ export async function replanAuthoringChapter(owner: string, scope: EducationScop
     db.prepare("UPDATE authoring_projects SET plan_json=?,paper_id=NULL,status=?,revision=revision+1,updated_at=? WHERE id=?")
       .run(JSON.stringify(plan), project.status === "paused" ? "paused" : "generating", time(), id);
     return requireProject(owner, scope, id);
-  })();
+  }).immediate();
 }
 
 export function approveAuthoringChapter(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, note: string) {
@@ -180,7 +185,7 @@ export function approveAuthoringChapter(owner: string, scope: EducationScope, id
       .run(JSON.stringify(approved), time(), chapterId);
     updateProjectProgress(id);
     return requireProject(owner, scope, id);
-  })();
+  }).immediate();
 }
 
 function assertQuestionTypes(items: SavedChapterContent["items"], questions: QuestionWithSource[], slots: AuthoringChapter["plan"]["slots"]) {
@@ -221,10 +226,10 @@ async function questionImages(questions: QuestionWithSource[]) {
 async function reviewChapter(project: Project, chapter: AuthoringChapter, content: SavedChapterContent) {
   const media = await questionImages(content.questions);
   const checks = authoringReviewChecks(chapter.plan.knowledgeIds);
-  const result = await authoringModel({ ownerId: currentJobOwner(project.id), profileId: project.request.profileId,
+  const result = await authoringModel({ ownerId: currentJobOwner(project.id), profileId: project.request.reviewerProfileId ?? project.request.profileId,
     system: chapterReviewSystemPrompt, text: JSON.stringify({ plan: chapter.plan, checks, content: chapterContentSchema.parse(content), questions: content.questions.map(promptQuestion), imageMapping: media.mapping }),
     images: media.images, purpose: "authoring_chapter_review", jsonMode: true, maxOutputTokens: 10000, timeoutMs: 240000 }, value => validateChapterReview(value, content, checks));
-  return { ...result.value, traceId: result.traceId };
+  return { ...result.value, traceId: result.traceId, modelProfileId: result.modelProfileId, modelDisplayName: result.modelDisplayName };
 }
 function currentJobOwner(id: string) {
   const row = getSqlite().prepare("SELECT owner_id FROM authoring_projects WHERE id=?").get(id) as { owner_id: string };
@@ -312,7 +317,7 @@ export async function kickAuthoringChapters() {
     db.prepare("UPDATE authoring_chapters SET status='running',attempt=attempt+1,revision=revision+1,error=NULL,lease_owner=?,lease_expires_at=?,updated_at=? WHERE id=?")
       .run(token, new Date(Date.now() + 180000).toISOString(), now, row.id);
     return row;
-  })();
+  }).immediate();
   if (!job) return;
   const scope = { subject: job.subject, stage: job.stage };
   const heartbeat = setInterval(() => db.prepare("UPDATE authoring_chapters SET lease_expires_at=? WHERE id=? AND lease_owner=? AND status='running'")
@@ -325,7 +330,7 @@ export async function kickAuthoringChapters() {
       archiveAuthoringChapter(job.id, "模型编写或修订前的保存版本");
       db.prepare("UPDATE authoring_chapters SET content_json=?,job_kind='review',revision=revision+1,updated_at=? WHERE id=? AND lease_owner=? AND status='running'")
         .run(JSON.stringify(saved), time(), job.id, token);
-    })();
+    }).immediate();
     let content: SavedChapterContent;
     if (job.job_kind === "review" || job.job_kind === "revise") {
       if (!chapter.content) throw new Error("没有可审校或修订的章节内容");
@@ -346,7 +351,7 @@ export async function kickAuthoringChapters() {
       const changed = db.prepare("UPDATE authoring_chapters SET content_json=?,status=?,revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='running'")
         .run(JSON.stringify(content), content.review.passed && !content.gaps.length ? "complete" : "needs_review", time(), job.id, token);
       if (changed.changes) updateProjectProgress(job.project_id);
-    })();
+    }).immediate();
   } catch (error) {
     const changed = db.prepare("UPDATE authoring_chapters SET status='failed',error=?,revision=revision+1,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='running'")
       .run(errorMessage(error), time(), job.id, token);
@@ -378,5 +383,5 @@ export function publishAuthoringPaper(owner: string, scope: EducationScope, id: 
     for (const chapter of project.chapters) for (const item of chapter.content!.items) insert.run(paperId, item.questionId, position++, chapter.plan.slots[item.slotIndex].score);
     db.prepare("UPDATE authoring_projects SET paper_id=?,revision=revision+1,updated_at=? WHERE id=?").run(paperId, time(), id);
     return { id: paperId };
-  })();
+  }).immediate();
 }

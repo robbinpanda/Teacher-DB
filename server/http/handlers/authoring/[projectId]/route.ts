@@ -3,7 +3,7 @@ import { getSqlite } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
 import { requestOwner } from "../../../../../lib/server";
 import { requestEducationScope } from "../../../../../lib/education-scope";
-import { readAuthoringProject, saveAuthoringPlan, inspectAuthoringCoverage } from "../../../../services/authoring";
+import { readAuthoringProject, saveAuthoringPlan, inspectAuthoringCoverage, changeAuthoringModels } from "../../../../services/authoring";
 import { controlAuthoringProject, publishAuthoringPaper } from "../../../../services/authoring-chapters";
 import { controlWholePaperVariation, publishWholePaperVariation } from "../../../../services/authoring-variations";
 
@@ -31,6 +31,7 @@ export async function POST(request: Request, context: Context) {
   const data = z.union([
     z.object({ action: z.literal("retry") }).strict(),
     z.object({ action: z.literal("publish") }).strict(),
+    z.object({ action: z.literal("models"), revision: z.number().int().min(1), profileId: z.string().min(1).max(100), reviewerProfileId: z.string().min(1).max(100).optional() }).strict(),
     z.object({ action: z.enum(["generate", "pause", "resume"]), revision: z.number().int().min(1) }).strict(),
   ]).safeParse(await request.json().catch(() => null));
   if (!data.success) return Response.json({ error: "操作无效" }, { status: 400 });
@@ -39,6 +40,7 @@ export async function POST(request: Request, context: Context) {
   if (!project) return Response.json({ error: "作品不存在" }, { status: 404 });
   if (data.data.action !== "retry") {
     try {
+      if (data.data.action === "models") return Response.json({ project: await changeAuthoringModels(owner, scope, id, data.data.revision, data.data.profileId, data.data.reviewerProfileId) });
       if (data.data.action === "publish") return Response.json(project.kind === "variation" ? await publishWholePaperVariation(owner, scope, id) : publishAuthoringPaper(owner, scope, id));
       if (project.kind === "variation") return Response.json({ project: await controlWholePaperVariation(owner, scope, id, data.data.revision, data.data.action) });
       return Response.json({ project: await controlAuthoringProject(owner, scope, id, data.data.revision, data.data.action) });

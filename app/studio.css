@@ -40,3 +40,6 @@
 .studio-history-table { overflow-x: auto; }
 .studio-history-table table { width: 100%; min-width: 480px; border-collapse: collapse; }
 .studio-history-table th,.studio-history-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #dbe3dd; }
+
+.studio-model-settings { border: 1px solid #dbe3dd; border-radius: 10px; padding: 16px; margin-bottom: 20px; background: #fafcf9; }
+.studio-model-settings p,.studio-review-model { color: #536358; line-height: 1.7; }

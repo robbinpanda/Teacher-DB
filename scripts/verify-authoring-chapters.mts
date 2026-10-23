@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { Worker } from "node:worker_threads";
+import { createRequire } from "node:module";
 import sharp from "sharp";
 import { putFile } from "../lib/file-storage.ts";
 import { ensureDatabase } from "../db/bootstrap.ts";
 import { getSqlite } from "../db/index.ts";
 import { encryptSecret } from "../lib/secret-box.ts";
-import { createAuthoringProject, readAuthoringProject, kickAuthoringPlanning } from "../server/services/authoring.ts";
+import { createAuthoringProject, readAuthoringProject, kickAuthoringPlanning, changeAuthoringModels } from "../server/services/authoring.ts";
 import { controlAuthoringProject, kickAuthoringChapters, retryAuthoringChapter, editAuthoringChapter, restoreAuthoringChapter, replanAuthoringChapter, approveAuthoringChapter, readyAuthoringProject, publishAuthoringPaper } from "../server/services/authoring-chapters.ts";
 import { readAuthoringChapterVersion } from "../server/services/authoring-history.ts";
 import { getAuthoringDocument } from "../server/services/authoring-output.ts";
@@ -19,6 +21,8 @@ db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grad
 for (let i = 1; i <= 8; i++) db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,'doc',?,'fill',?,'参考答案','用最小正周期公式计算并检查条件。','approved',1,'{}',?,?)").run(`q${i}`, String(i), `求函数 $y=\\sin(${i}x)$ 的最小正周期。`, now, now);
 await putFile("assets/q1.png", await sharp({ create: { width: 50, height: 30, channels: 3, background: "white" } }).png().toBuffer());
 db.prepare("INSERT INTO question_assets(id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES('asset','q1','figure','question','题图','assets/q1.png','{}',?)").run(now);
+for (const [id, owner] of [["reviewer", "teacher"], ["foreign-reviewer", "other"]]) db.prepare("INSERT INTO model_profiles(id,owner_id,display_name,provider,base_url,model,api_key_ciphertext,api_key_iv,api_key_mask,created_at,updated_at) VALUES(?,?,'Mock Reviewer','openai-compatible','https://review.invalid/v1','review-mock',?,?,'test',?,?)").run(id, owner, encrypted.ciphertext, encrypted.iv, now, now);
+const reviewModels: string[] = [];
 const period = "math.high.trigonometry.period";
 const slot = { role: "example", knowledgeIds: [period], difficulty: 2, type: "fill", count: 1, score: 5, purpose: "计算最小正周期" };
 const chapter = { id: "period", title: "周期计算", knowledgeIds: [period], prerequisites: [], objectives: ["能够计算最小正周期"], teachingNotes: "从图象到公式说明周期的本质。", slots: [slot, { ...slot, role: "practice" }] };
@@ -42,7 +46,7 @@ globalThis.fetch = async (_url, init) => {
     }), gaps: [] };
     if (malformedSelection) { (output as { gaps: unknown[] }).gaps = [{ slotIndex: 0, reason: "已经足量却错误报告缺题，须拒绝并修正。" }]; malformedSelection = false; }
   } else if (system.includes("独立审校教师")) {
-    calls.push("review"); if (reviewError) return Response.json({ error: "temporary test failure" }, { status: 503 });
+    calls.push("review"); reviewModels.push(body.model); if (reviewError) return Response.json({ error: "temporary test failure" }, { status: 503 });
     output = { checks: (input.checks ?? []).map((check: { id: string }) => ({ id: check.id, passed: true, evidence: input.content.introduction, reason: "已逐项核对该学科要求和本章对应内容。" })), knowledge: input.content.knowledge.map((item: { id: string }) => ({ id: item.id, correct: !reviewReject, complete: true, reason: "公式条件与本章知识要求逐项核对。" })), questions: input.content.items.map((item: { questionId: string }) => ({ id: item.questionId, aligned: true, difficultyAppropriate: true, explanationCorrect: true, reason: "题目条件明确，代入公式与计算过程一致。" })) };
   } else if (system.includes("校本教辅编辑")) {
     calls.push(input.previousContent ? "revise" : "write"); stealing?.();
@@ -52,12 +56,14 @@ globalThis.fetch = async (_url, init) => {
 };
 const read = (id: string) => readAuthoringProject("teacher", scope, id)!;
 async function create(kind = "handout") {
-  const project = await createAuthoringProject("teacher", scope, { kind, instruction: "按照周期概念、例题、练习逐步生成详尽讲义。", documentIds: ["doc"], profileId: "model" });
+  const project = await createAuthoringProject("teacher", scope, { kind, instruction: "按照周期概念、例题、练习逐步生成详尽讲义。", documentIds: ["doc"], profileId: "model", reviewerProfileId: "reviewer" });
   await kickAuthoringPlanning();
   return controlAuthoringProject("teacher", scope, project.id, read(project.id).revision, "generate");
 }
 try {
+  await assert.rejects(() => createAuthoringProject("teacher", scope, { kind: "handout", instruction: "生成周期专题讲义以便核对内容", profileId: "model", reviewerProfileId: "foreign-reviewer" }), /模型配置/);
   let project = await create();
+  await assert.rejects(() => changeAuthoringModels("teacher", scope, project.id, project.revision, "model", "reviewer"), /暂停/);
   assert.equal(project.chapters.length, 2);
   await controlAuthoringProject("teacher", scope, project.id, project.revision, "pause");
   const before = calls.length; await kickAuthoringChapters(); assert.equal(calls.length, before, "paused projects must not run");
@@ -73,6 +79,27 @@ try {
   assert.throws(() => approveAuthoringChapter("other", scope, project.id, project.chapters[0].id, project.chapters[0].revision, ""), /不存在/);
   for (const c of project.chapters) approveAuthoringChapter("teacher", scope, project.id, c.id, c.revision, "");
   assert.equal(readyAuthoringProject("teacher", scope, project.id).status, "completed");
+  assert.ok(reviewModels.every(model => model === "review-mock"), "all initial reviews must use the chosen reviewer");
+  const beforeModels = read(project.id), savedChapters = JSON.stringify(beforeModels.chapters);
+  assert.equal(beforeModels.chapters[0].content!.review.modelProfileId, "reviewer");
+  await assert.rejects(() => changeAuthoringModels("other", scope, project.id, beforeModels.revision, "model"), /不存在/);
+  await assert.rejects(() => changeAuthoringModels("teacher", scope, project.id, beforeModels.revision, "model", "foreign-reviewer"), /模型配置/);
+  project = await changeAuthoringModels("teacher", scope, project.id, beforeModels.revision, "model");
+  assert.equal(JSON.stringify(project.chapters), savedChapters, "changing future models must not alter saved content or adoption");
+  assert.equal(project.request.reviewerProfileId, undefined);
+  await assert.rejects(() => changeAuthoringModels("teacher", scope, project.id, beforeModels.revision, "model", "reviewer"), /变化/);
+  await retryAuthoringChapter("teacher", scope, project.id, project.chapters[0].id, project.chapters[0].revision, "review");
+  await kickAuthoringChapters(); project = read(project.id);
+  assert.equal(reviewModels.at(-1), "mock"); assert.equal(project.chapters[0].content!.review.modelProfileId, "model");
+  project = approveAuthoringChapter("teacher", scope, project.id, project.chapters[0].id, project.chapters[0].revision, "");
+  project = await changeAuthoringModels("teacher", scope, project.id, project.revision, "model", "reviewer");
+  db.prepare("UPDATE model_profiles SET enabled=0 WHERE id='model'").run();
+  await retryAuthoringChapter("teacher", scope, project.id, project.chapters[0].id, project.chapters[0].revision, "review");
+  await kickAuthoringChapters(); project = read(project.id);
+  assert.equal(project.chapters[0].status, "complete", "review-only work must not require an enabled writer");
+  assert.equal(project.chapters[0].content!.review.modelDisplayName, "Mock Reviewer");
+  db.prepare("UPDATE model_profiles SET enabled=1 WHERE id='model'").run();
+  project = approveAuthoringChapter("teacher", scope, project.id, project.chapters[0].id, project.chapters[0].revision, "");
   const printed = (await getAuthoringDocument("teacher", project.id, scope, true))!;
   assert.equal(printed.chapters.length, 2);
   assert.ok(printed.chapters.flatMap(c => c.content!.questions).find(q => q.id === "q1")!.assets[0].url!.startsWith("data:image/png;base64,"), "print-only document embeds owned images without broad file authorization");
@@ -141,6 +168,42 @@ try {
   const completedAgain = read(project.id); assert.equal(completedAgain.chapters[0].status, "complete"); assert.equal(JSON.stringify(completedAgain.chapters[1]), preserved);
   approveAuthoringChapter("teacher", scope, project.id, target.id, completedAgain.chapters[0].revision, "");
   assert.equal(readyAuthoringProject("teacher", scope, project.id).workCoverage!.ready, true);
+
+  // A second connection must not commit between a transactional version read and write.
+  const signal = new Int32Array(new SharedArrayBuffer(12));
+  const contender = new Worker(`
+    const {workerData}=require('node:worker_threads');
+    const Database=require(workerData.module), db=new Database(workerData.path,{timeout:100});
+    const signal=new Int32Array(workerData.signal);
+    Atomics.store(signal,0,1);Atomics.notify(signal,0);
+    Atomics.wait(signal,1,0,5000);
+    try {db.prepare("UPDATE documents SET updated_at=updated_at WHERE id='doc'").run();Atomics.store(signal,2,1);}
+    catch(error){Atomics.store(signal,2,error.code==='SQLITE_BUSY'?2:3);}
+    finally{Atomics.notify(signal,2);db.close();}
+  `, { eval: true, workerData: { module: createRequire(import.meta.url).resolve("better-sqlite3"), path: db.name, signal: signal.buffer } });
+  const exited = new Promise<number>(resolve => contender.once("exit", resolve));
+  Atomics.wait(signal,0,0,5000);assert.equal(Atomics.load(signal,0),1);
+  const originalPrepare = db.prepare;
+  let challenged = false;
+  db.prepare = ((sql: string) => {
+    const statement = originalPrepare.call(db, sql);
+    if (sql.startsWith("SELECT * FROM authoring_projects")) {
+      const get = statement.get.bind(statement) as (...args: unknown[]) => unknown;
+      statement.get = (...args: unknown[]) => {
+        const row = get(...args);
+        if (db.inTransaction && !challenged) {
+          challenged = true;Atomics.store(signal,1,1);Atomics.notify(signal,1);
+          Atomics.wait(signal,2,0,5000);
+          assert.equal(Atomics.load(signal,2),2,"competing writer must wait until this version-checked mutation commits");
+        }
+        return row;
+      };
+    }
+    return statement;
+  }) as typeof db.prepare;
+  try { await changeAuthoringModels("teacher",scope,project.id,read(project.id).revision,"model","reviewer"); }
+  finally { db.prepare=originalPrepare;Atomics.store(signal,1,1);Atomics.notify(signal,1);await exited; }
+  assert.ok(challenged);
 
   const stale = await create();
   stealing = () => db.prepare("UPDATE authoring_chapters SET lease_owner='replacement',error='replacement-owned' WHERE id=?").run(stale.chapters[0].id);

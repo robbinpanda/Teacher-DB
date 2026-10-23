@@ -59,7 +59,7 @@ export async function createAuthoringProject(ownerId: string, scope: EducationSc
   // Resolve before enqueueing, so missing or another teacher's model fails visibly.
   const profile = await resolveModelProfile(ownerId, request.profileId);
   request.profileId = profile.id;
-  if (wholePaper) request.reviewerProfileId = (await resolveModelProfile(ownerId, request.reviewerProfileId ?? profile.id)).id;
+  if (wholePaper || request.reviewerProfileId) request.reviewerProfileId = (await resolveModelProfile(ownerId, request.reviewerProfileId ?? profile.id)).id;
   const sqlite = getSqlite();
   if (request.documentIds.length) {
     const rows = loadRetrievalRows(sqlite, ownerId, scope, request.documentIds);
@@ -75,7 +75,7 @@ export async function createAuthoringProject(ownerId: string, scope: EducationSc
     const insert = sqlite.prepare("INSERT INTO authoring_variation_items(id,project_id,position,source_json,updated_at) VALUES(?,?,?,?,?)");
     wholePaper.items.forEach((item, position) => insert.run(randomUUID(), id, position, JSON.stringify(item), time));
   }
-  })();
+  }).immediate();
   return readAuthoringProject(ownerId, scope, id)!;
 }
 
@@ -93,7 +93,27 @@ export function saveAuthoringPlan(ownerId: string, scope: EducationScope, id: st
     sqlite.prepare("UPDATE authoring_projects SET title=?,plan_json=?,requirements_json=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=?")
       .run(plan?.title ?? project.title, plan ? JSON.stringify(plan) : null, requirements ? JSON.stringify(requirements) : null, new Date().toISOString(), id, ownerId);
     return readAuthoringProject(ownerId, scope, id)!;
-  })();
+  }).immediate();
+}
+
+export async function changeAuthoringModels(ownerId: string, scope: EducationScope, id: string, revision: number, profileId: string, reviewerProfileId?: string) {
+  const assertEditable = (project: ReturnType<typeof readAuthoringProject>) => {
+    if (!project) throw new Error("作品不存在");
+    if (project.kind === "variation") throw new Error("整卷变式的模型随逐题任务保存，请创建新版本选择模型");
+    if (project.revision !== revision) throw new Error("作品已变化，请刷新后修改模型");
+    if (["queued", "planning", "generating"].includes(project.status) || project.chapters.some(chapter => chapter.status === "running")) throw new Error("请先暂停并等待当前任务结束，再修改本作品模型");
+    return project;
+  };
+  assertEditable(readAuthoringProject(ownerId, scope, id));
+  const writer = await resolveModelProfile(ownerId, profileId);
+  const reviewer = reviewerProfileId ? await resolveModelProfile(ownerId, reviewerProfileId) : null;
+  return getSqlite().transaction(() => {
+    const project = assertEditable(readAuthoringProject(ownerId, scope, id));
+    const request = { ...project.request, profileId: writer.id, reviewerProfileId: reviewer?.id };
+    getSqlite().prepare("UPDATE authoring_projects SET request_json=?,revision=revision+1,updated_at=? WHERE id=?")
+      .run(JSON.stringify(request), new Date().toISOString(), id);
+    return readAuthoringProject(ownerId, scope, id)!;
+  }).immediate();
 }
 
 export function inspectAuthoringCoverage(ownerId: string, scope: EducationScope, id: string) {
@@ -130,7 +150,7 @@ export async function kickAuthoringPlanning() {
     sqlite.prepare("UPDATE authoring_projects SET status='planning',lease_owner=?,lease_expires_at=?,error=NULL,updated_at=? WHERE id=?")
       .run(token, new Date(Date.now() + 10 * 60_000).toISOString(), now, candidate.id);
     return candidate;
-  })();
+  }).immediate();
   if (!job) return;
   const scope = { subject: job.subject, stage: job.stage }, request = JSON.parse(job.request_json) as AuthoringRequest;
   const heartbeat = setInterval(() => {

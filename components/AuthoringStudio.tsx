@@ -7,6 +7,7 @@ import { AuthoringChapters } from "./AuthoringChapters";
 import { AuthoringVariations } from "./AuthoringVariations";
 import { AuthoringRequirements } from "./AuthoringRequirements";
 import type { AuthoringRequirements as Requirements } from "../lib/authoring-requirements";
+import { AuthoringModelSettings } from "./AuthoringModelSettings";
 import { AuthoringCoverage } from "./AuthoringCoverage";
 import type { WorkCoverage } from "../lib/authoring-coverage";
 import type { WholePaperVariation } from "../lib/authoring-variation";
@@ -94,7 +95,7 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
   function edit(plan: AuthoringPlan) { setDraft(plan); setDirty(true); setCoverage(null); }
   return <main className="page-shell authoring-studio">
     <header className="studio-header"><div><h1>备课工作台</h1><p>从教学要求开始，确定大纲后逐章选题、编写和审校，核对后导出。</p></div><Link className="btn" href="/papers/new">手动组卷</Link></header>
-    <div className="studio-topbar"><nav aria-label="备课工具"><button className={tab === "authoring" ? "active" : ""} onClick={() => setTab("authoring")}>教学规划</button><button className={tab === "search" ? "active" : ""} disabled={dirty || chapterDirty} onClick={() => setTab("search")}>精准选题与标注</button></nav><label>本次使用模型<select value={profileId} onChange={event => setProfileId(event.target.value)}><option value="">选择模型</option>{models.map(model => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label></div>
+    <div className="studio-topbar"><nav aria-label="备课工具"><button className={tab === "authoring" ? "active" : ""} onClick={() => setTab("authoring")}>教学规划</button><button className={tab === "search" ? "active" : ""} disabled={dirty || chapterDirty} onClick={() => setTab("search")}>精准选题与标注</button></nav><label>{tab === "authoring" ? "新作品规划与编写模型" : "题目标注模型"}<select value={profileId} onChange={event => setProfileId(event.target.value)}><option value="">选择模型</option>{models.map(model => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label></div>
     {!models.length && <p>尚无可用模型，可先使用检索与手动标注，或前往 <Link href="/settings/models">模型配置</Link>。</p>}
     {error && <p className="studio-error" role="alert">{error}</p>}
     {tab === "search" ? <KnowledgeWorkbench scopeQuery={scopeQuery} nodes={nodes} profileId={profileId} sources={sources} /> : <div className="studio-layout">
@@ -102,21 +103,23 @@ function StudioWorkspace({ scopeQuery }: { scopeQuery: string }) {
         <h2>准备什么内容</h2>
         <label>作品类型<select value={kind} onChange={event => setKind(event.target.value as typeof kind)}><option value="paper">试卷</option><option value="variation">整卷变式</option><option value="handout">专题讲义</option><option value="book">校本 / 教辅</option></select></label>
         {kind === "variation" && <><label>选择原卷<select value={paperKey} onChange={event=>setPaperKey(event.target.value)}><option value="">选择已审核的原卷</option>{papers.map(paper=><option key={`${paper.kind}:${paper.id}`} value={`${paper.kind}:${paper.id}`} disabled={paper.approvedCount !== paper.questionCount}>{paper.kind === "uploaded" ? "上传卷" : "组卷"} · {paper.title} · {paper.questionCount} 题</option>)}</select></label>
-          <label>相对原卷难度<select value={variationDifficulty} onChange={event=>setVariationDifficulty(event.target.value)}><option value="easier">降低难度</option><option value="similar">保持难度</option><option value="harder">提高难度</option></select></label>
-          <label>独立审校模型<select value={reviewerProfileId} onChange={event=>setReviewerProfileId(event.target.value)}><option value="">使用本次模型独立复核</option>{models.map(model=><option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label></>}
+          <label>相对原卷难度<select value={variationDifficulty} onChange={event=>setVariationDifficulty(event.target.value)}><option value="easier">降低难度</option><option value="similar">保持难度</option><option value="harder">提高难度</option></select></label></>}
+        <label>新作品审校模型<select value={reviewerProfileId} onChange={event=>setReviewerProfileId(event.target.value)}><option value="">使用本次模型独立复核</option>{models.map(model=><option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label>
         <label>教学要求<textarea rows={7} value={instruction} onChange={event => setInstruction(event.target.value)} placeholder="例如：给高三基础一般的学生做三角函数一轮复习讲义，按知识点逐步提高难度，每节有知识讲解、2 道例题和 4 道分层练习，覆盖公式、图象性质与实际应用。" /></label>
         {kind !== "variation" && <><details><summary>选择资料范围（{sourceIds.length ? `已选 ${sourceIds.length} 份` : "整个当前题库"}）</summary><div className="studio-options">{sources.map(source => <label key={source.id}><input type="checkbox" checked={sourceIds.includes(source.id)} onChange={event => setSourceIds(event.target.checked ? [...sourceIds, source.id] : sourceIds.filter(id => id !== source.id))} />{source.name} · {source.questionCount} 题</label>)}</div></details>
         <details><summary>必覆盖知识点（已选 {required.length} 项）</summary><div className="studio-options">{nodes.map(node => <label key={node.id}><input type="checkbox" checked={required.includes(node.id)} onChange={event => setRequired(event.target.checked ? [...required, node.id] : required.filter(id => id !== node.id))} />{node.parentId ? "　" : ""}{node.label}</label>)}</div></details>
         </>}
         <button className="btn btn-primary" disabled={busy || !profileId || instruction.trim().length < 8 || dirty || chapterDirty || kind === "variation" && !paperKey} onClick={() => void operate(async () => {
           const paper = papers.find(paper=>`${paper.kind}:${paper.id}` === paperKey);
-          const result = await studioRequest<{ project: Project }>(`/api/authoring?${scopeQuery}`, "POST", { kind, instruction, documentIds: kind === "variation" ? [] : sourceIds, requiredKnowledgeIds: kind === "variation" ? [] : required, profileId, ...(kind === "variation" ? { sourcePaperId:paper?.id,sourcePaperKind:paper?.kind,variationDifficulty,reviewerProfileId:reviewerProfileId||undefined } : {}) }); adopt(result.project); await refreshList();
+          const result = await studioRequest<{ project: Project }>(`/api/authoring?${scopeQuery}`, "POST", { kind, instruction, documentIds: kind === "variation" ? [] : sourceIds, requiredKnowledgeIds: kind === "variation" ? [] : required, profileId, reviewerProfileId:reviewerProfileId||undefined, ...(kind === "variation" ? { sourcePaperId:paper?.id,sourcePaperKind:paper?.kind,variationDifficulty } : {}) }); adopt(result.project); await refreshList();
         })}>{busy ? "正在提交…" : kind === "variation" ? "读取原卷，确认逐题对应" : "生成教学大纲"}</button>
         <h3>最近的作品</h3><div className="studio-projects">{projects.map(item => <button key={item.id} disabled={busy || dirty || chapterDirty} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${item.id}?${scopeQuery}`)).project))}>{item.title}<small>{statusLabels[item.status] ?? item.status}</small></button>)}</div>
       </aside>
       <section className="studio-plan">
         {!project && <div className="studio-empty"><h2>把教学目标变成一份可检查的计划</h2><p>说明学生基础、范围、课时、题量和期望难度。规划会列出各章目标、例题与练习配额，再检查哪些知识点缺题。</p><p>每章保留题库来源、选题理由、知识讲解和审校结果。内容可以逐章修改、替换题目和重新生成。</p></div>}
         {running && !project.variation && <div role="status" className="studio-empty"><h2>{statusLabels[project.status]}</h2><p>任务已保存，刷新后可从最近作品继续查看。逐章编写包含选题、正文和独立审校，长讲义可以暂停并继续。</p></div>}
+        {project && project.kind !== "variation" && <AuthoringModelSettings models={models} profileId={project.request.profileId ?? ""} reviewerProfileId={project.request.reviewerProfileId} disabled={busy || dirty || chapterDirty} running={Boolean(running)}
+          onChange={(writerId, reviewerId) => void operate(async () => { const result = await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "POST", { action: "models", revision: project.revision, profileId: writerId, reviewerProfileId: reviewerId }); setProject(result.project); })}/>}
         {project?.variation && <AuthoringVariations project={project} scopeQuery={scopeQuery} onUpdate={value=>adopt(value as Project)}/>}
         {project?.error && <div role="alert" className="studio-error"><p>{project.error}</p><button className="btn" disabled={busy || dirty} onClick={() => void operate(async () => adopt((await studioRequest<{ project: Project }>(`/api/authoring/${project.id}?${scopeQuery}`, "POST", { action: "retry" })).project))}>重试规划</button></div>}
         {project && requirementsDraft && <>

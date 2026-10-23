@@ -51,6 +51,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
   }
   return <article className="studio-chapter-content">
     <header><h3>{chapter.position + 1}. {chapter.plan.title}</h3><span>{labels[chapter.status]}</span></header>
+    {draft?.review.modelDisplayName && <p className="studio-review-model">本次审校模型：{draft.review.modelDisplayName}</p>}
     {chapter.error && <p className="studio-error" role="alert">{chapter.error}</p>}{error && <p className="studio-error" role="alert">{error}</p>}
     {working && <p role="status">本章第 {chapter.attempt || 1} 次处理。进度保存在后台，可以刷新后继续查看。</p>}
     {!!chapter.history?.length && <ChapterHistory history={chapter.history} version={historical} busy={busy} canRestore={!dirty && projectStatus !== "generating" && chapter.status !== "running" && (chapter.status !== "pending" || projectStatus === "paused")}

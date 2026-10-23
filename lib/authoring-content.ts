@@ -22,7 +22,7 @@ export const chapterContentSchema = z.object({
 });
 export type ChapterContent = z.infer<typeof chapterContentSchema>;
 export type ChapterReview = {
-  passed: boolean; issues: string[]; traceId?: string;
+  passed: boolean; issues: string[]; traceId?: string; modelProfileId?: string; modelDisplayName?: string;
   checks?: Array<{ id: string; passed: boolean; evidence: string; reason: string }>;
 };
 export type SavedChapterContent = ChapterContent & {
@@ -79,7 +79,7 @@ export function validateChapterReview(value: unknown, content: ChapterContent, c
   for (const check of review.checks) {
     // Accept ordinary quotation marks around one or several verbatim excerpts.
     const quotations = [...check.evidence.matchAll(/['“"]([^'”"]{4,})['”"]/g)].map(match => match[1]);
-    if (!contains(check.evidence) && (!quotations.length || !quotations.every(contains))) throw new Error("学科核查依据必须逐字引用本章内容，不能编造原文");
+    if (!contains(check.evidence) && (!quotations.length || !quotations.every(contains))) throw new Error(`学科核查 ${check.id} 的依据必须逐字引用本章内容，不能改写或拼接原文。未匹配的 evidence：${check.evidence.slice(0, 800)}。请从 content 中复制一段连续原话，将分析写入 reason。`);
   }
   for (const [expected, actual] of [[content.knowledge.map(item => item.id), review.knowledge.map(item => item.id)], [content.items.map(item => item.questionId), review.questions.map(item => item.id)]]) {
     if (actual.length !== expected.length || new Set(actual).size !== actual.length || expected.some(id => !actual.includes(id))) throw new Error("审校没有逐项覆盖知识讲解和所选题目");

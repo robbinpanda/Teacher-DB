@@ -10,7 +10,7 @@ export async function authoringModel<T>(input: Parameters<typeof callTextModel>[
       system: `${input.system}\n若存在 repair，上一轮未通过校验。依据错误修正输出，保持原计划与所有约束。不能为了凑数选择不符合难度或目标的题；缺题就少选并写明 gaps，不能用占位题掩盖缺口。`,
       text: repair ? JSON.stringify({ ...JSON.parse(input.text), repair }) : input.text,
     });
-    try { return { value: validate(parseModelJson(result.content)), traceId: result.traceId }; }
+    try { return { value: validate(parseModelJson(result.content)), traceId: result.traceId, modelProfileId: result.profile.id, modelDisplayName: result.profile.displayName }; }
     catch (error) {
       if (attempt) throw error;
       repair = { error: error instanceof Error ? error.message.slice(0, 3000) : "返回格式不正确", previous: result.content.slice(0, 24000) };
