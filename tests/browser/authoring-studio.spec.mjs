@@ -280,6 +280,35 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   await expect(originalLinks.nth(1)).toHaveAttribute('href',`/review/${second.doc}?question=${second.id}`);
   await expect(originalLinks.nth(1)).toHaveAttribute('target','_blank');
   await answerChecks.screenshot({path:'tmp/teacher-pilot/question-answer-checks-browser.png'});await answerChecks.locator('summary').click();
+  const chapterBefore=(await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project.chapters[0];
+  const sourceUrl=`/api/authoring/${id}/chapters/${chapterBefore.id}?${scope}`;
+  expect((await request.get(`${sourceUrl}&sources=1`,{headers:{'oai-authenticated-user-id':'other'}})).status()).toBe(404);
+  await page.getByRole('button',{name:'检查原题更新',exact:true}).click();
+  await expect(page.getByText('本章原题引用与当前题库一致。',{exact:true})).toBeVisible();
+  const sourceDb=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
+  try{
+   sourceDb.prepare('UPDATE questions SET answer=?,analysis=? WHERE id=?').run('$2\\pi/2$','修复后的解析：角系数为2，所以最小正周期为π。',first.id);
+   await page.getByRole('button',{name:'检查原题更新',exact:true}).click();
+   const sourcePanel=page.getByRole('region',{name:'原题引用更新'});
+   await expect(sourcePanel).toContainText('发现 1 道题有变化');
+   await expect(sourcePanel).toContainText('作品引用版本');await expect(sourcePanel).toContainText('当前题库版本');
+   await expect(sourcePanel).toContainText('修复后的解析');
+   sourceDb.prepare('UPDATE questions SET analysis=? WHERE id=?').run('复核后的解析：使用角系数2，计算并验证最小正周期π。',first.id);
+   await page.getByRole('button',{name:'确认更新引用，保留章节正文',exact:true}).click();
+   await expect(sourcePanel.getByRole('alert')).toContainText('刚才查看的版本不同');
+   await page.getByRole('button',{name:'检查原题更新',exact:true}).click();
+   await expect(sourcePanel).toContainText('复核后的解析');
+   await sourcePanel.screenshot({path:'tmp/teacher-pilot/source-refresh-comparison.png'});
+   await page.getByRole('button',{name:'确认更新引用，保留章节正文',exact:true}).click();
+   await expect(page.getByText(/已更新 1 道原题引用/)).toBeVisible();
+   await expect(page.getByRole('button',{name:'已核对，采用本章',exact:true})).toBeDisabled();
+   const after=(await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project.chapters[0];
+   expect(after.status).toBe('needs_review');expect(after.content.introduction).toBe(chapterBefore.content.introduction);expect(after.content.items).toEqual(chapterBefore.content.items);
+   expect(after.content.questions.find(q=>q.id===first.id).analysis).toContain('复核后的解析');
+   expect(after.content.review.questionChecks).toBeUndefined();
+   await page.getByRole('button',{name:'重新审校',exact:true}).click();
+   await expect(page.getByRole('button',{name:'已核对，采用本章',exact:true})).toBeEnabled({timeout:30000});
+  }finally{sourceDb.close();}
   await page.locator('.studio-review-checks > summary').click();
   await page.getByText('查看原文依据',{exact:true}).first().click();
   await expect(page.locator('.studio-review-checks blockquote').first()).toContainText('本章从周期定义出发，通过例题示范后安排独立练习。');
@@ -364,5 +393,19 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   expect(restored.chapters[0].history.some(version=>version.revision===afterReplan.chapters[0].revision)).toBe(true);
   await page.getByLabel(/人工核对说明/).fill('已核对恢复的章节计划、分值和原题解析，确认内容正确。');
   await page.getByRole('button',{name:'已核对，采用本章'}).click();await expect(page.getByRole('link',{name:'学生版 PDF',exact:true})).toBeVisible();
+  const unavailableDb=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
+  try{unavailableDb.prepare("UPDATE questions SET status='pending' WHERE id=?").run(first.id);}finally{unavailableDb.close();}
+  await page.getByRole('button',{name:'检查原题更新',exact:true}).click();
+  await expect(page.getByRole('region',{name:'原题引用更新'})).toContainText('当前不可用');
+  await expect(page.getByRole('button',{name:'确认更新引用，保留章节正文',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'修改正文与选题',exact:true}).click();
+  await page.locator('.studio-selected-question').first().getByRole('button',{name:'移除此题，保留缺口',exact:true}).click();
+  await page.getByRole('button',{name:'保存本章修改',exact:true}).click();
+  await expect(page.getByText('尚未满足题量',{exact:true})).toBeVisible();
+  await expect(page.locator('.studio-selected-question')).toHaveCount(1);
+  await expect(page.getByRole('button',{name:'已核对，采用本章',exact:true})).toBeDisabled();
+  const dropped=(await (await request.get(`/api/authoring/${id}?${scope}`)).json()).project.chapters[0];
+  expect(dropped.content.items.map(item=>item.questionId)).toEqual([second.id]);expect(dropped.content.gaps).toHaveLength(1);
+  expect((await request.get(`/api/authoring/${id}/pdf?${scope}`)).status()).toBe(409);
  }finally{await new Promise(resolve=>model.close(resolve));}
 });

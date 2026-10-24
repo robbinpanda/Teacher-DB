@@ -1,5 +1,5 @@
 import { archiveAuthoringChapter, readAuthoringChapterVersion } from "./authoring-history";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import sharp from "sharp";
 import { getSqlite } from "../../db";
@@ -12,11 +12,11 @@ import { authoringReviewChecks } from "../../lib/authoring-review-checks";
 import { chapterReviewEvidence } from "../../lib/authoring-review-evidence";
 import { authoringModel } from "./authoring-model";
 import { resolveModelProfile } from "../../lib/model-profiles";
-import { loadRetrievalRows, fingerprintRow } from "../../lib/knowledge-retrieval";
+import { loadRetrievalRows, fingerprintRow, type RetrievalRow } from "../../lib/knowledge-retrieval";
 import { knowledgeCatalog } from "../../lib/knowledge-catalog";
 import { chapterCandidateLists, chapterCandidateInventory, selectCandidateBatches } from "../../lib/authoring-candidates";
 import { loadSelectionCheckpoint, saveSelectionCheckpoint, selectionFingerprint } from "./authoring-selection-checkpoint";
-import { chapterContentSchema, chapterSystemPrompt, chapterReviewSystemPrompt, validateChapterContent, validateChapterReview, type SavedChapterContent, type AuthoringChapter } from "../../lib/authoring-content";
+import { chapterContentSchema, chapterSystemPrompt, chapterReviewSystemPrompt, validateChapterContent, validateChapterReview, type SavedChapterContent, type AuthoringChapter, type ChapterSourceUpdates } from "../../lib/authoring-content";
 import { validateAuthoringPlan } from "../../lib/authoring-plan";
 import type { QuestionWithSource } from "../../lib/types";
 import { questionIdentityKey } from "../../lib/question-identity";
@@ -44,7 +44,61 @@ function updateProjectProgress(id: string) {
 function assertSourceSnapshots(owner: string, scope: EducationScope, content: SavedChapterContent, documentIds: string[]) {
   const ids = content.items.map(item => item.questionId);
   const rows = loadRetrievalRows(getSqlite(), owner, scope, documentIds.length ? documentIds : undefined, ids);
-  if (rows.length !== ids.length || rows.some(row => fingerprintRow(row, scope) !== content.questionFingerprints[row.id])) throw new Error("引用题目已修改、移除或退出审核，请重新生成本章再确认");
+  if (rows.length !== ids.length || rows.some(row => fingerprintRow(row, scope) !== content.questionFingerprints[row.id] || row.type !== content.questions.find(question => question.id === row.id)?.type)) throw new Error("引用题目已修改、移除或退出审核，请检查原题更新或换题后重新审校");
+}
+
+// The classification fingerprint deliberately does not include question type.
+// Updating a chapter source must also bind the teacher's preview to that type.
+function sourceVersion(row: RetrievalRow, scope: EducationScope) {
+  return createHash('sha256').update(JSON.stringify([fingerprintRow(row, scope), row.type])).digest('hex');
+}
+export async function inspectChapterSourceUpdates(owner: string, scope: EducationScope, id: string, chapterId: string): Promise<ChapterSourceUpdates> {
+  const project = requireProject(owner, scope, id), chapter = project.chapters.find(item => item.id === chapterId);
+  if (!chapter?.content) throw new Error("章节尚无原题引用");
+  const ids = chapter.content.items.map(item => item.questionId);
+  const rows = loadRetrievalRows(getSqlite(), owner, scope, project.request.documentIds.length ? project.request.documentIds : undefined, ids);
+  const questions = await getApprovedQuestions(owner, rows.map(row => row.id), scope);
+  const latest = requireProject(owner, scope, id);
+  const currentRows = loadRetrievalRows(getSqlite(), owner, scope, latest.request.documentIds.length ? latest.request.documentIds : undefined, ids);
+  if (latest.revision !== project.revision || latest.chapters.find(item => item.id === chapterId)?.revision !== chapter.revision || currentRows.length !== rows.length || currentRows.some(row => { const prior = rows.find(prior => prior.id === row.id); return !prior || sourceVersion(row, scope) !== sourceVersion(prior, scope); })) throw new Error("读取期间作品或原题已变化，请重新检查更新");
+  return { revision: chapter.revision, projectRevision: project.revision, changes: chapter.content.items.flatMap((item, position) => {
+    const row = rows.find(row => row.id === item.questionId), before = chapter.content!.questions.find(question => question.id === item.questionId) ?? null;
+    if (row && before?.type === row.type && fingerprintRow(row, scope) === chapter.content!.questionFingerprints[item.questionId]) return [];
+    return [{ id: item.questionId, position, before, after: questions.find(question => question.id === item.questionId) ?? null, version: row ? sourceVersion(row, scope) : null }];
+  }) };
+}
+export async function refreshChapterSources(owner: string, scope: EducationScope, id: string, chapterId: string, revision: number, projectRevision: number, expected: Record<string, string>) {
+  const preview = await inspectChapterSourceUpdates(owner, scope, id, chapterId);
+  if (preview.revision !== revision || preview.projectRevision !== projectRevision) throw new Error("作品或章节已变化，请重新检查原题更新");
+  if (preview.changes.some(change => !change.after || !change.version)) throw new Error("有原题已移除、退出审核或不在指定资料中，请先替换或移除该题并保存");
+  if (Object.keys(expected).length !== preview.changes.length || preview.changes.some(change => expected[change.id] !== change.version)) throw new Error("原题与刚才查看的版本不同，请重新检查更新后确认");
+  return getSqlite().transaction(() => {
+    const project = requireProject(owner, scope, id), chapter = project.chapters.find(item => item.id === chapterId), db = getSqlite();
+    if (!chapter?.content || chapter.revision !== revision || project.revision !== projectRevision) throw new Error("作品或章节已变化，请重新检查原题更新");
+    if (project.status === "generating" || project.chapters.some(item => item.status === "running") || ["pending", "running"].includes(chapter.status)) throw new Error("请先暂停任务并等待当前章结束，再更新原题引用");
+    if (!preview.changes.length) return project;
+    const rows = loadRetrievalRows(db, owner, scope, project.request.documentIds.length ? project.request.documentIds : undefined, chapter.content.items.map(item => item.questionId));
+    for (const change of preview.changes) {
+      const row = rows.find(row => row.id === change.id);
+      if (!row || sourceVersion(row, scope) !== change.version) throw new Error("确认期间原题已变化，请重新检查更新");
+    }
+    const changed = new Map(preview.changes.map(change => [change.id, change.after!]));
+    const questions = chapter.content.items.map(item => changed.get(item.questionId) ?? chapter.content!.questions.find(question => question.id === item.questionId)!);
+    assertQuestionTypes(chapter.content.items, questions, chapter.plan.slots);
+    assertNoDuplicateStems(questions, project, chapterId);
+    const saved: SavedChapterContent = { ...chapter.content, questions,
+      questionFingerprints: { ...chapter.content.questionFingerprints, ...Object.fromEntries(rows.filter(row => changed.has(row.id)).map(row => [row.id, fingerprintRow(row, scope)])) },
+      review: { passed: false, issues: [`已更新 ${changed.size} 道原题引用。章节正文和原例题讲解已保留，可能需要随原题修订；请重新审校或逐项人工核对。`] },
+    };
+    delete saved.teacherApproval;
+    assertSourceSnapshots(owner, scope, saved, project.request.documentIds);
+    archiveAuthoringChapter(chapterId, "更新原题引用前的章节与原题快照");
+    db.prepare("UPDATE authoring_chapters SET content_json=?,status='needs_review',revision=revision+1,error=NULL,updated_at=? WHERE id=?").run(JSON.stringify(saved), time(), chapterId);
+    db.prepare("DELETE FROM authoring_selection_checkpoints WHERE chapter_id=?").run(chapterId);
+    db.prepare("UPDATE authoring_projects SET paper_id=NULL,revision=revision+1,updated_at=? WHERE id=?").run(time(), id);
+    updateProjectProgress(id);
+    return requireProject(owner, scope, id);
+  }).immediate();
 }
 
 export async function controlAuthoringProject(owner: string, scope: EducationScope, id: string, revision: number, action: "generate" | "pause" | "resume") {
@@ -93,22 +147,30 @@ export async function editAuthoringChapter(owner: string, scope: EducationScope,
   const project = requireProject(owner, scope, id), chapter = project.chapters.find(item => item.id === chapterId);
   if (project.status === "generating" || project.chapters.some(item => item.status === "running")) throw new Error("请先暂停任务并等待当前章处理结束，再修改正文");
   if (!chapter?.content || chapter.revision !== revision || ["running", "pending"].includes(chapter.status)) throw new Error("章节已变化或仍在处理，请刷新后再编辑");
-  assertSourceSnapshots(owner, scope, chapter.content, project.request.documentIds);
   const rows = loadRetrievalRows(getSqlite(), owner, scope, project.request.documentIds.length ? project.request.documentIds : undefined);
   const excluded = new Set(project.chapters.filter(item => item.id !== chapterId).flatMap(item => item.content?.items.map(question => question.questionId) ?? []));
   // Replacement questions are loaded from the scoped bank; submitted snapshots are never trusted.
-  const allowed = rows.map(row => row.id);
+  const previousIds = new Set(chapter.content.items.map(item => item.questionId));
+  const allowed = [...new Set([...rows.map(row => row.id), ...previousIds])];
   const content = validateChapterContent(value, chapter.plan, project.request.kind, chapter.plan.slots.map(() => allowed), excluded);
-  const ids = content.items.map(item => item.questionId), questions = await getApprovedQuestions(owner, ids, scope);
+  const ids = content.items.map(item => item.questionId);
+  // Preserve retained source snapshots, even when the bank has changed. This
+  // lets teachers replace one unavailable reference while other references are
+  // awaiting explicit refresh, without silently pairing prose with new data.
+  const addedIds = ids.filter(questionId => !previousIds.has(questionId));
+  const addedQuestions = await getApprovedQuestions(owner, addedIds, scope);
+  const questions = ids.map(questionId => previousIds.has(questionId) ? chapter.content!.questions.find(question => question.id === questionId) : addedQuestions.find(question => question.id === questionId)).filter((question): question is QuestionWithSource => !!question);
   assertQuestionTypes(content.items, questions, chapter.plan.slots);
   assertNoDuplicateStems(questions, project, chapterId);
   const saved: SavedChapterContent = { ...content, questions,
-    questionFingerprints: Object.fromEntries(rows.filter(row => ids.includes(row.id)).map(row => [row.id, fingerprintRow(row, scope)])),
+    questionFingerprints: Object.fromEntries(ids.map(questionId => [questionId, previousIds.has(questionId) ? chapter.content!.questionFingerprints[questionId] : fingerprintRow(rows.find(row => row.id === questionId)!, scope)])),
     review: { passed: false, issues: ["教师修改了本章内容，请重新审校或核对后采用。"] }, traceId: chapter.content.traceId, selectionAudit: chapter.content.selectionAudit };
   getSqlite().transaction(() => {
     const latest = requireProject(owner, scope, id);
     if (latest.status === "generating" || latest.chapters.some(item => item.status === "running")) throw new Error("作品已继续生成，请暂停后再保存");
-    assertSourceSnapshots(owner, scope, saved, latest.request.documentIds);
+    assertSourceSnapshots(owner, scope, { ...saved, items: saved.items.filter(item => addedIds.includes(item.questionId)) }, latest.request.documentIds);
+    const currentRows = loadRetrievalRows(getSqlite(), owner, scope, latest.request.documentIds.length ? latest.request.documentIds : undefined, ids);
+    if (saved.items.some(item => { const row = currentRows.find(row => row.id === item.questionId); return !row || fingerprintRow(row, scope) !== saved.questionFingerprints[item.questionId] || row.type !== saved.questions.find(question => question.id === item.questionId)?.type; })) saved.review.issues.push("部分原题已修改或不可用，仍保留作品引用的旧版本。请检查原题更新或换题，来源未同步前不能采用或导出。");
     assertNoDuplicateStems(questions, latest, chapterId);
     archiveAuthoringChapter(chapterId, "教师修改正文与选题");
     const changed = getSqlite().prepare("UPDATE authoring_chapters SET content_json=?,status='needs_review',revision=revision+1,error=NULL,updated_at=? WHERE id=? AND project_id=? AND revision=? AND status NOT IN ('running','pending')")

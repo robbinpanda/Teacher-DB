@@ -49,8 +49,11 @@ export function readAuthoringProject(ownerId: string, scope: EducationScope, id:
     }) } : null;
   const request = JSON.parse(row.request_json) as AuthoringRequest;
   const selectedIds = [...new Set(chapters.flatMap(chapter => chapter.content?.items.map(item => item.questionId) ?? []))];
-  const fingerprints = new Map(loadRetrievalRows(sqlite, ownerId, scope, request.documentIds.length ? request.documentIds : undefined, selectedIds).map(question => [question.id, fingerprintRow(question, scope)]));
-  const stale = [...new Set(chapters.flatMap(chapter => chapter.content?.items.filter(item => !fingerprints.has(item.questionId) || fingerprints.get(item.questionId) !== chapter.content!.questionFingerprints[item.questionId]).map(item => item.questionId) ?? []))];
+  const sources = new Map(loadRetrievalRows(sqlite, ownerId, scope, request.documentIds.length ? request.documentIds : undefined, selectedIds).map(question => [question.id, { fingerprint: fingerprintRow(question, scope), type: question.type }]));
+  const stale = [...new Set(chapters.flatMap(chapter => chapter.content?.items.filter(item => {
+    const source = sources.get(item.questionId);
+    return !source || source.fingerprint !== chapter.content!.questionFingerprints[item.questionId] || source.type !== chapter.content!.questions.find(question => question.id === item.questionId)?.type;
+  }).map(item => item.questionId) ?? []))];
   return { variation, id: row.id, title: row.title, subject: row.subject, stage: row.stage, kind: row.kind, status: row.status, revision: row.revision, error: row.error,
     createdAt: row.created_at, updatedAt: row.updated_at, request, plan, requirements, requirementChecks: plan && requirements ? inspectPlanRequirements(plan, requirements, scope) : [], chapters, paperId: row.paper_id, summary: plan ? planSummary(plan) : null,
     assumedPrerequisites: plan ? assumedPrerequisites(plan, scope) : [], workCoverage: plan ? inspectWorkCoverage(plan, request, chapters, scope, stale) : null };

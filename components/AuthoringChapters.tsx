@@ -11,6 +11,7 @@ import type { RetrievalHit } from "../lib/knowledge-retrieval";
 import type { QuestionWithSource } from "../lib/types";
 import { inspectQuestionStructure } from '../lib/question-structure';
 import { QuestionStructureNotice } from './QuestionStructureNotice';
+import { ChapterSourceUpdates } from './ChapterSourceUpdates';
 
 const labels: Record<AuthoringChapter["status"], string> = { pending: "等待处理", running: "正在选题、编写与审校", complete: "模型未发现问题，待核对", needs_review: "有缺口或审校问题", failed: "处理失败", approved: "教师已采用" };
 export function AuthoringChapters({ projectId, projectRevision, projectStatus, chapters, scopeQuery, documentIds, onUpdate, onDirty }: {
@@ -75,6 +76,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
       <button className="btn" disabled={busy} onClick={()=>{setPlanning(false);setPlanDraft(chapter.plan);setDirty(false);notifyDirty(false);}}>取消计划修改</button></div>
     </section>}
     {draft && <>
+      <ChapterSourceUpdates url={url} disabled={busy||dirty||working||planning||projectStatus==='generating'} onUpdate={onUpdate}/>
       {draft.review.checks?.length ? <details className="studio-review-checks"><summary>逐项学科核查（{draft.review.checks.filter(check => check.passed).length} / {draft.review.checks.length} 项通过）</summary>{draft.review.checks.map(check => <section key={check.id}><p><strong>{check.passed ? "通过" : "需修正"}：</strong><MathText text={check.reason}/></p><details><summary>查看原文依据</summary><blockquote><MathText text={check.evidence}/></blockquote></details></section>)}</details> : null}
       {draft.gaps.length > 0 && <div className="studio-error"><strong>尚未满足题量</strong>{draft.gaps.map(gap => <p key={gap.slotIndex}>第 {gap.slotIndex + 1} 组：{gap.reason}</p>)}</div>}
       {!!draft.review.questionChecks?.length && <details className="studio-question-checks"><summary>逐题答案与讲解核验（{draft.review.questionChecks.length} 题）</summary>{draft.review.questionChecks.map(check => {
@@ -86,7 +88,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
           {source && <p>作品引用的原题答案：<MathText text={source.answer || "未提供答案"}/></p>}
           <p>模型复算答案（供核对）：<MathText text={check.computedAnswer}/></p><p><MathText text={check.reason}/></p>
           {source && !source.source.sourceRemoved && <p><Link href={`/review/${encodeURIComponent(source.source.documentId)}?question=${encodeURIComponent(source.id)}`} target="_blank" rel="noopener noreferrer">打开原题核对与修复</Link></p>}
-          {(!check.solvable || !check.answerCorrect || !check.explanationCorrect) && <p>请对照原卷核实。修复原题后重新生成本章，或在“修改正文与选题”中换题并保存，再重新审校。</p>}
+          {(!check.solvable || !check.answerCorrect || !check.explanationCorrect) && <p>请对照原卷核实。修复原题后点击“检查原题更新”，或在“修改正文与选题”中换题并保存，再重新审校。</p>}
         </section>;
       })}</details>}
       {!draft.review.passed && <div className="studio-error"><strong>待核对的问题</strong><ul>{draft.review.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></div>}
@@ -108,7 +110,7 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
           {question && <><QuestionStructureNotice issues={inspectQuestionStructure(question)} documentId={question.source.documentId} questionId={question.id}/><p><MathText text={question.stem} /></p>{question.options?.map((option,index) => <p key={`${index}:${option.key}`}>{option.key}. <MathText text={option.content} /></p>)}
             {question.assets.filter(asset => asset.url).map(asset => <Image key={asset.id} src={asset.url!} alt={asset.label} width={asset.width ?? 600} height={asset.height ?? 400} unoptimized style={{ width: "auto", height: "auto", maxWidth: "100%", maxHeight: 400 }} />)}
             <small>来源：{question.source.documentName} · 原第 {question.number} 题</small><p><strong>题库答案：</strong><MathText text={question.answer} /></p></>}
-          {editing ? <><label>选题理由<textarea value={item.selectionReason} onChange={event => edit({ ...draft, items: draft.items.map((entry, i) => i === index ? { ...entry, selectionReason: event.target.value } : entry) })} /></label><label>讲解与方法总结<textarea rows={6} value={item.teachingExplanation} onChange={event => edit({ ...draft, items: draft.items.map((entry, i) => i === index ? { ...entry, teachingExplanation: event.target.value } : entry) })} /></label><button className="btn" disabled={busy} onClick={() => void operate(() => findQuestions(item.slotIndex, index))}>替换这道题</button></>
+          {editing ? <><label>选题理由<textarea value={item.selectionReason} onChange={event => edit({ ...draft, items: draft.items.map((entry, i) => i === index ? { ...entry, selectionReason: event.target.value } : entry) })} /></label><label>讲解与方法总结<textarea rows={6} value={item.teachingExplanation} onChange={event => edit({ ...draft, items: draft.items.map((entry, i) => i === index ? { ...entry, teachingExplanation: event.target.value } : entry) })} /></label><button className="btn" disabled={busy} onClick={() => void operate(() => findQuestions(item.slotIndex, index))}>替换这道题</button><button className="btn" disabled={busy} onClick={()=>edit({...draft,items:draft.items.filter((_,i)=>i!==index),gaps:[...draft.gaps.filter(gap=>gap.slotIndex!==item.slotIndex),{slotIndex:item.slotIndex,reason:'教师移除了本组题目，需要补充符合本组要求的候选。'}]})}>移除此题，保留缺口</button></>
             : <><p><strong>选入理由：</strong>{item.selectionReason}</p><p><MathText text={item.teachingExplanation || question?.analysis || ""} /></p></>}
         </section>;
       })}

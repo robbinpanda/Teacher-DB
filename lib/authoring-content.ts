@@ -49,6 +49,10 @@ export type AuthoringChapterVersion = {
   id: string; revision: number; reason: string; createdAt: string;
   plan: AuthoringChapterPlan | null; content: SavedChapterContent | null;
 };
+export type ChapterSourceUpdates = {
+  revision: number; projectRevision: number;
+  changes: Array<{ id: string; position: number; before: QuestionWithSource | null; after: QuestionWithSource | null; version: string | null }>;
+};
 
 export function validateChapterContent(value: unknown, plan: AuthoringChapterPlan, kind: AuthoringRequest["kind"], pools: string[][], excluded: Set<string>) {
   const content = chapterContentSchema.parse(value);
