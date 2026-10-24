@@ -6,7 +6,9 @@
 
 本地优先 · AI 识题 · 人工复核 · 智能组卷 · 数据可控
 
-![拣题：教师题库助手](public/og-cover.png)
+<!-- Pin public image URLs to a commit. GitHub renders these through Camo, avoiding direct raw.githubusercontent.com requests. Keep the repository links for the originals. -->
+
+[![拣题：教师题库助手](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/public/og-cover.png)](public/og-cover.png)
 
 [快速开始](#快速开始) · [真实使用场景](#真实使用场景) · [功能亮点](#功能亮点) · [数据与安全](#数据与安全) · [完整功能清单](docs/features.md)
 
@@ -50,25 +52,25 @@
 
 工作台集中展示待处理、处理中和已入库试卷。选择学段、学科与识别模型后，可批量拖入 PDF，并按设备和模型限额调整并发数。
 
-![工作台：批量导入试卷并查看识别与审核进度](docs/images/workspace.png)
+[![工作台：批量导入试卷并查看识别与审核进度](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/workspace.png)](docs/images/workspace.png)
 
 ### 2. 把审核后的题目沉淀为可检索题库
 
 题目可按文件夹、年级、地区和教材版本浏览，也可按题干、答案、知识点、题型或来源搜索。支持列表/平铺视图、批量移动和共享包导入导出。
 
-![题库：按目录、题型、来源与知识点筛选题目](docs/images/question-bank.png)
+[![题库：按目录、题型、来源与知识点筛选题目](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/question-bank.png)](docs/images/question-bank.png)
 
 ### 3. 从题库选题并实时预览成卷效果
 
 组卷时可套用模板、调整标题与板块、拖拽题目顺序、修改分值，并在右侧实时查看 A4 排版。保存后可分别导出学生试卷和解析答案。
 
-![组卷：调整模板、题目顺序并实时预览 A4 试卷](docs/images/paper-builder.png)
+[![组卷：调整模板、题目顺序并实时预览 A4 试卷](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/paper-builder.png)](docs/images/paper-builder.png)
 
 ### 4. 追踪模型 Token 与估算成本
 
 模型用量页按月份和模型汇总输入、缓存输入、输出、处理页数及费用，方便评估不同模型的实际成本。
 
-![模型用量：按月份和模型统计 Token 与估算费用](docs/images/model-usage.png)
+[![模型用量：按月份和模型统计 Token 与估算费用](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/model-usage.png)](docs/images/model-usage.png)
 
 ## 快速开始
 
@@ -139,7 +141,7 @@ OpenCode 普通付费、OpenCode Go 套餐与 OpenRouter 提供独立的官方�
 ### 导入与识别
 
 - 支持 PDF 和图片组卷。图片在浏览器中按预览顺序生成 PDF，复用原卷保存、分页、断点恢复和识题流程；每张图片最大 20 MB、4000 万像素，每份最多 100 页，合成文件最大 100 MB。DOC/DOCX 仍需另存为 PDF。
-- 导出按题目实际占高分页，解答题与作答区域合计至少占半页，长题保留不短于题干的作答空间（单张窄图右侧可计入），必要时标注续页；紧凑排版也保留该规则。导出前等待字体、配图与分页就绪，预览和 PDF 使用同一布局。
+- 导出按题目实际占高分页，每道解答题在题干和图片下方独立保留至少半页作答空间，题干、图片和图片右侧留白均不抵扣；空间不足时续页；紧凑排版也保留该规则。导出前等待字体、配图与分页就绪，预览和 PDF 使用同一布局。
 - 默认浏览器使用 PDF.js 逐页高清渲染；可选 FastAPI 后台分页。原卷和页面图会立即保存。
 - 每份试卷在整卷上下文中识别，题目、答案和解析一次关联并以事务写入数据库。
 - 任务状态、重试次数和处理模型都会持久化，服务重启后可以续跑。
@@ -290,3 +292,4 @@ docs/         功能清单、代码审查与 README 图片
 
 - [完整功能实现清单](docs/features.md)
 - [代码审查与升级方向（2026-09-08）](docs/code-review-2026-09-08.md)
+
