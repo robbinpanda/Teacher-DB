@@ -1,4 +1,5 @@
 import { prepareWholePaperSource } from "./authoring-variation-source";
+import { authoringSupply } from "../../lib/authoring-supply";
 import type { WholePaperSource, WholePaperVariation, WholePaperVariationItem } from "../../lib/authoring-variation";
 import { randomUUID } from "node:crypto";
 import { getSqlite } from "../../db";
@@ -169,7 +170,9 @@ export async function kickAuthoringPlanning() {
     let requirements = job.requirements_json ? JSON.parse(job.requirements_json) as AuthoringRequirements : null;
     if (!requirements) {
       const extracted = await authoringModel({ ownerId: job.owner_id, profileId: request.profileId, system: authoringRequirementsSystemPrompt,
-        text: JSON.stringify({ instruction: request.instruction, scope, catalog: knowledgeCatalog(scope.subject, scope.stage) }),
+        text: JSON.stringify({ instruction: request.instruction, scope, catalog: knowledgeCatalog(scope.subject, scope.stage),
+          requestContext: { kind: request.kind, requiredKnowledgeIds: request.requiredKnowledgeIds,
+            sourceSelection: request.documentIds.length ? { mode: "selectedDocuments", documentCount: request.documentIds.length } : { mode: "currentScope" } } }),
         purpose: "authoring_requirements", jsonMode: true, maxOutputTokens: 7000, timeoutMs: 240000 }, value => parseAuthoringRequirements(value, scope, request.instruction));
       requirements = extracted.value;
       const saved = sqlite.prepare("UPDATE authoring_projects SET requirements_json=?,revision=revision+1,updated_at=? WHERE id=? AND lease_owner=? AND status='planning'")
@@ -181,7 +184,8 @@ export async function kickAuthoringPlanning() {
     const counts = inventory.reduce((result, question) => { result[question.type] = (result[question.type] ?? 0) + 1; return result; }, {} as Record<string, number>);
     const sourcePaper = await variationSource(job.owner_id, scope, request);
     const result = await authoringModel({ ownerId: job.owner_id, profileId: request.profileId, system: authoringPlanSystemPrompt,
-      text: JSON.stringify({ scope, request, requirements, sourcePaper, catalog: knowledgeCatalog(scope.subject, scope.stage), reference: scope.subject === "数学" && scope.stage === "high" ? curriculumSource : null, availableQuestionCounts: counts }),
+      text: JSON.stringify({ scope, request, requirements, sourcePaper, catalog: knowledgeCatalog(scope.subject, scope.stage), reference: scope.subject === "数学" && scope.stage === "high" ? curriculumSource : null, availableQuestionCounts: counts,
+        availableSupply: authoringSupply(inventory, scope, [...request.requiredKnowledgeIds, ...requirements.knowledge.map(item => item.id)]) }),
       purpose: "authoring_plan", jsonMode: true, maxOutputTokens: 14000, timeoutMs: 240000 }, value => validateAuthoringPlan(value, scope, request, requirements));
     const plan = result.value;
     sqlite.prepare(`UPDATE authoring_projects SET title=?,plan_json=?,status='planned',revision=revision+1,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='planning'`)

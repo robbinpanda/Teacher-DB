@@ -7,7 +7,7 @@ import { knowledgeCatalog, knowledgeCatalogVersion, questionMethods, questionCom
 import { callTextModel } from "../../lib/text-model";
 import { contentTypeForKey, getFile } from "../../lib/file-storage";
 
-export async function classifyQuestion(ownerId: string, scope: EducationScope, questionId: string, profileId?: string, beforeSave?: () => void) {
+export async function classifyQuestion(ownerId: string, scope: EducationScope, questionId: string, profileId?: string, beforeSave?: () => void, beforeRequest?: () => void) {
   await ensureDatabase();
   const sqlite = getSqlite();
   const row = loadRetrievalRows(sqlite, ownerId, scope, undefined, [questionId])[0];
@@ -22,13 +22,30 @@ export async function classifyQuestion(ownerId: string, scope: EducationScope, q
     if (bytes.length > 8 * 1024 * 1024) throw new Error("题图超过模型单图限制，请先缩小图片");
     images.push({ page: images.length + 1, dataUrl: `data:${contentTypeForKey(asset.cropKey)};base64,${bytes.toString("base64")}` });
   }
-  const result = await callTextModel({ ownerId, profileId, purpose: "question_classification", jsonMode: true, maxOutputTokens: 3500,
-    system: classificationSystemPrompt, images, text: JSON.stringify({ scope, catalog: knowledgeCatalog(scope.subject, scope.stage), methods: questionMethods, competencies: questionCompetencies,
-      question: { stem: row.stem, options: JSON.parse(row.optionsJson ?? "[]"), answer: row.answer, analysis: row.analysis } }) });
-  const classification = parseClassification(parseModelJson(result.content), scope.subject, scope.stage);
-  beforeSave?.();
-  saveClassification(ownerId, scope, questionId, fingerprint, classification, "suggested", result.profile.id, result.traceId);
-  return { classification, fingerprint, status: "suggested" as const };
+  const input = { scope, catalog: knowledgeCatalog(scope.subject, scope.stage), methods: questionMethods, competencies: questionCompetencies,
+    question: { stem: row.stem, options: JSON.parse(row.optionsJson ?? "[]"), answer: row.answer, analysis: row.analysis } };
+  const assertCurrent = () => {
+    beforeSave?.();
+    const current = loadRetrievalRows(getSqlite(), ownerId, scope, undefined, [questionId])[0];
+    if (!current || fingerprintRow(current, scope) !== fingerprint) throw new Error("题目内容已变化，请重新读取后标注");
+    if (current.classificationStatus === "confirmed" && current.classificationFingerprint === fingerprint) throw new Error("此版本已有教师确认标签，模型结果不能覆盖");
+  };
+  let repair: { error: string; previous: string } | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await callTextModel({ ownerId, profileId, purpose: attempt ? "question_classification_repair" : "question_classification", jsonMode: true, maxOutputTokens: 6000,
+      system: classificationSystemPrompt, images, beforeRequest: () => { assertCurrent(); beforeRequest?.(); }, text: JSON.stringify({ ...input, ...(repair ? { repair } : {}) }) });
+    let classification: QuestionClassification;
+    try { classification = parseClassification(parseModelJson(result.content), scope.subject, scope.stage); }
+    catch (error) {
+      if (attempt) throw error;
+      repair = { error: error instanceof Error ? error.message.slice(0, 2500) : "标注格式不正确", previous: result.content.slice(0, 18000) };
+      continue;
+    }
+    assertCurrent();
+    saveClassification(ownerId, scope, questionId, fingerprint, classification, "suggested", result.profile.id, result.traceId);
+    return { classification, fingerprint, status: "suggested" as const };
+  }
+  throw new Error("标注未通过校验");
 }
 
 export function saveClassification(ownerId: string, scope: EducationScope, questionId: string, fingerprint: string, value: unknown,

@@ -96,7 +96,10 @@ export async function kickClassificationBatch() {
     const question=loadRetrievalRows(db,job.owner_id,scope,undefined,[job.question_id])[0];
     if(!question||fingerprintRow(question,scope)!==job.fingerprint)throw new Error("题目在排队后已变化，请重新核对后重试");
     const existing=rankQuestions([question],scope).hits[0]?.classification;
-    if(!existing)await classifyQuestion(job.owner_id,scope,job.question_id,job.profile_id,owned);
+    if(!existing)await classifyQuestion(job.owner_id,scope,job.question_id,job.profile_id,owned,()=>{
+      const batch=db.prepare("SELECT status FROM classification_batches WHERE id=?").get(job.batch_id) as {status:string}|undefined;
+      if(batch?.status!=='running')throw new Error("批量标注已暂停，请继续后重试未完成题目");
+    });
     db.transaction(()=>{owned();db.prepare("UPDATE classification_batch_items SET status=?,error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?").run(existing?"skipped":"complete",time(),job.id);progress(job.batch_id);})();
   } catch(error) {
     const changed=db.prepare("UPDATE classification_batch_items SET status='failed',error=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status='running'").run(error instanceof Error?error.message.slice(0,1500):"标注失败",time(),job.id,token);

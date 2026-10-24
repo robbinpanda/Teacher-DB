@@ -21,8 +21,10 @@ let response: unknown=plan;
 let requirementsResponse: unknown={numeric:[],knowledge:[],questions:[],assumptions:[]};
 let extractionCalls=0;
 let calls=0;
+type ModelRequest = {messages:Array<{role:string;content:string|Array<{type:string;text:string}>}>};
+const modelRequests:ModelRequest[]=[];
 const originalFetch=globalThis.fetch;
-globalThis.fetch=async(_url,init)=>{calls++;const system=JSON.parse(String(init?.body)).messages[0].content;const extracting=system.includes("教学需求核对员");if(extracting)extractionCalls++;const output=extracting?requirementsResponse:response;return Response.json({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:20,completion_tokens:30}});};
+globalThis.fetch=async(_url,init)=>{calls++;const body=JSON.parse(String(init?.body));modelRequests.push(body);const system=body.messages[0].content;const extracting=system.includes("教学需求核对员");if(extracting)extractionCalls++;const output=extracting?requirementsResponse:response;return Response.json({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:20,completion_tokens:30}});};
 try {
  const input={kind:"handout",instruction:"给高三学生制作周期专题讲义",requiredKnowledgeIds:[period],profileId:"model",documentIds:["doc"]};
  const project=await createAuthoringProject("teacher",scope,input);
@@ -34,6 +36,10 @@ try {
  await kickAuthoringPlanning();
  const planned=readAuthoringProject("teacher",scope,project.id)!;
  assert.equal(planned.status,"planned");assert.deepEqual(planned.plan,plan);assert.equal(calls,2);
+ const payload=(body:ModelRequest)=>{const user=body.messages.find(m=>m.role==='user')!.content;return JSON.parse(typeof user==='string'?user:user.find(part=>part.type==='text')!.text);};
+ assert.deepEqual(payload(modelRequests[0]).requestContext,{kind:'handout',requiredKnowledgeIds:[period],sourceSelection:{mode:'selectedDocuments',documentCount:1}});
+ assert.equal(payload(modelRequests[1]).availableSupply.eligibleUnique,1);
+ assert.equal(payload(modelRequests[1]).availableSupply.unknownDifficulty,1);
  await kickAuthoringPlanning();assert.equal(calls,2,"completed plans must not run again");
  const saved=saveAuthoringPlan("teacher",scope,project.id,planned.revision,{...plan,title:"修改后的讲义"});
  assert.equal(saved.title,"修改后的讲义");

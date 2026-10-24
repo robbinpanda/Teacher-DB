@@ -51,4 +51,33 @@ assert.throws(()=>confirmClassificationBatch('teacher',scope,batch.id,[old]),/�
 const one=await createClassificationBatch('teacher',scope,['q7'],'model'),two=await createClassificationBatch('teacher',scope,['q7'],'model');
 const prior=calls;await Promise.all([kickClassificationBatch(),kickClassificationBatch()]);await kickClassificationBatch();assert.equal(calls,prior+1);assert.equal(read(one.id).status,'complete');assert.equal(read(two.id).items[0].status,'skipped');
 batch=await createClassificationBatch('teacher',scope,['q8'],'model');db.prepare("UPDATE questions SET stem='changed while queued' WHERE id='q8'").run();const count=calls;await kickClassificationBatch();assert.equal(calls,count);assert.equal(read(batch.id).items[0].status,'failed');
-console.log('classification batches: durable queue, pause/retry, reuse, version checks, teacher authority, stale lease and scope isolation passed');db.close();
+// Real model failures: duplicate IDs, invented method enums and truncated JSON.
+for(let i=9;i<=17;i++)db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES(?,'doc',?,'fill',?,'π','周期公式计算。','approved',1,'{}',?,?)").run(`q${i}`,String(i),`求函数 y=sin(${i}x) 的最小正周期。`,now,now);
+const malformed=[JSON.stringify({...classification,knowledge:[...classification.knowledge,...classification.knowledge]}),JSON.stringify({...classification,methods:['不存在的方法']}),'{"knowledge":['];
+for(let i=0;i<malformed.length;i++){
+ let attempts=0;const requests:unknown[]=[];
+ globalThis.fetch=async(_url,init)=>{attempts++;requests.push(JSON.parse(String(init?.body)));return Response.json({choices:[{message:{content:attempts===1?malformed[i]:JSON.stringify(classification)}}]});};
+ batch=await createClassificationBatch('teacher',scope,[`q${9+i}`],'model');await kickClassificationBatch();
+ assert.equal(attempts,2);assert.equal(read(batch.id).status,'complete');assert.equal(read(batch.id).items[0].classificationStatus,'suggested');
+ assert.ok(JSON.stringify(requests[1]).includes('repair'));assert.ok(JSON.stringify(requests[1]).includes('previous'));
+}
+let attempts=0;
+globalThis.fetch=async()=>{attempts++;return Response.json({choices:[{message:{content:malformed[0]}}]});};
+batch=await createClassificationBatch('teacher',scope,['q12'],'model');await kickClassificationBatch();
+assert.equal(attempts,2);assert.equal(read(batch.id).items[0].status,'failed');assert.equal(read(batch.id).items[0].classification,null);
+attempts=0;globalThis.fetch=async()=>{attempts++;return Response.json({error:'unavailable'},{status:503});};
+batch=await createClassificationBatch('teacher',scope,['q13'],'model');await kickClassificationBatch();assert.equal(attempts,1);
+for(const scenario of ['source','confirmed','lease','pause']){
+ const id=`q${14+['source','confirmed','lease','pause'].indexOf(scenario)}`;
+ batch=await createClassificationBatch('teacher',scope,[id],'model');attempts=0;
+ globalThis.fetch=async()=>{attempts++;
+  if(scenario==='source')db.prepare("UPDATE questions SET answer='changed during first call' WHERE id=?").run(id);
+  if(scenario==='confirmed')saveClassification('teacher',scope,id,fingerprint(id),classification,'confirmed');
+  if(scenario==='lease')db.prepare("UPDATE classification_batch_items SET lease_owner='new-worker' WHERE id=?").run(batch.items[0].id);
+  if(scenario==='pause')controlClassificationBatch('teacher',scope,batch.id,read(batch.id).revision,'pause');
+  return Response.json({choices:[{message:{content:malformed[0]}}]});
+ };
+ await kickClassificationBatch();assert.equal(attempts,1,`${scenario} must prevent a repair request`);
+ assert.equal(read(batch.id).items[0].classificationStatus,scenario==='confirmed'?'confirmed':'unclassified');
+}
+console.log('classification batches: persistence, scoped tags, bounded format repair, network failure, teacher authority, source changes, pause and lease guards passed');db.close();
