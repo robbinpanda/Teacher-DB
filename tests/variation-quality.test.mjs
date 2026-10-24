@@ -1,7 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseVariationPlan, parseVariationVerification } from "../lib/variation-plan.ts";
-import { parseVariationModelContent, parseVariationReviewContent } from "../lib/question-variations.ts";
+import { boundedText, parseVariationModelContent, parseVariationReviewContent } from "../lib/question-variations.ts";
+
+test('模型 JSON 把 LaTeX 误转成控制字符时拒绝保存，正常换行缩进仍可用',()=>{
+ const question={type:'fill',stem:'计算新函数值。',options:[],answer:'1',analysis:'代入求解。',tags:[],changeNote:'修改条件。',diagram:null};
+ const parse=q=>parseVariationModelContent({content:JSON.stringify({variations:[q]}),count:1,sourceType:'fill',sourceStem:'计算原函数值。',allowedTags:[],fallbackTags:[]});
+ for(const control of ['\b','\f','\u000b','\u001b','\u007f']){
+  for(const field of ['stem','answer','analysis','changeNote'])assert.throws(()=>parse({...question,[field]:`数学${control}公式`}),/JSON 转义/);
+  assert.throws(()=>boundedText(`${control}开头`,100),/控制字符/);
+ }
+ assert.equal(boundedText('第一步\r\n\t第二步 $\\beta$',100),'第一步\r\n\t第二步 $\\beta$');
+ assert.equal(parse({...question,analysis:'由 $\\beta=1$。\n代入得 1。'})[0].answer,'1');
+});
 
 test("命题计划必须覆盖所有候选，最终复核对缺失、重复、否定和伪布尔值关闭通过", () => {
   const plan = { objective: "一次方程", prerequisites: "等式", difficultyRationale: "一步求解", misconception: "移项符号", changes: ["逆向", "情境"] };

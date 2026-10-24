@@ -56,9 +56,10 @@ export type ChapterSourceUpdates = {
 
 export function validateChapterContent(value: unknown, plan: AuthoringChapterPlan, kind: AuthoringRequest["kind"], pools: string[][], excluded: Set<string>) {
   const content = chapterContentSchema.parse(value);
+  const outside = content.items.filter(item => !plan.slots[item.slotIndex] || !pools[item.slotIndex]?.includes(item.questionId));
+  if (outside.length) throw new Error(`模型选择了不在该组候选范围内的题目：${outside.map(item => `${item.questionId} 被放入 slotIndex=${item.slotIndex}，该题允许的 slotIndex 为 [${pools.flatMap((pool, index) => pool.includes(item.questionId) ? [index] : []).join(",")}]`).join("；")}。slotIndex 从0开始；只能使用对应 pools 中的完整题目ID，不能自行改变已标注难度或题型后跨组安排。没有合适题就留缺口。`);
   const ids = new Set<string>();
   for (const item of content.items) {
-    if (!plan.slots[item.slotIndex] || !pools[item.slotIndex]?.includes(item.questionId)) throw new Error("模型选择了不在该组候选范围内的题目");
     if (ids.has(item.questionId) || excluded.has(item.questionId)) throw new Error("模型重复选择了本章或前章已经使用的题目");
     ids.add(item.questionId);
     if (["handout", "book"].includes(kind) && plan.slots[item.slotIndex].role === "example" && item.teachingExplanation.trim().length < 60) throw new Error("例题缺少具体讲解步骤");
@@ -67,12 +68,14 @@ export function validateChapterContent(value: unknown, plan: AuthoringChapterPla
   if (content.knowledge.some(item => !plan.knowledgeIds.includes(item.id))) throw new Error("知识讲解偏离章节范围");
   if (["handout", "book"].includes(kind) && plan.knowledgeIds.some(id => !content.knowledge.some(item => item.id === id))) throw new Error("章节缺少计划中的知识讲解");
   if (new Set(content.gaps.map(gap => gap.slotIndex)).size !== content.gaps.length || content.gaps.some(gap => !plan.slots[gap.slotIndex])) throw new Error("缺题记录无效或重复");
+  const quotaErrors: string[] = [];
   plan.slots.forEach((slot, index) => {
     const count = content.items.filter(item => item.slotIndex === index).length;
-    if (count > slot.count) throw new Error("选题超过计划配额");
-    if (count < slot.count && !content.gaps.some(gap => gap.slotIndex === index)) throw new Error("题量不足却没有说明缺口");
-    if (count === slot.count && content.gaps.some(gap => gap.slotIndex === index)) throw new Error("题量已满足，不应仍标记缺题");
+    if (count > slot.count) quotaErrors.push(`slotIndex=${index} 选题超过计划配额：要求 ${slot.count} 道，实际 ${count} 道，已选 ID=${JSON.stringify(content.items.filter(item => item.slotIndex === index).map(item => item.questionId))}`);
+    if (count < slot.count && !content.gaps.some(gap => gap.slotIndex === index)) quotaErrors.push(`slotIndex=${index} 题量不足却没有说明缺口：要求 ${slot.count} 道，实际 ${count} 道，请在 gaps 中记录本组不足原因`);
+    if (count === slot.count && content.gaps.some(gap => gap.slotIndex === index)) quotaErrors.push(`slotIndex=${index} 题量已满足，不应仍标记缺题：要求与实际均为 ${count} 道，请移除本组 gaps`);
   });
+  if (quotaErrors.length) throw new Error(`${quotaErrors.join("；")}。只修复不符合配额的组；不得把多选的题移入不兼容的组。`);
   return { ...content, knowledge: content.knowledge.sort((a, b) => plan.knowledgeIds.indexOf(a.id) - plan.knowledgeIds.indexOf(b.id)), items: content.items.sort((a, b) => a.slotIndex - b.slotIndex) };
 }
 
@@ -104,7 +107,8 @@ export function validateChapterReview(value: unknown, content: ChapterContent, c
   const groundedChecks = review.checks.map(check => {
     if (check.evidenceRefs) {
       if (check.evidence !== undefined) throw new Error(`学科核查 ${check.id} 请只返回 evidenceRefs，原文由系统填入，不要同时重写 evidence。`);
-      if (new Set(check.evidenceRefs).size !== check.evidenceRefs.length || check.evidenceRefs.some(ref => !sources.has(ref))) throw new Error(`学科核查 ${check.id} 引用了不存在或重复的原文编号 ${JSON.stringify(check.evidenceRefs)}；请从 evidenceSources.ref 选择，不要猜测编号。`);
+      const invalid = check.evidenceRefs.filter((ref, index) => !sources.has(ref) || check.evidenceRefs!.indexOf(ref) !== index);
+      if (invalid.length) throw new Error(`学科核查 ${check.id} 引用了不存在或重复的原文编号 ${JSON.stringify(invalid)}；只能从 evidenceSources.ref 选择，每项不重复。可用编号：${JSON.stringify([...sources.keys()])}。plan、slots、selectionReason 和审校意见不是正文证据。保留对当前正文的实质判断，不能因为修复引用而把原有错误判为正确。`);
       return { ...check, evidence: check.evidenceRefs.map(ref => sources.get(ref)!).join("\n\n") };
     }
     if (!check.evidence) throw new Error(`学科核查 ${check.id} 缺少原文依据，请从 evidenceSources.ref 选择 evidenceRefs。`);

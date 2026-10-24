@@ -56,6 +56,9 @@ globalThis.fetch = async (_url, init) => {
   if (system.includes("教学需求核对员")) { calls.push("requirements"); output = { numeric: [], knowledge: [], questions: [], assumptions: [] }; }
   else if (system.includes("输出 JSON {items:")) {
     calls.push("select"); const chosen = new Set<string>();
+    for (const candidate of input.candidates as Array<{id:string;eligibleSlotIndexes:number[]}>) {
+      assert.deepEqual(candidate.eligibleSlotIndexes, input.pools.flatMap((pool:string[], index:number) => pool.includes(candidate.id) ? [index] : []));
+    }
     assert.ok(input.candidates.every((candidate:{assessment:{prerequisites:unknown}})=>Array.isArray(candidate.assessment.prerequisites)));
     output = { items: input.pools.flatMap((pool: string[], slotIndex: number) => {
       const id = pool.find(id => !chosen.has(id) && (!lateSelection || ['late-130','late-131'].includes(id))); if (!id) return []; chosen.add(id);

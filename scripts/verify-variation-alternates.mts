@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import sharp from 'sharp';
+import { putFile } from '../lib/file-storage.ts';
 import { ensureDatabase } from '../db/bootstrap.ts';
 import { getSqlite } from '../db/index.ts';
 import { encryptSecret } from '../lib/secret-box.ts';
@@ -10,6 +12,8 @@ const db = getSqlite(), now = new Date().toISOString(), secret = await encryptSe
 db.prepare("INSERT INTO model_profiles(id,owner_id,display_name,provider,base_url,model,api_key_ciphertext,api_key_iv,api_key_mask,created_at,updated_at) VALUES('model','teacher','Mock','openai-compatible','https://model.invalid/v1','mock',?,?,'test',?,?)").run(secret.ciphertext,secret.iv,now,now);
 db.prepare("INSERT INTO documents(id,owner_id,name,mime_type,status,subject,grade,created_at,updated_at) VALUES('doc','teacher','合成原卷','application/pdf','complete','数学','高三',?,?)").run(now,now);
 db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,created_at,updated_at) VALUES('source','doc','1','fill','求 1+1 的值。','2','直接相加。','approved',1,'{}',?,?)").run(now,now);
+await putFile('assets/source.png',await sharp({create:{width:20,height:20,channels:3,background:'white'}}).png().toBuffer());
+db.prepare("INSERT INTO question_assets(id,question_id,kind,role,label,crop_key,bbox_json,created_at) VALUES('source-image','source','figure','question','原题图','assets/source.png','{}',?)").run(now);
 const drafts = [2,3,4,5].map(n => ({stem:`求 ${n}+${n} 的值。`,type:'fill',options:[],answer:String(n*2),analysis:`直接相加得 ${n*2}。`,tags:[],changeNote:'改变加数，保持整数加法目标。',diagram:null}));
 let mode = 'fallback', count = 1, calls: string[] = [], reviewedIndex = -1;
 globalThis.fetch = async (_url, init) => {
@@ -17,11 +21,16 @@ globalThis.fetch = async (_url, init) => {
   const text = body.messages.map((message: {content:string | Array<{text?:string}>}) => typeof message.content === 'string' ? message.content : message.content.map(part => part.text ?? '').join('\n')).join('\n');
   let output: unknown;
   if (text.includes('逐题核查可解性')) {
+    const source=JSON.parse(text.split('原题对照：')[1].split('。最终题目：')[0]);
+    assert.equal(source.answer,'2');assert.equal(source.analysis,'直接相加。');assert.deepEqual(source.options,[]);
+    assert.ok(body.messages.some((message:{content:unknown})=>Array.isArray(message.content)&&message.content.some(part=>part.type==='image_url')),'final verifier must receive original question images');
     calls.push(`verify:${reviewedIndex}`);
     const bad = mode === 'all-fail' || (['fallback','low-score'].includes(mode) && reviewedIndex === 0);
     output = { checks: [{index:1,score:mode === 'low-score' && bad ? 74 : 90,solvable:true,answerCorrect:mode === 'low-score' ? true : !bad,objectiveAligned:true,difficultyAligned:true,explanation:bad ? '独立复算发现答案有误，不能使用。' : '逐步相加复算一致，目标与难度保持。'}] };
   } else if (text.includes('独立审校与修订 Agent')) {
-    const candidateText = text.split('候选题（JSON，仅作审校）：')[1].split('\n上次返回未通过校验')[0];
+    const source=JSON.parse(text.split('原题（仅作对照）：')[1].split('\n')[0]);
+    assert.equal(source.answer,'2');assert.equal(source.analysis,'直接相加。');assert.deepEqual(source.options,[]);
+    const candidateText = text.split('候选题（JSON，仅作审校）：')[1].split('\n')[0];
     const [candidate] = JSON.parse(candidateText);
     reviewedIndex = drafts.findIndex(q => q.stem === candidate.stem);
     assert.ok(reviewedIndex >= 0);

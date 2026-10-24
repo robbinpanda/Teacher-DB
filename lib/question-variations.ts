@@ -9,8 +9,8 @@ function objectValue(value: unknown) {
 
 export function boundedText(value: unknown, limit: number, required = false) {
   const text = typeof value === "string" ? value.trim() : "";
-  if ((required && !text) || text.length > limit || /\u0000/.test(text)) {
-    throw new Error("变式题字段不完整、包含无效字符或长度超限");
+  if ((required && !text) || text.length > limit || (typeof value === "string" && /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value))) {
+    throw new Error("变式题字段不完整、包含无效字符或长度超限；LaTeX 反斜杠须正确进行 JSON 转义，不能生成退格或换页等控制字符");
   }
   return text;
 }

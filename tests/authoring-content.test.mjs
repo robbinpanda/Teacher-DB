@@ -29,6 +29,27 @@ test('拒绝虚构候选、跨章重复、配额不足不报告或无效缺口',
  assert.throws(()=>validateChapterContent({...content,items:[content.items[0]]},plan,'handout',[['a'],['b']],new Set()),/缺口/);
  assert.equal(validateChapterContent({...content,items:[content.items[0]],gaps:[{slotIndex:1,reason:'当前资料没有符合难度的独立练习题。'}]},plan,'handout',[['a'],[]],new Set()).gaps.length,1);
 });
+
+test('选题分组错误同时指出每个错放题目的允许组号，不放宽难度约束',()=>{
+ const crossed={...content,items:[{...content.items[0],slotIndex:1},{...content.items[1],slotIndex:0}]};
+ assert.throws(()=>validateChapterContent(crossed,plan,'handout',[['a'],['b']],new Set()),error=>{
+  assert.match(error.message,/a 被放入 slotIndex=1.*允许的 slotIndex 为 \[0\]/);
+  assert.match(error.message,/b 被放入 slotIndex=0.*允许的 slotIndex 为 \[1\]/);
+  assert.match(error.message,/不能自行改变已标注难度/);return true;
+ });
+});
+test('配额错误一次报告超额、遗漏缺口和错误缺口，不能静默删题或改分组',()=>{
+ const expanded={...plan,slots:[...plan.slots,{...slot,role:'practice'}]};
+ const invalid={...content,items:[...content.items.map(item=>({...item,slotIndex:0})),{...content.items[1],questionId:'c',slotIndex:2}],gaps:[{slotIndex:2,reason:'已经足额却错误写入缺口说明。'}]};
+ assert.throws(()=>validateChapterContent(invalid,expanded,'paper',[['a','b'],[],['c']],new Set()),error=>{
+  assert.match(error.message,/slotIndex=0 选题超过计划配额：要求 1 道，实际 2 道/);
+  assert.match(error.message,/slotIndex=1 题量不足却没有说明缺口/);
+  assert.match(error.message,/slotIndex=2 题量已满足，不应仍标记缺题/);
+  return true;
+ });
+ assert.equal(invalid.items.length,3);
+});
+
 test('审校不能跳过题目或知识点；任一不通过均保留具体问题',()=>{
  const review={knowledge:[{id,correct:true,complete:true,reason:'定义与公式条件均清楚，覆盖本章知识目标。'}],questions:['a','b'].map(id=>({id,solvable:true,answerCorrect:true,computedAnswer:"$2\\pi$",aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，例题推导与原题答案相符。'}))};
  assert.equal(validateChapterReview(review,content).passed,true);
@@ -83,6 +104,11 @@ test('审校引用编号必须来自当前正文，原文由服务端还原，�
  assert.ok(saved.issues.some(issue=>issue.includes(saved.checks[0].reason)));
  assert.ok(saved.issues.every(issue=>!issue.includes(saved.checks[0].evidence)), 'long quotations stay in expandable checks, not repeated in issue summaries');
  for(const evidenceRefs of [['review.issues:0'],[ref,ref],['knowledge.99.explanation:0'],[]])assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs}]},content,checks));
+ assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs:[ref,'plan.slots']}]},content,checks),error=>{
+  assert.match(error.message,/不存在或重复的原文编号 \["plan.slots"\]/);
+  assert.ok(error.message.includes(`可用编号：${JSON.stringify(chapterReviewEvidence(content).map(source=>source.ref))}`));
+  assert.match(error.message,/不能因为修复引用而把原有错误判为正确/);return true;
+ });
  assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidence:'模型自己写的引文'}]},content,checks),/只返回 evidenceRefs/);
  assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs:undefined}]},content,checks),/缺少原文依据/);
  const withOldReview={...content,review:{issues:['旧审校写下的错误句子']}};
