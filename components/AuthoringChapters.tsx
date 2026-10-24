@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { MathText } from "./MathText";
 import { ChapterHistory } from "./ChapterHistory";
 import { ChapterPlanFields } from "./ChapterPlanFields";
@@ -81,7 +82,11 @@ function ChapterEditor({ chapter, projectId, projectRevision, projectStatus, sco
         const source=draft.questions.find(question=>question.id===check.id);
         return <section key={check.id}><h4>本章第 {position+1} 题{source ? ` · ${source.source.documentName} 第 ${source.number} 题` : ""}</h4>
           <p>条件{check.solvable ? "可作答" : "不足或有矛盾"} · 原题答案{check.answerCorrect ? "通过" : "需核对"} · 解析与讲解{check.explanationCorrect ? "通过" : "需核对"}</p>
+          <p>教学目标{check.aligned ? "匹配" : "需核对"} · 难度{check.difficultyAppropriate ? "匹配" : "需核对"}</p>
+          {source && <p>作品引用的原题答案：<MathText text={source.answer || "未提供答案"}/></p>}
           <p>模型复算答案（供核对）：<MathText text={check.computedAnswer}/></p><p><MathText text={check.reason}/></p>
+          {source && !source.source.sourceRemoved && <p><Link href={`/review/${encodeURIComponent(source.source.documentId)}?question=${encodeURIComponent(source.id)}`} target="_blank" rel="noopener noreferrer">打开原题核对与修复</Link></p>}
+          {(!check.solvable || !check.answerCorrect || !check.explanationCorrect) && <p>请对照原卷核实。修复原题后重新生成本章，或在“修改正文与选题”中换题并保存，再重新审校。</p>}
         </section>;
       })}</details>}
       {!draft.review.passed && <div className="studio-error"><strong>待核对的问题</strong><ul>{draft.review.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></div>}

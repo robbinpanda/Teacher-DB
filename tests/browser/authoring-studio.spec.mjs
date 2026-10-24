@@ -235,7 +235,7 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
  test.setTimeout(150000);
  const first=await prepare(context),second=await prepare(context);
  const db=new Database(path.join(process.env.JIANTI_E2E_DATA_DIR,'teacher-question-bank.sqlite3'));
- db.prepare("UPDATE questions SET type='answer',stem='求函数 $y=sin(3x)$ 的最小正周期，并说明计算依据。',answer='练习专用答案标记',analysis='用角系数的绝对值计算，得到最小正周期为三分之二π。' WHERE id=?").run(second.id);db.close();
+ db.prepare("UPDATE questions SET type='answer',stem='求函数 $y=sin(3x)$ 的最小正周期，并说明计算依据。',answer=?,analysis='用角系数的绝对值计算，得到最小正周期为三分之二π。' WHERE id=?").run('练习专用答案标记：$2\\pi/3$',second.id);db.close();
  const slot={role:'example',knowledgeIds:[period],difficulty:2,type:'fill',count:1,score:0,purpose:'理解周期公式并正确代入'};
  const plan={title:'完整周期讲义浏览器验证',audience:'高三基础班',approach:'概念理解、例题示范、独立练习逐步提高。',estimatedMinutes:45,assumptions:[],chapters:[{id:'period',title:'周期概念与计算',objectives:['准确计算最小正周期并说明依据'],knowledgeIds:[period],prerequisites:[],teachingNotes:'说明角系数非零条件以及绝对值的意义。',slots:[slot,{...slot,role:'practice',type:'answer'}]}]};
  const reviewModels=[];const reviewerName=`独立审校-${crypto.randomUUID()}`;
@@ -244,7 +244,7 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   const input=JSON.parse(raw),system=input.messages.find(m=>m.role==='system').content,user=input.messages.find(m=>m.role==='user').content;
   const data=JSON.parse(typeof user==='string'?user:user.find(p=>p.type==='text').text);let output;
   if(system.includes('输出 JSON {items:'))output={items:[{slotIndex:0,questionId:first.id,selectionReason:'通过识别角系数和代入公式示范基本方法。'},{slotIndex:1,questionId:second.id,selectionReason:'更换角系数后让学生独立说明推导依据。'}],gaps:[]};
-  else if(system.includes('独立审校教师')){reviewModels.push(input.model);output={checks:(data.checks??[]).map(c=>({id:c.id,passed:true,evidenceRefs:['introduction:0'],reason:"已逐项核对该学科要求和对应内容。"})),knowledge:data.content.knowledge.map(k=>({id:k.id,correct:true,complete:true,reason:'公式使用条件明确，概念和方法完整。'})),questions:data.content.items.map(q=>({id:q.questionId,solvable:true,answerCorrect:true,computedAnswer:"$2\\pi$",aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'逐题核对条件、难度和推导，符合本章要求。'}))};}
+  else if(system.includes('独立审校教师')){reviewModels.push(input.model);output={checks:(data.checks??[]).map(c=>({id:c.id,passed:true,evidenceRefs:['introduction:0'],reason:"已逐项核对该学科要求和对应内容。"})),knowledge:data.content.knowledge.map(k=>({id:k.id,correct:true,complete:true,reason:'公式使用条件明确，概念和方法完整。'})),questions:data.content.items.map(q=>({id:q.questionId,solvable:true,answerCorrect:true,computedAnswer:q.questionId===first.id?'$\\pi$':'$2\\pi/3$',aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'逐题核对条件、难度和推导，符合本章要求。'}))};}
   else if(system.includes('校本教辅编辑'))output={...data.selection,knowledge:[lesson],introduction:'本章从周期定义出发，通过例题示范后安排独立练习。',items:data.selection.items.map(q=>({...q,teachingExplanation:'首先确认函数为正弦函数，振幅及角系数均不为零，再识别角系数。利用最小正周期等于二π除以角系数绝对值的公式，代入得到结果。最后将周期平移代入函数，验证前后函数值相同，并注意周期必须取正值。'})),conclusion:'本章掌握周期公式的条件，能够识别角系数并完成计算。'};
   else if(system.includes('教学需求核对员'))output={numeric:[],knowledge:[],questions:[],assumptions:[]};
   else output=plan;
@@ -272,6 +272,13 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   const answerChecks=page.locator('.studio-question-checks');await answerChecks.locator('summary').click();
   await expect(answerChecks.locator('section')).toHaveCount(2);await expect(answerChecks).toContainText('原题答案通过');
   await expect(answerChecks).toContainText('模型复算答案（供核对）');
+  await expect(answerChecks).toContainText('作品引用的原题答案：');
+  await expect(answerChecks).toContainText('练习专用答案标记');
+  await expect(answerChecks).toContainText('教学目标匹配 · 难度匹配');
+  const originalLinks=answerChecks.getByRole('link',{name:'打开原题核对与修复'});
+  await expect(originalLinks).toHaveCount(2);
+  await expect(originalLinks.nth(1)).toHaveAttribute('href',`/review/${second.doc}?question=${second.id}`);
+  await expect(originalLinks.nth(1)).toHaveAttribute('target','_blank');
   await answerChecks.screenshot({path:'tmp/teacher-pilot/question-answer-checks-browser.png'});await answerChecks.locator('summary').click();
   await page.locator('.studio-review-checks > summary').click();
   await page.getByText('查看原文依据',{exact:true}).first().click();
