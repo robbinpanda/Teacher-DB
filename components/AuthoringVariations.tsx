@@ -34,6 +34,7 @@ function VariationItem({item,projectId,scopeQuery,onUpdate}:{item:WholePaperVari
   const [busy,setBusy] = useState(false),[error,setError] = useState("");
   const [open,setOpen] = useState(false),[diagram,setDiagram] = useState<string|null>(null);
   const [feedback,setFeedback] = useState("");
+  const [allowQuestionChanges,setAllowQuestionChanges] = useState(false);
   const url = `/api/authoring/${projectId}/variations/${item.id}?${scopeQuery}`;
   useEffect(()=> {
     if (!open || !item.candidate?.question.diagram) return;
@@ -43,7 +44,7 @@ function VariationItem({item,projectId,scopeQuery,onUpdate}:{item:WholePaperVari
   },[open,item.candidate?.question.diagram,url]);
   async function act(action:"accept"|"retry") {
     setBusy(true);setError("");
-    try { onUpdate((await studioRequest<{project:unknown}>(url,"POST",{action,revision:item.revision,...(action === "retry" ? {feedback} : {})})).project); }
+    try { onUpdate((await studioRequest<{project:unknown}>(url,"POST",{action,revision:item.revision,...(action === "retry" ? {feedback,allowQuestionChanges} : {})})).project); }
     catch(error) { setError(error instanceof Error?error.message:"操作失败"); } finally { setBusy(false); }
   }
   const candidate = item.candidate;
@@ -61,10 +62,14 @@ function VariationItem({item,projectId,scopeQuery,onUpdate}:{item:WholePaperVari
       </> : <p>{labels[item.status]}。结果会自动保存，可稍后回来查看。</p>}</section>
     </div>
     {(error || item.error) && <p role="alert" className="studio-error">{error||item.error}</p>}
-    {item.retryFeedback && <p><strong>已提交的修改意见：</strong>{item.retryFeedback}</p>}
+    {item.retryFeedback && <><p><strong>已提交的修改意见：</strong>{item.retryFeedback}</p><p>修改范围：{item.retryAllowQuestionChanges ? "允许调整题干、选项与题图" : "有旧候选时保留题目，只修正答案与解析"}</p></>}
     {["failed","awaiting_teacher","accepted"].includes(item.status) && <label className="studio-field">修改意见（选填）
       <textarea value={feedback} maxLength={1500} rows={3} disabled={busy} onChange={event=>setFeedback(event.target.value)} placeholder="例如：第（2）问的极值点不在给定区间内，请重算值域并核对开闭端点。" />
       <small>意见会连同上一版候选用于重做，并重新独立审校。{item.status === "failed" && item.retryFeedback ? "留空重试会继续使用已提交意见。" : "留空则重新生成。"}</small>
+    </label>}
+    {["failed","awaiting_teacher","accepted"].includes(item.status) && feedback.trim() && <label className="studio-field">
+      <span><input type="checkbox" checked={allowQuestionChanges} disabled={busy} onChange={event=>setAllowQuestionChanges(event.target.checked)}/> 允许修改题干、选项与题图</span>
+      <small>有上一版候选时，默认保留题目，只修正答案与解析；需要改条件或设问时再勾选。</small>
     </label>}
     <div className="studio-plan-actions">{item.status === "awaiting_teacher" && <button className="btn btn-primary" disabled={busy || Boolean(candidate?.question.diagram && !diagram)} onClick={()=>void act("accept")}>核对完成，采用此题</button>}
       {["failed","awaiting_teacher","accepted"].includes(item.status) && <button className="btn" disabled={busy} onClick={()=>void act("retry")}>{feedback.trim() ? "按修改意见重做此题" : "重新生成此题"}</button>}</div>

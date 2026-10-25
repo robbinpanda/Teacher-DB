@@ -16,14 +16,14 @@ export async function POST(request: Request, context: { params: Promise<{project
   await ensureDatabase();
   const data = z.discriminatedUnion("action", [
     z.object({ action: z.literal("accept"), revision: z.number().int().positive() }).strict(),
-    z.object({ action: z.literal("retry"), revision: z.number().int().positive(), feedback: z.string().trim().max(1500).optional() }).strict(),
+    z.object({ action: z.literal("retry"), revision: z.number().int().positive(), feedback: z.string().trim().max(1500).optional(), allowQuestionChanges: z.boolean().optional() }).strict(),
   ]).safeParse(await request.json().catch(() => null));
   if (!data.success) return Response.json({ error: "操作格式无效" }, { status: 400 });
   const {projectId,itemId} = await context.params;
   try {
     const owner = requestOwner(request), scope = requestEducationScope(request);
     const project = data.data.action === "accept" ? await acceptWholePaperItem(owner, scope, projectId, itemId, data.data.revision)
-      : await retryWholePaperItem(owner, scope, projectId, itemId, data.data.revision, data.data.feedback);
+      : await retryWholePaperItem(owner, scope, projectId, itemId, data.data.revision, data.data.feedback, data.data.allowQuestionChanges);
     return Response.json({ project });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "操作失败" }, { status: 409 }); }
 }

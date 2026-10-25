@@ -115,7 +115,10 @@ function xml(value: string) {
 }
 
 function scaled([x, y]: DiagramPoint): DiagramPoint {
-  return [x / 1000 * canvasWidth, y / 1000 * canvasHeight];
+  // The DSL has one coordinate unit for both axes and circle radii. Stretching
+  // x to the wider canvas moves points off circles and changes angles.
+  const extent = Math.min(canvasWidth, canvasHeight);
+  return [(canvasWidth - extent) / 2 + x / 1000 * extent, (canvasHeight - extent) / 2 + y / 1000 * extent];
 }
 
 function labelSvg(label: string, at: DiagramPoint) {

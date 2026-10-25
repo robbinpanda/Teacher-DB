@@ -67,7 +67,7 @@ function errorStatus(error: unknown) {
   return 422;
 }
 
-export async function generateVariationCandidates(ownerId: string, questionId: string, value: unknown, hooks: { onCreated?: (runId: string) => void; onStage?: (stage: string) => void; revisionContext?: { feedback: string; previousCandidate: unknown } } = {}) {
+export async function generateVariationCandidates(ownerId: string, questionId: string, value: unknown, hooks: { onCreated?: (runId: string) => void; onStage?: (stage: string) => void; revisionContext?: { feedback: string; previousCandidate: unknown; allowQuestionChanges?: boolean } } = {}) {
   await ensureDatabase();
   let runId = "";
   try {
@@ -162,6 +162,7 @@ export async function generateVariationCandidates(ownerId: string, questionId: s
       diagramMode,
       generatorProfileId: profileId,
       reviewerProfileId,
+      revision: hooks.revisionContext?.previousCandidate ? hooks.revisionContext : undefined,
       onStage: (stage) => {
         getSqlite().prepare("UPDATE variation_runs SET status = ?, updated_at = ? WHERE id = ? AND owner_id = ?").run(stage, now(), runId, ownerId);
         hooks.onStage?.(stage);

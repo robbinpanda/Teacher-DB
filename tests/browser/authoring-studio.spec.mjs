@@ -113,9 +113,9 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
   const offset=text.includes('cos(3x)')?10:0;
   const variations=[4+offset,5+offset].map(value=>({stem:`求函数 $y=\\sin(${value}x)$ 的最小正周期。`,type:'fill',options:[],answer:`$2\\pi/${value}$`,analysis:`角系数为 ${value}，振幅及角系数非零，由周期公式得结果。`,tags:[],changeNote:'改变角系数，保留周期公式的考查目标',diagram:null}));
   if(text.includes('逐题核查可解性'))output={checks:[{index:1,score:92,solvable:true,answerCorrect:JSON.parse(plain.split('最终题目：')[1])[0].stem!==variations[0].stem || offset!==0,objectiveAligned:true,difficultyAligned:true,explanation:'模拟独立复核首选失败，备用候选通过后才可采用。'}]};
-  else if(text.includes('规划 2 道变式'))output={objective:'计算最小正周期',prerequisites:'周期公式',difficultyRationale:'直接代入公式',misconception:'忽略绝对值',changes:['改变角系数','改变函数']};
+  else if(text.includes('规划 2 道变式') || text.includes('修订已有 1 道候选题'))output={objective:'计算最小正周期',prerequisites:'周期公式',difficultyRationale:'直接代入公式',misconception:'忽略绝对值',changes:text.includes('修订已有 1 道候选题')?['修正解析']:['改变角系数','改变函数']};
   else if(text.includes('独立审校与修订 Agent'))output={reviews:[{index:1,verdict:'pass',score:92,issues:[],finalVariation:JSON.parse(plain.split('候选题（JSON，仅作审校）：')[1])[0]}]};
-  else output={variations};res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));
+  else output={variations:plain.includes(correction)?[variations[1]]:variations};res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));
  });});
  await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
  try{
@@ -132,12 +132,14 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
   const firstDetail=page.locator('.studio-variations details.studio-chapter').filter({has:page.locator('summary').filter({hasText:'第 3 题'})});
   await firstDetail.locator(':scope > summary').click();
   await firstDetail.getByRole('textbox',{name:/修改意见/}).fill(correction);
+  await expect(firstDetail.getByRole('checkbox',{name:'允许修改题干、选项与题图'})).not.toBeChecked();
   await firstDetail.getByRole('button',{name:'按修改意见重做此题'}).click();
   await expect.poll(()=>correctionSeen,{timeout:45000}).toBe(true);
   await expect(page.locator('.studio-variations summary').filter({hasText:'待核对采用'})).toHaveCount(2,{timeout:45000});
   await page.reload();await page.getByRole('button',{name:/整卷变式浏览器原卷 · 变式卷/}).click();
   await firstDetail.locator(':scope > summary').click();
   await expect(firstDetail).toContainText(`已提交的修改意见：${correction}`);
+  await expect(firstDetail).toContainText('修改范围：有旧候选时保留题目，只修正答案与解析');
   await page.screenshot({path:'tmp/teacher-pilot/variation-feedback-browser.png',fullPage:true});
   await firstDetail.locator(':scope > summary').click();
   for(const number of ['3','7']){

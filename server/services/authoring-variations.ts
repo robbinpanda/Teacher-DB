@@ -43,8 +43,9 @@ export async function controlWholePaperVariation(owner: string, scope: Education
     return requireProject(owner, scope, id);
   })();
 }
-export async function retryWholePaperItem(owner: string, scope: EducationScope, projectId: string, itemId: string, revision: number, feedback = "") {
+export async function retryWholePaperItem(owner: string, scope: EducationScope, projectId: string, itemId: string, revision: number, feedback = "", allowQuestionChanges = false) {
   if (typeof feedback !== "string") throw new Error("修改意见格式无效");
+  if (typeof allowQuestionChanges !== "boolean") throw new Error("修改范围格式无效");
   const note = boundedText(feedback, 1500);
   await freshSource(owner, scope, projectId);
   // Reserve the writer before reading the candidate; a worker heartbeat must not
@@ -55,7 +56,7 @@ export async function retryWholePaperItem(owner: string, scope: EducationScope, 
     // Save the exact server-side candidate being discussed before clearing the run mapping.
     // Keep that context through worker recovery and failed retries; a new note supersedes it.
     const previousContext = getSqlite().prepare("SELECT retry_context_json FROM authoring_variation_items WHERE id=?").get(itemId) as { retry_context_json: string | null };
-    const context = note ? JSON.stringify({ feedback: note, previousCandidate: item.candidate?.question ?? (previousContext.retry_context_json ? JSON.parse(previousContext.retry_context_json).previousCandidate : null) })
+    const context = note ? JSON.stringify({ feedback: note, allowQuestionChanges, previousCandidate: item.candidate?.question ?? (previousContext.retry_context_json ? JSON.parse(previousContext.retry_context_json).previousCandidate : null) })
       : item.status === "failed" ? previousContext.retry_context_json : null;
     getSqlite().prepare("UPDATE authoring_variation_items SET error=CASE WHEN status='failed' THEN error ELSE NULL END,retry_context_json=?,status='pending',run_id=NULL,promoted_question_id=NULL,stage=NULL,revision=revision+1,updated_at=? WHERE id=?").run(context, time(), itemId);
     getSqlite().prepare("UPDATE authoring_projects SET paper_id=NULL WHERE id=?").run(projectId);

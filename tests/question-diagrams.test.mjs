@@ -46,3 +46,19 @@ test("escapes labels before placing them in SVG", () => {
   assert.match(svg, /&lt;b&gt;&amp;文字/);
   assert.doesNotMatch(svg, /<b>/);
 });
+
+test('rendering preserves a point on a circle and equal horizontal/vertical distances',()=>{
+  const diagram={version:1,kind:'geometry',altText:'圆上的点P及等长半径',elements:[
+    {type:'circle',center:[500,500],radius:250,label:''},
+    {type:'point',at:[650,700],label:'P'},
+    {type:'line',from:[500,500],to:[750,500],label:''},
+    {type:'line',from:[500,500],to:[500,750],label:''},
+  ]};
+  const svg=renderQuestionDiagramSvg(parseQuestionDiagram(diagram));
+  const circles=[...svg.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)].map(m=>m.slice(1).map(Number));
+  const [[cx,cy,r],[px,py]]=circles;
+  assert.ok(Math.abs(Math.hypot(px-cx,py-cy)-r)<1e-8,'P must lie on the rendered circle');
+  const lines=[...svg.matchAll(/<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/g)].map(m=>m.slice(1).map(Number));
+  const lengths=lines.map(([x1,y1,x2,y2])=>Math.hypot(x2-x1,y2-y1));
+  assert.deepEqual(lengths,[r,r]);
+});

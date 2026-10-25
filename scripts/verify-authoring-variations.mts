@@ -18,6 +18,7 @@ const request={kind:"variation",instruction:"保留原题知识目标，改变�
 const read=(id:string)=>readAuthoringProject("teacher",scope,id)!;
 let calls=0,steal:(()=>void)|undefined, fail=false, duplicate=false, malformedGeneration=false, feedbackSeen=false;
 let expectedTeacherFeedback='',expectedPreviousStem='',teacherFeedbackStages=0;
+let driftGeneration=false,driftReview=false;
 globalThis.fetch=async(_url,init)=>{
   calls++;
   const body=JSON.parse(String(init?.body)),text=JSON.stringify(body.messages??body.input);
@@ -28,9 +29,9 @@ globalThis.fetch=async(_url,init)=>{
   const variations=[3+offset,5+offset].map(value=>({stem:`若 x=${value}，求 2x+1。`,type:"fill",options:[],answer:String(2*value+1),analysis:`代入计算，2×${value}+1=${2*value+1}。`,tags:[],changeNote:"改变数值与计算表达式",diagram:null}));
   let output:unknown;
   if(text.includes("逐题核查可解性"))output={checks:[{index:1,score:92,solvable:true,answerCorrect:true,objectiveAligned:true,difficultyAligned:true,explanation:"代入复算结果一致，目标难度保持。"}]};
-  else if(text.includes("规划 2 道变式"))output={objective:"代入求值",prerequisites:"整数运算",difficultyRationale:"一步代入",misconception:"运算次序",changes:["改变数值","改变表达式"]};
-  else if(text.includes("独立审校与修订 Agent"))output={reviews:[{index:1,verdict:"pass",score:92,issues:[],finalVariation:variations[0]}]};
-  else {steal?.();output={variations};if(malformedGeneration){output={variations:variations.map(q=>({...q,changeNote:'过长说明'.repeat(100)}))};malformedGeneration=false;}}
+  else if(text.includes("规划 2 道变式") || text.includes("修订已有 1 道候选题"))output={objective:"代入求值",prerequisites:"整数运算",difficultyRationale:"一步代入",misconception:"运算次序",changes:text.includes("修订已有 1 道候选题")?["修正解析"]:["改变数值","改变表达式"]};
+  else if(text.includes("独立审校与修订 Agent"))output={reviews:[{index:1,verdict:"pass",score:92,issues:[],finalVariation:driftReview?{...variations[0],stem:variations[0].stem+' 请写出算式。'}:variations[0]}]};
+  else {steal?.();output={variations:driftGeneration?[{...variations[0],stem:variations[0].stem+' 请写出算式。'}]:expectedTeacherFeedback||text.includes('修订教师正在核对')?[variations[0]]:variations};if(malformedGeneration){output={variations:variations.map(q=>({...q,changeNote:'过长说明'.repeat(100)}))};malformedGeneration=false;}}
   return Response.json({choices:[{message:{content:JSON.stringify(output)},finish_reason:"stop"}]});
 };
 async function create(){const p=await createAuthoringProject("teacher",scope,request);return controlWholePaperVariation("teacher",scope,p.id,p.revision,"generate");}
@@ -93,7 +94,7 @@ const brokenItem=read(repeated.id).variation!.items[1];await retryWholePaperItem
 malformedGeneration=true;const beforeRepair=calls;await kickWholePaperVariations();assert.equal(calls-beforeRepair,5,"invalid generation gets exactly one bounded correction");assert.equal(read(repeated.id).variation!.items[1].status,"awaiting_teacher");
 assert.equal(feedbackSeen,true,"retry must include the previous concrete failure rather than repeating the same prompt");
 // Teacher feedback binds to the exact previous candidate, survives a failed request,
-// and reaches planning, generation, revision and final verification without adoption.
+// and reaches generation, review and verification without redesigning the question or adopting it.
 const target=read(repeated.id).variation!.items[1],previous=target.candidate!.question;
 const note='第二步运算有误，请保留原题型和设问，重新核对答案及解析。';
 await assert.rejects(()=>retryWholePaperItem('other',scope,repeated.id,target.id,target.revision,note),/不存在/);
@@ -102,7 +103,7 @@ await assert.rejects(()=>retryWholePaperItem('teacher',scope,repeated.id,target.
 assert.equal(read(repeated.id).variation!.items[1].runId,target.runId,'rejected feedback must not clear the candidate');
 await retryWholePaperItem('teacher',scope,repeated.id,target.id,target.revision,note);
 const context=JSON.parse((db.prepare('SELECT retry_context_json FROM authoring_variation_items WHERE id=?').get(target.id) as {retry_context_json:string}).retry_context_json);
-assert.deepEqual(context,{feedback:note,previousCandidate:previous});
+assert.deepEqual(context,{feedback:note,allowQuestionChanges:false,previousCandidate:previous});
 assert.equal(read(repeated.id).variation!.items[1].retryFeedback,note);
 expectedTeacherFeedback=note;expectedPreviousStem=previous.stem;
 fail=true;await kickWholePaperVariations();fail=false;
@@ -111,7 +112,7 @@ await retryWholePaperItem('teacher',scope,repeated.id,target.id,afterFailure.rev
 assert.equal(read(repeated.id).variation!.items[1].retryFeedback,note,'empty retry after failure must retain the submitted correction');
 const questionsBefore=(db.prepare('SELECT count(*) n FROM questions').get() as {n:number}).n;
 await kickWholePaperVariations();const corrected=read(repeated.id).variation!.items[1];
-assert.equal(corrected.status,'awaiting_teacher');assert.equal(teacherFeedbackStages,5,'failed planning plus all four successful stages');
+assert.equal(corrected.status,'awaiting_teacher');assert.equal(teacherFeedbackStages,4,'failed generation plus generation, review and verification; no replanning');
 const run=db.prepare('SELECT instructions FROM variation_runs WHERE id=?').get(corrected.runId) as {instructions:string};
 assert.ok(run.instructions.includes(note)&&run.instructions.includes(JSON.stringify(previous)));
 assert.equal((db.prepare('SELECT count(*) n FROM questions').get() as {n:number}).n,questionsBefore,'feedback must never adopt automatically');
@@ -119,4 +120,14 @@ expectedTeacherFeedback='';
 await retryWholePaperItem('teacher',scope,repeated.id,target.id,corrected.revision);
 assert.equal(read(repeated.id).variation!.items[1].retryFeedback,null,'fresh generation without feedback clears the previous correction request');
 await kickWholePaperVariations();
+const fixed=read(repeated.id).variation!.items[1];
+await retryWholePaperItem('teacher',scope,repeated.id,fixed.id,fixed.revision,note);
+driftGeneration=true;await kickWholePaperVariations();driftGeneration=false;
+let drifted=read(repeated.id).variation!.items[1];assert.equal(drifted.status,'failed');assert.match(drifted.error!,/不得修改上一版候选的 stem/);
+await retryWholePaperItem('teacher',scope,repeated.id,fixed.id,drifted.revision);
+driftReview=true;await kickWholePaperVariations();
+drifted=read(repeated.id).variation!.items[1];assert.equal(drifted.status,'failed');assert.match(drifted.error!,/不得修改上一版候选的 stem/);
+await retryWholePaperItem('teacher',scope,repeated.id,fixed.id,drifted.revision,note,true);
+await kickWholePaperVariations();driftReview=false;
+const changed=read(repeated.id).variation!.items[1];assert.equal(changed.status,'awaiting_teacher');assert.match(changed.candidate!.question.stem,/请写出算式/);
 console.log("Whole-paper variation: source order/scores, independent model pipeline, adoption, leases, isolation and publishing passed.");
