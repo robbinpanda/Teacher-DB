@@ -81,7 +81,7 @@ export function validateChapterContent(value: unknown, plan: AuthoringChapterPla
 
 const reviewSchema = z.object({
   suggestions: z.array(z.string().trim().min(4).max(1200)).max(12).default([]),
-  checks: z.array(z.object({ id: z.string(), passed: z.boolean(), evidence: z.string().trim().min(4).max(800).optional(), evidenceRefs: z.array(z.string().min(1).max(200)).min(1).max(4).optional(), reason: z.string().trim().min(8).max(1200) })).default([]),
+  checks: z.array(z.object({ id: z.string(), passed: z.boolean(), evidence: z.string().trim().min(4).max(800).optional(), evidenceRefs: z.array(z.string().min(1).max(200)).min(1).max(12).optional(), reason: z.string().trim().min(8).max(1200) })).default([]),
   knowledge: z.array(z.object({ id: z.string(), correct: z.boolean(), complete: z.boolean(), reason: z.string().trim().min(8).max(1200) })),
   questions: z.array(z.object({ id: z.string(), solvable: z.boolean(), answerCorrect: z.boolean(), computedAnswer: z.string().trim().min(1).max(2500), aligned: z.boolean(), difficultyAppropriate: z.boolean(), explanationCorrect: z.boolean(), reason: z.string().trim().min(8).max(1200) })),
 });
@@ -149,5 +149,5 @@ content 是本次待核查的不可变正文，本轮没有任何人替你修订
 computedAnswer 写你核验得到的答案或开放题评分要点；无法确定时说明缺失条件，不编造。reason 用简短的计算结果、必要条件或反例说明判断，不只复述“与参考答案一致”。选择题须核对选项键与实际选项内容。任何原题答案错误、条件不足或解析错误均使对应布尔项为 false，即使本章讲解是正确的也不能掩盖原题错误；正文修订不能改变题库原题，需提示教师更换或先修复原题。
 返回 JSON：{knowledge:[{id,correct:boolean,complete:boolean,reason}],questions:[{id,solvable:boolean,answerCorrect:boolean,computedAnswer,aligned:boolean,difficultyAppropriate:boolean,explanationCorrect:boolean,reason}],suggestions:[]}。每个知识点和每道选入题必须恰好审校一次；上述题目字段都必填，不能仅填写例题，不能用 knowledge 条目替代逐题核验。
 若输入有 checks，输出还必须包含 checks:[{id,passed:boolean,evidenceRefs:[原文编号],reason}]，逐条核查全部指定项。
-evidenceSources 是由本章正文生成的原文索引；每项 evidenceRefs 选择 1—4 个真实 ref，系统会填入对应原文。不要返回 evidence，不要自行改写、拼接引文，也不能把 checks.requirement 当作讲义原文。reason 写判断依据和具体修正建议。
+evidenceSources 是由本章正文生成的原文索引；每项 evidenceRefs 选择 1—12 个真实 ref，优先引用最直接的依据，跨题教学顺序核查可引用多道题，系统会填入对应原文。不要返回 evidence，不要自行改写、拼接引文，也不能把 checks.requirement 当作讲义原文。reason 写判断依据和具体修正建议。
 核查完整正文而非只看索引中的一条；索引分段不代表上下文被删除。缺少条件时引用最接近的相关表述并明确指出缺失。与 requirement 矛盾必须判 false。正文已经清楚表达的条件不能仅因措辞不同判错；不可用其他段落中的正确句子掩盖本文中的错误断言。`;

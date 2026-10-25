@@ -125,3 +125,12 @@ test('原文索引保留长公式和跨段上下文全部字符，编号稳定�
  for(const source of sources){assert.ok(source.text.length<=700);assert.ok(!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(source.text));}
  assert.ok(sources.every(s=>!s.text.includes('旧审校意见')&&!s.text.includes('trace-secret')));
 });
+
+test('跨题审校可引用最多十二段真实正文，仍拒绝重复、虚构引用且保留失败判断',()=>{
+ const expanded={...content,introduction:'用于检查跨段证据引用的完整章节。'.repeat(800)};
+ const refs=chapterReviewEvidence(expanded).map(source=>source.ref);assert.ok(refs.length>=13);
+ const checks=[{id:'curriculum.progression',requirement:'检查全部题目的教学顺序'}];
+ const base={knowledge:[{id,correct:true,complete:true,reason:'本章知识说明覆盖必要条件与教学目标。'}],questions:['a','b'].map(id=>({id,solvable:true,answerCorrect:true,computedAnswer:'参考答案',aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'知识目标一致，推导与原题答案相符。'})),checks:[{id:'curriculum.progression',passed:false,evidenceRefs:refs.slice(0,12),reason:'存在超出前置知识的题目，需要进一步调整。'}]};
+ const result=validateChapterReview(base,expanded,checks);assert.equal(result.passed,false);assert.equal(result.checks[0].evidenceRefs.length,12);
+ for(const evidenceRefs of [refs.slice(0,13),[...refs.slice(0,5),refs[0]],[...refs.slice(0,5),'invented:0']])assert.throws(()=>validateChapterReview({...base,checks:[{...base.checks[0],evidenceRefs}]},expanded,checks));
+});
