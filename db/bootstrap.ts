@@ -527,7 +527,7 @@ function installBaseline(sqlite: ReturnType<typeof getSqlite>) {
   );
 }
 
-export const DATABASE_VERSION = 19;
+export const DATABASE_VERSION = 20;
 
 function initialize() {
   runMigrations(getSqlite(), [
@@ -683,6 +683,9 @@ function initialize() {
         chapter_id TEXT PRIMARY KEY REFERENCES authoring_chapters(id) ON DELETE CASCADE,
         fingerprint TEXT NOT NULL, state_json TEXT NOT NULL, updated_at TEXT NOT NULL
       );
+    `) },
+    { version: 20, name: "variation-retry-feedback", checksum: "variation-retry-feedback-v1", up: sqlite => sqlite.exec(`
+      ALTER TABLE authoring_variation_items ADD COLUMN retry_context_json TEXT;
     `) },
   ]);
   initialized = true;

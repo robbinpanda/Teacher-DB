@@ -10,6 +10,7 @@ export type WholePaperVariationItem = {
   status: "pending" | "running" | "awaiting_teacher" | "accepting" | "accepted" | "failed";
   revision: number; attempt: number; stage: string | null; error: string | null;
   runId: string | null; promotedQuestionId: string | null;
+  retryFeedback?: string | null;
   candidate: { id: string; question: { stem: string; type: string; options: Array<{ key: string; content: string }>; answer: string; analysis: string; changeNote: string; diagram?: unknown }; review: VariationReview; diagramPreviewUrl?: string | null } | null;
 };
 export type WholePaperVariation = { sourceTitle: string; items: WholePaperVariationItem[] };

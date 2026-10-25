@@ -46,6 +46,7 @@ export function readAuthoringProject(ownerId: string, scope: EducationScope, id:
       const saved = JSON.parse(item.source_json as string) as WholePaperSource["items"][number];
       return { id: item.id, position: item.position, source: saved.source, number: saved.number, score: saved.score, sectionTitle: saved.sectionTitle,
         status: item.status, revision: item.revision, attempt: item.attempt, stage: item.stage, error: item.error, runId: item.run_id, promotedQuestionId: item.promoted_question_id,
+        retryFeedback: item.retry_context_json ? JSON.parse(String(item.retry_context_json)).feedback : null,
         candidate: item.candidate_json ? { id: item.candidate_id, question: JSON.parse(item.candidate_json as string), review: JSON.parse(item.review_json as string) } : null } as WholePaperVariationItem;
     }) } : null;
   const request = JSON.parse(row.request_json) as AuthoringRequest;

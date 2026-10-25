@@ -7,6 +7,7 @@
 .authoring-studio label {display:flex;flex-direction:column;gap:6px;font-size:14px;}
 .authoring-studio input:not([type=checkbox]),.authoring-studio select,.authoring-studio textarea {border:1px solid #cbd5cf;border-radius:7px;background:white;color:#22362b;padding:9px;max-width:100%;min-width:0;font:inherit;}
 .authoring-studio textarea {resize:vertical;line-height:1.6;}.authoring-studio .btn {cursor:pointer;}.authoring-studio button:disabled {cursor:default;opacity:.55;}
+.studio-field {display:grid;gap:6px;margin:14px 0;}.studio-field small {color:#53665a;line-height:1.5;}
 .studio-layout {display:grid;grid-template-columns:320px minmax(0,1fr);gap:28px;}.studio-layout>aside {display:flex;flex-direction:column;gap:16px;}.studio-layout h2 {font-size:20px;}.studio-layout h3 {font-size:16px;}
 .studio-options {max-height:280px;overflow:auto;display:grid;gap:10px;padding:12px 0;}.studio-options label,.studio-check,.studio-results header label,.studio-tag-editor fieldset label {flex-direction:row!important;align-items:center;}
 .studio-projects {display:grid;gap:8px;}.studio-projects button {text-align:left;border:1px solid var(--studio-border);background:white;border-radius:8px;padding:12px;}.studio-projects small {display:block;color:#68746d;margin-top:5px;}

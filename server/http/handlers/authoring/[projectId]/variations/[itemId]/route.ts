@@ -14,11 +14,16 @@ export async function GET(request: Request, context: { params: Promise<{projectI
 }
 export async function POST(request: Request, context: { params: Promise<{projectId:string;itemId:string}> }) {
   await ensureDatabase();
-  const data = z.object({ action: z.enum(["accept", "retry"]), revision: z.number().int().positive() }).strict().safeParse(await request.json().catch(() => null));
+  const data = z.discriminatedUnion("action", [
+    z.object({ action: z.literal("accept"), revision: z.number().int().positive() }).strict(),
+    z.object({ action: z.literal("retry"), revision: z.number().int().positive(), feedback: z.string().trim().max(1500).optional() }).strict(),
+  ]).safeParse(await request.json().catch(() => null));
   if (!data.success) return Response.json({ error: "操作格式无效" }, { status: 400 });
   const {projectId,itemId} = await context.params;
   try {
-    const action = data.data.action === "accept" ? acceptWholePaperItem : retryWholePaperItem;
-    return Response.json({ project: await action(requestOwner(request), requestEducationScope(request), projectId, itemId, data.data.revision) });
+    const owner = requestOwner(request), scope = requestEducationScope(request);
+    const project = data.data.action === "accept" ? await acceptWholePaperItem(owner, scope, projectId, itemId, data.data.revision)
+      : await retryWholePaperItem(owner, scope, projectId, itemId, data.data.revision, data.data.feedback);
+    return Response.json({ project });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "操作失败" }, { status: 409 }); }
 }

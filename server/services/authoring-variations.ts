@@ -9,6 +9,7 @@ import { readAuthoringProject } from "./authoring";
 import { prepareWholePaperSource } from "./authoring-variation-source";
 import { generateVariationCandidates, getVariationRun } from "./variation-candidates";
 import { acceptVariationCandidates } from "./variation-acceptance";
+import { boundedText } from "../../lib/question-variations";
 
 const time = () => new Date().toISOString();
 const lease = () => new Date(Date.now() + 180_000).toISOString();
@@ -42,16 +43,25 @@ export async function controlWholePaperVariation(owner: string, scope: Education
     return requireProject(owner, scope, id);
   })();
 }
-export async function retryWholePaperItem(owner: string, scope: EducationScope, projectId: string, itemId: string, revision: number) {
+export async function retryWholePaperItem(owner: string, scope: EducationScope, projectId: string, itemId: string, revision: number, feedback = "") {
+  if (typeof feedback !== "string") throw new Error("修改意见格式无效");
+  const note = boundedText(feedback, 1500);
   await freshSource(owner, scope, projectId);
+  // Reserve the writer before reading the candidate; a worker heartbeat must not
+  // invalidate a deferred read snapshot when this transaction starts writing.
   return getSqlite().transaction(() => {
     const project = requireProject(owner, scope, projectId), item = project.variation!.items.find(row => row.id === itemId);
     if (!item || item.revision !== revision || !["failed", "awaiting_teacher", "accepted"].includes(item.status)) throw new Error("题目已变化或正在处理，请刷新后重试");
-    getSqlite().prepare("UPDATE authoring_variation_items SET error=CASE WHEN status='failed' THEN error ELSE NULL END,status='pending',run_id=NULL,promoted_question_id=NULL,stage=NULL,revision=revision+1,updated_at=? WHERE id=?").run(time(), itemId);
+    // Save the exact server-side candidate being discussed before clearing the run mapping.
+    // Keep that context through worker recovery and failed retries; a new note supersedes it.
+    const previousContext = getSqlite().prepare("SELECT retry_context_json FROM authoring_variation_items WHERE id=?").get(itemId) as { retry_context_json: string | null };
+    const context = note ? JSON.stringify({ feedback: note, previousCandidate: item.candidate?.question ?? (previousContext.retry_context_json ? JSON.parse(previousContext.retry_context_json).previousCandidate : null) })
+      : item.status === "failed" ? previousContext.retry_context_json : null;
+    getSqlite().prepare("UPDATE authoring_variation_items SET error=CASE WHEN status='failed' THEN error ELSE NULL END,retry_context_json=?,status='pending',run_id=NULL,promoted_question_id=NULL,stage=NULL,revision=revision+1,updated_at=? WHERE id=?").run(context, time(), itemId);
     getSqlite().prepare("UPDATE authoring_projects SET paper_id=NULL WHERE id=?").run(projectId);
     progress(projectId);
     return requireProject(owner, scope, projectId);
-  })();
+  }).immediate();
 }
 
 /** Only an explicit teacher action creates an accepting job. Recovery may finish that same adoption. */
@@ -100,10 +110,10 @@ export async function kickWholePaperVariations() {
   await ensureDatabase();
   const db = getSqlite(), token = randomUUID(), now = time();
   const job = db.transaction(() => {
-    const row = db.prepare(`SELECT i.id,i.project_id,i.status,i.run_id,i.attempt,i.error,p.owner_id,p.subject,p.stage FROM authoring_variation_items i JOIN authoring_projects p ON p.id=i.project_id
+    const row = db.prepare(`SELECT i.id,i.project_id,i.status,i.run_id,i.attempt,i.error,i.retry_context_json,p.owner_id,p.subject,p.stage FROM authoring_variation_items i JOIN authoring_projects p ON p.id=i.project_id
       WHERE ((p.status='generating' AND (i.status='pending' OR (i.status='running' AND i.lease_expires_at<?))) OR (i.status='accepting' AND i.lease_expires_at<?))
       AND NOT EXISTS(SELECT 1 FROM authoring_variation_items busy WHERE busy.project_id=p.id AND busy.status IN ('running','accepting') AND busy.lease_expires_at>=?)
-      ORDER BY p.created_at,i.position LIMIT 1`).get(now, now, now) as { id:string;project_id:string;status:string;run_id:string|null;attempt:number;error:string|null;owner_id:string;subject:string;stage:EducationScope["stage"] } | undefined;
+      ORDER BY p.created_at,i.position LIMIT 1`).get(now, now, now) as { id:string;project_id:string;status:string;run_id:string|null;attempt:number;error:string|null;retry_context_json:string|null;owner_id:string;subject:string;stage:EducationScope["stage"] } | undefined;
     if (!row) return;
     db.prepare("UPDATE authoring_variation_items SET status=?,attempt=attempt+1,revision=revision+1,error=NULL,lease_owner=?,lease_expires_at=?,updated_at=? WHERE id=?")
       .run(row.status === "accepting" ? "accepting" : "running", token, lease(), now, row.id);
@@ -124,6 +134,7 @@ export async function kickWholePaperVariations() {
       const response = await generateVariationCandidates(job.owner_id, item.source.id, { count: 1, qualityMode: "reviewed", diagramMode: "auto", difficulty: project.request.variationDifficulty,
         instructions: project.request.instruction, reviewFeedback: job.error ?? undefined, profileId: project.request.profileId, reviewerProfileId: project.request.reviewerProfileId,
         idempotencyKey: `whole-${item.id}-${job.attempt + 1}` }, {
+        revisionContext: job.retry_context_json ? JSON.parse(job.retry_context_json) : undefined,
         onCreated: runId => {
           if (!db.prepare("UPDATE authoring_variation_items SET run_id=? WHERE id=? AND lease_owner=? AND status='running'").run(runId, job.id, token).changes) throw new Error("任务已由其他进程接管");
         },

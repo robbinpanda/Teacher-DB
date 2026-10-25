@@ -107,7 +107,9 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
  db.prepare("UPDATE questions SET number='3',score=5 WHERE id=?").run(id);
  db.prepare("INSERT INTO questions(id,document_id,number,type,stem,answer,analysis,status,page_number,bbox_json,score,created_at,updated_at) VALUES(?,?,'7','fill','求函数 $y=cos(3x)$ 的最小正周期。','三分之二π','使用周期公式。','approved',1,'{}',8,?,?)").run(second,doc,now,now);db.close();
  let calls=0;
+ const correction='请保留本题周期考点，补充最小性的验证并核对公式条件。';let correctionSeen=false;
  const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{calls++;const messages=JSON.parse(raw).messages,text=JSON.stringify(messages),plain=messages.map(m=>typeof m.content==='string'?m.content:m.content.map(p=>p.text??'').join('\n')).join('\n');let output;
+  if(plain.includes(correction)&&plain.includes('previousCandidate')&&plain.includes('sin(5x)'))correctionSeen=true;
   const offset=text.includes('cos(3x)')?10:0;
   const variations=[4+offset,5+offset].map(value=>({stem:`求函数 $y=\\sin(${value}x)$ 的最小正周期。`,type:'fill',options:[],answer:`$2\\pi/${value}$`,analysis:`角系数为 ${value}，振幅及角系数非零，由周期公式得结果。`,tags:[],changeNote:'改变角系数，保留周期公式的考查目标',diagram:null}));
   if(text.includes('逐题核查可解性'))output={checks:[{index:1,score:92,solvable:true,answerCorrect:JSON.parse(plain.split('最终题目：')[1])[0].stem!==variations[0].stem || offset!==0,objectiveAligned:true,difficultyAligned:true,explanation:'模拟独立复核首选失败，备用候选通过后才可采用。'}]};
@@ -127,6 +129,17 @@ test('整卷变式可选择原卷、逐题对照采用、刷新恢复并导出�
   await page.getByRole('button',{name:'确认原卷，逐题生成'}).click();
   await expect(page.locator('.studio-variations summary').filter({hasText:'待核对采用'})).toHaveCount(2,{timeout:45000});expect(calls).toBe(10);
   await page.reload();await page.getByRole('button',{name:/整卷变式浏览器原卷 · 变式卷/}).click();
+  const firstDetail=page.locator('.studio-variations details.studio-chapter').filter({has:page.locator('summary').filter({hasText:'第 3 题'})});
+  await firstDetail.locator(':scope > summary').click();
+  await firstDetail.getByRole('textbox',{name:/修改意见/}).fill(correction);
+  await firstDetail.getByRole('button',{name:'按修改意见重做此题'}).click();
+  await expect.poll(()=>correctionSeen,{timeout:45000}).toBe(true);
+  await expect(page.locator('.studio-variations summary').filter({hasText:'待核对采用'})).toHaveCount(2,{timeout:45000});
+  await page.reload();await page.getByRole('button',{name:/整卷变式浏览器原卷 · 变式卷/}).click();
+  await firstDetail.locator(':scope > summary').click();
+  await expect(firstDetail).toContainText(`已提交的修改意见：${correction}`);
+  await page.screenshot({path:'tmp/teacher-pilot/variation-feedback-browser.png',fullPage:true});
+  await firstDetail.locator(':scope > summary').click();
   for(const number of ['3','7']){
    const detail=page.locator('.studio-variations details.studio-chapter').filter({has:page.locator('summary').filter({hasText:`第 ${number} 题`})});
    await detail.locator(':scope > summary').click();await expect(detail.locator('.studio-variation-comparison')).toBeVisible();

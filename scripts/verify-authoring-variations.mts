@@ -17,9 +17,11 @@ for(let i=1;i<=2;i++)db.prepare("INSERT INTO questions(id,document_id,number,typ
 const request={kind:"variation",instruction:"保留原题知识目标，改变数值与设问，保持原卷难度。",sourcePaperKind:"uploaded",sourcePaperId:"doc",profileId:"model"};
 const read=(id:string)=>readAuthoringProject("teacher",scope,id)!;
 let calls=0,steal:(()=>void)|undefined, fail=false, duplicate=false, malformedGeneration=false, feedbackSeen=false;
+let expectedTeacherFeedback='',expectedPreviousStem='',teacherFeedbackStages=0;
 globalThis.fetch=async(_url,init)=>{
   calls++;
   const body=JSON.parse(String(init?.body)),text=JSON.stringify(body.messages??body.input);
+  if(expectedTeacherFeedback){assert.ok(text.includes(expectedTeacherFeedback));assert.ok(text.includes(expectedPreviousStem));teacherFeedbackStages++;}
   if(text.includes('上次未通过的检查记录') && text.includes('重复'))feedbackSeen=true;
   if(fail)return Response.json({error:"unauthorized"},{status:401});
   const offset=!duplicate && text.includes('若 x=2，求 x+1。') ? 10 : 0;
@@ -90,4 +92,31 @@ assert.match(read(repeated.id).variation!.items[1].error!,/重复/);
 const brokenItem=read(repeated.id).variation!.items[1];await retryWholePaperItem("teacher",scope,repeated.id,brokenItem.id,brokenItem.revision);
 malformedGeneration=true;const beforeRepair=calls;await kickWholePaperVariations();assert.equal(calls-beforeRepair,5,"invalid generation gets exactly one bounded correction");assert.equal(read(repeated.id).variation!.items[1].status,"awaiting_teacher");
 assert.equal(feedbackSeen,true,"retry must include the previous concrete failure rather than repeating the same prompt");
+// Teacher feedback binds to the exact previous candidate, survives a failed request,
+// and reaches planning, generation, revision and final verification without adoption.
+const target=read(repeated.id).variation!.items[1],previous=target.candidate!.question;
+const note='第二步运算有误，请保留原题型和设问，重新核对答案及解析。';
+await assert.rejects(()=>retryWholePaperItem('other',scope,repeated.id,target.id,target.revision,note),/不存在/);
+await assert.rejects(()=>retryWholePaperItem('teacher',scope,repeated.id,target.id,target.revision-1,note),/已变化/);
+await assert.rejects(()=>retryWholePaperItem('teacher',scope,repeated.id,target.id,target.revision,'长'.repeat(1501)),/超限/);
+assert.equal(read(repeated.id).variation!.items[1].runId,target.runId,'rejected feedback must not clear the candidate');
+await retryWholePaperItem('teacher',scope,repeated.id,target.id,target.revision,note);
+const context=JSON.parse((db.prepare('SELECT retry_context_json FROM authoring_variation_items WHERE id=?').get(target.id) as {retry_context_json:string}).retry_context_json);
+assert.deepEqual(context,{feedback:note,previousCandidate:previous});
+assert.equal(read(repeated.id).variation!.items[1].retryFeedback,note);
+expectedTeacherFeedback=note;expectedPreviousStem=previous.stem;
+fail=true;await kickWholePaperVariations();fail=false;
+const afterFailure=read(repeated.id).variation!.items[1];assert.equal(afterFailure.status,'failed');
+await retryWholePaperItem('teacher',scope,repeated.id,target.id,afterFailure.revision);
+assert.equal(read(repeated.id).variation!.items[1].retryFeedback,note,'empty retry after failure must retain the submitted correction');
+const questionsBefore=(db.prepare('SELECT count(*) n FROM questions').get() as {n:number}).n;
+await kickWholePaperVariations();const corrected=read(repeated.id).variation!.items[1];
+assert.equal(corrected.status,'awaiting_teacher');assert.equal(teacherFeedbackStages,5,'failed planning plus all four successful stages');
+const run=db.prepare('SELECT instructions FROM variation_runs WHERE id=?').get(corrected.runId) as {instructions:string};
+assert.ok(run.instructions.includes(note)&&run.instructions.includes(JSON.stringify(previous)));
+assert.equal((db.prepare('SELECT count(*) n FROM questions').get() as {n:number}).n,questionsBefore,'feedback must never adopt automatically');
+expectedTeacherFeedback='';
+await retryWholePaperItem('teacher',scope,repeated.id,target.id,corrected.revision);
+assert.equal(read(repeated.id).variation!.items[1].retryFeedback,null,'fresh generation without feedback clears the previous correction request');
+await kickWholePaperVariations();
 console.log("Whole-paper variation: source order/scores, independent model pipeline, adoption, leases, isolation and publishing passed.");
