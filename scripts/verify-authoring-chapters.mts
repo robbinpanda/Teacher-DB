@@ -42,19 +42,19 @@ globalThis.fetch = async (_url, init) => {
   const system = messages.find((message: { role: string }) => message.role === "system").content;
   const user = messages.find((message: { role: string }) => message.role === "user").content;
   const input = JSON.parse(typeof user === "string" ? user : user.find((part: { type: string }) => part.type === "text").text);
-  if(system.includes('输出 JSON {items:')||system.includes('独立审校教师')||system.includes('校本教辅编辑')){
+  if(system.includes('输出 JSON {recommendations:')||system.includes('独立审校教师')||system.includes('校本教辅编辑')){
     const target=input.chapter??input.plan;
     assert.equal(input.courseContext.currentChapterId,target.id);
     assert.equal(input.courseContext.outline[input.courseContext.currentPosition-1].id,target.id);
     assert.ok(input.request.instruction.includes('周期'));
     assert.equal(input.courseContext.chapterCount,2);
     if(input.courseContext.currentPosition===2)assert.ok(input.courseContext.priorPlannedKnowledgeIds.includes(period));
-    courseStages.add(system.includes('输出 JSON {items:')?'select':system.includes('独立审校教师')?'review':input.previousContent?'revise':'write');
+    courseStages.add(system.includes('输出 JSON {recommendations:')?'select':system.includes('独立审校教师')?'review':input.previousContent?'revise':'write');
   }
   if (input.imageMapping?.length) assert.ok(Array.isArray(user) && user.some((part: { type: string }) => part.type === "image_url"), "writer and reviewer must receive actual selected question images");
   let output: unknown;
   if (system.includes("教学需求核对员")) { calls.push("requirements"); output = { numeric: [], knowledge: [], questions: [], assumptions: [] }; }
-  else if (system.includes("输出 JSON {items:")) {
+  else if (system.includes("输出 JSON {recommendations:")) {
     calls.push("select"); const chosen = new Set<string>();
     for (const candidate of input.candidates as Array<{id:string;eligibleSlotIndexes:number[]}>) {
       assert.deepEqual(candidate.eligibleSlotIndexes, input.pools.flatMap((pool:string[], index:number) => pool.includes(candidate.id) ? [index] : []));
@@ -69,7 +69,15 @@ globalThis.fetch = async (_url, init) => {
       const selected = output as {items:Array<{slotIndex:number}>;gaps:Array<{slotIndex:number;reason:string}>};
       selected.gaps = input.chapter.slots.flatMap((_:unknown,slotIndex:number) => selected.items.some(item=>item.slotIndex===slotIndex)?[]:[{slotIndex,reason:'本批候选尚不满足本组教学要求，继续比较后续题目。'}]);
     }
-    if (malformedSelection) { (output as { gaps: unknown[] }).gaps = [{ slotIndex: 0, reason: "已经足量却错误报告缺题，须拒绝并修正。" }]; malformedSelection = false; }
+
+    const selected = output as {items:Array<{slotIndex:number;questionId:string;selectionReason:string}>;gaps:unknown[]};
+    output = {gapReasons:selected.gaps,recommendations:selected.items.map(item=>{
+      const candidate=input.candidates.find((candidate:{id:string})=>candidate.id===item.questionId);
+      const choice=candidate.eligibleChoices.find((choice:{slotIndex:number})=>choice.slotIndex===item.slotIndex);
+      assert.ok(choice,'every model selection must copy an actual eligible choice');
+      return {choiceId:choice.choiceId,selectionReason:item.selectionReason};
+    })};
+    if (malformedSelection) { (output as {recommendations:Array<{choiceId:string}>}).recommendations[0].choiceId="S999-Q999"; malformedSelection=false; }
   } else if (system.includes("独立审校教师")) {
     calls.push("review"); reviewModels.push(body.model); if (reviewError) return Response.json({ error: "temporary test failure" }, { status: 503 });
     assert.ok(input.evidenceSources.some((source: { ref: string; text: string }) => source.ref === "introduction:0" && source.text === input.content.introduction));
@@ -213,7 +221,7 @@ try {
   db.prepare("UPDATE authoring_chapters SET status='running',lease_owner='dead',lease_expires_at='2000-01-01' WHERE id=?").run(failure.chapters[1].id);
   await kickAuthoringChapters(); assert.equal(read(failure.id).chapters[1].status, "complete");
 
-  let paper = await create("paper"); malformedSelection = true; const beforeRepair = calls.length; await kickAuthoringChapters(); assert.deepEqual(calls.slice(beforeRepair, beforeRepair + 2), ["select", "select"], "contradictory selection receives one bounded repair"); await kickAuthoringChapters(); paper = read(paper.id);
+  let paper = await create("paper"); malformedSelection = true; const beforeRepair = calls.length; await kickAuthoringChapters(); assert.deepEqual(calls.slice(beforeRepair, beforeRepair + 2), ["select", "select"], "unknown recommendation code receives one bounded repair"); await kickAuthoringChapters(); paper = read(paper.id);
   for (const chapter of paper.chapters) approveAuthoringChapter("teacher", scope, paper.id, chapter.id, chapter.revision, "");
   const published = publishAuthoringPaper("teacher", scope, paper.id); assert.deepEqual(publishAuthoringPaper("teacher", scope, paper.id), published);
   assert.equal((db.prepare("SELECT sum(score) AS score FROM paper_items WHERE paper_id=?").get(published.id) as { score: number }).score, 20);

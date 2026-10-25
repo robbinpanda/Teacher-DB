@@ -27,8 +27,8 @@ test('选题中暂停保存批次，刷新继续及失败重试不重复已完�
  const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{
   const body=JSON.parse(raw),system=body.messages.find(m=>m.role==='system').content,user=body.messages.find(m=>m.role==='user').content,data=JSON.parse(typeof user==='string'?user:user.find(p=>p.type==='text').text);
   if(system.includes('教学需求核对员'))return send(res,{numeric:[],knowledge:[],questions:[],assumptions:[]});
-  if(system.includes('输出 JSON {items:')){
-   rounds.push(data.round);const output={items:[],gaps:data.chapter.slots.map((_,slotIndex)=>({slotIndex,reason:'本批题目暂不符合教学目标，继续比较后续候选。'}))};
+  if(system.includes('输出 JSON {recommendations:')){
+   rounds.push(data.round);const output={recommendations:[],gapReasons:data.chapter.slots.map((_,slotIndex)=>({slotIndex,reason:'本批题目暂不符合教学目标，继续比较后续候选。'}))};
    if(data.round===1){heldResponse=res;releaseFirst=()=>send(res,output);return;}
    if(data.round===2&&!failedSecond){failedSecond=true;res.writeHead(503);res.end('fixture temporary selection failure');return;}
    return send(res,output);
@@ -258,7 +258,7 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
  const model=createServer((req,res)=>{let raw='';req.on('data',part=>raw+=part);req.on('end',()=>{
   const input=JSON.parse(raw),system=input.messages.find(m=>m.role==='system').content,user=input.messages.find(m=>m.role==='user').content;
   const data=JSON.parse(typeof user==='string'?user:user.find(p=>p.type==='text').text);let output;
-  if(system.includes('输出 JSON {items:'))output={items:[{slotIndex:0,questionId:first.id,selectionReason:'通过识别角系数和代入公式示范基本方法。'},{slotIndex:1,questionId:second.id,selectionReason:'更换角系数后让学生独立说明推导依据。'}],gaps:[]};
+  if(system.includes('输出 JSON {recommendations:'))output={recommendations:[first,second].map((q,slotIndex)=>({choiceId:data.candidates.find(c=>c.id===q.id).eligibleChoices.find(c=>c.slotIndex===slotIndex).choiceId,selectionReason:'通过识别角系数和代入公式示范基本方法。'})),gapReasons:[]};
   else if(system.includes('独立审校教师')){reviewModels.push(input.model);output={checks:(data.checks??[]).map(c=>({id:c.id,passed:true,evidenceRefs:['introduction:0'],reason:"已逐项核对该学科要求和对应内容。"})),knowledge:data.content.knowledge.map(k=>({id:k.id,correct:true,complete:true,reason:'公式使用条件明确，概念和方法完整。'})),questions:data.content.items.map(q=>({id:q.questionId,solvable:true,answerCorrect:true,computedAnswer:q.questionId===first.id?'$\\pi$':'$2\\pi/3$',aligned:true,difficultyAppropriate:true,explanationCorrect:true,reason:'逐题核对条件、难度和推导，符合本章要求。'}))};}
   else if(system.includes('校本教辅编辑'))output={...data.selection,knowledge:[lesson],introduction:'本章从周期定义出发，通过例题示范后安排独立练习。',items:data.selection.items.map(q=>({...q,teachingExplanation:'首先确认函数为正弦函数，振幅及角系数均不为零，再识别角系数。利用最小正周期等于二π除以角系数绝对值的公式，代入得到结果。最后将周期平移代入函数，验证前后函数值相同，并注意周期必须取正值。'})),conclusion:'本章掌握周期公式的条件，能够识别角系数并完成计算。'};
   else if(system.includes('教学需求核对员'))output={numeric:[],knowledge:[],questions:[],assumptions:[]};
