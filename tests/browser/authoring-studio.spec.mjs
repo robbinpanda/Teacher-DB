@@ -263,6 +263,7 @@ test('逐章编写、教师修改采用和学生教师两版实际PDF完整可�
   else if(system.includes('校本教辅编辑'))output={...data.selection,knowledge:[lesson],introduction:'本章从周期定义出发，通过例题示范后安排独立练习。',items:data.selection.items.map(q=>({...q,teachingExplanation:'首先确认函数为正弦函数，振幅及角系数均不为零，再识别角系数。利用最小正周期等于二π除以角系数绝对值的公式，代入得到结果。最后将周期平移代入函数，验证前后函数值相同，并注意周期必须取正值。'})),conclusion:'本章掌握周期公式的条件，能够识别角系数并完成计算。'};
   else if(system.includes('教学需求核对员'))output={numeric:[],knowledge:[],questions:[],assumptions:[]};
   else output=plan;
+  if(system.includes('校本教辅编辑'))output={introduction:output.introduction,knowledge:output.knowledge,items:output.items.map(({questionId,teachingExplanation})=>({questionId,teachingExplanation})),conclusion:output.conclusion};
   res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}));
  });});
  await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));

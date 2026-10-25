@@ -1,3 +1,4 @@
+import { resolveChapterDraft } from "../../lib/authoring-draft";
 import { archiveAuthoringChapter, readAuthoringChapterVersion } from "./authoring-history";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
@@ -372,7 +373,7 @@ structureNotes 是需要核对的原题结构提示，不是已证明的数学�
   const result = await authoringModel({ ownerId: owner, profileId: project.request.profileId, purpose: "authoring_chapter", jsonMode: true, maxOutputTokens: 20000, timeoutMs: 240000, beforeRequest:beforeSelectionRequest,
     system: chapterSystemPrompt, text: JSON.stringify({ kind: project.kind, request:{kind:project.kind,instruction:project.request.instruction}, courseContext, audience: project.plan!.audience, approach: project.plan!.approach,
       chapter: chapter.plan, catalog: knowledgeCatalog(scope.subject, scope.stage).filter(node => chapter.plan.knowledgeIds.includes(node.id)), selection: selected,
-      questions: selectedQuestions.map(promptQuestion), imageMapping: media.mapping }), images: media.images }, value => validateChapterContent(value, chapter.plan, project.request.kind,
+      questions: selectedQuestions.map(promptQuestion), imageMapping: media.mapping }), images: media.images }, value => validateChapterContent(resolveChapterDraft(value, selected), chapter.plan, project.request.kind,
     chapter.plan.slots.map((_, i) => selected.items.filter(item => item.slotIndex === i).map(item => item.questionId)), excluded));
   const content = result.value;
   const questions = content.items.map(item => selectedQuestions.find(question => question.id === item.questionId)!);
@@ -398,7 +399,7 @@ async function reviseChapter(owner: string, scope: EducationScope, project: Proj
       previousContent: chapterContentSchema.parse(content), issues: content.review.issues, checks: [...authoringReviewChecks(chapter.plan.knowledgeIds),...courseProgressionChecks(project.kind)],
       selection: { items: content.items, gaps: content.gaps }, questions: content.questions.map(promptQuestion), imageMapping: media.mapping }),
   }, value => {
-    const revised = validateChapterContent(value, chapter.plan, project.request.kind, pools, new Set());
+    const revised = validateChapterContent(resolveChapterDraft(value, content), chapter.plan, project.request.kind, pools, new Set());
     if (revised.items.length !== content.items.length || content.items.some(item => !revised.items.some(other => other.questionId === item.questionId && other.slotIndex === item.slotIndex))) throw new Error("修订不能改变已选题目或分组，请只修订知识讲解与解答");
     return revised;
   });
