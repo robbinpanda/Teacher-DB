@@ -282,7 +282,7 @@ export function defaultAssetLayout(questionNumber: number): PaperAssetLayout {
 }
 
 export function questionStemHasAnswerBlank(stem: string) {
-  return /_{2,}|＿{2,}|—{3,}|\.{5,}|…{2,}|\\(?:underline|blank)\s*(?:\{|\b)|[（(]\s{2,}[）)]/.test(stem);
+  return /_{2,}|＿{2,}|(?:\\_){2,}|—{3,}|\.{5,}|…{2,}|\\(?:underline|blank)\s*(?:\{|\b)|[（(]\s{2,}[）)]/.test(stem);
 }
 
 function numeric(value: unknown, fallback: number, min: number, max: number) {
