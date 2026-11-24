@@ -1,6 +1,7 @@
 import { closeSync, fsyncSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { fetchModelRequest } from "./model-rate-limit.ts";
 
 type TraceContext = {
   ownerId: string;
@@ -11,6 +12,7 @@ type TraceContext = {
   documentId?: string;
   extractionRunId?: string;
   extractionAttempt?: number;
+  timeoutMs?: number;
 };
 
 function safeRequestBody(body: string) {
@@ -48,7 +50,12 @@ export class ModelCallTrace {
   private responseNumber = 0;
   private sequence = 0;
 
+  private readonly ownerId: string;
+  private readonly timeoutMs?: number;
+
   constructor(dataRoot: string, context: TraceContext) {
+    this.ownerId = context.ownerId;
+    this.timeoutMs = context.timeoutMs;
     const startedAt = new Date().toISOString();
     this.directory = path.join(dataRoot, "model-traces", startedAt.slice(0, 10), this.id);
     mkdirSync(this.directory, { recursive: true });
@@ -85,6 +92,10 @@ export class ModelCallTrace {
   }
 
   async fetch(endpoint: string, options: RequestInit, fetcher: typeof fetch = fetch): Promise<Response> {
+    return fetchModelRequest(this.ownerId, endpoint, { ...options, timeoutMs: this.timeoutMs }, (url, init) => this.fetchOnce(url, init, fetcher));
+  }
+
+  private async fetchOnce(endpoint: string, options: RequestInit, fetcher: typeof fetch): Promise<Response> {
     const number = ++this.responseNumber;
     const url = new URL(endpoint);
     this.json(`request-${number}.json`, {

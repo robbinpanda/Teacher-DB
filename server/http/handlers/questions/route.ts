@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const year = Number(url.searchParams.get("year")) || undefined;
   const result = await searchApprovedQuestions(requestOwner(request), {
+    excludeRecentDays: Number(url.searchParams.get("excludeRecentDays")) || undefined,
     sourceKind: url.searchParams.get("sourceKind") ?? undefined,
     query: url.searchParams.get("q") ?? undefined,
     type: url.searchParams.get("type") ?? undefined,

@@ -17,6 +17,13 @@ async function save(title) {
 assert.equal((await save('首次保存')).status, 201);
 assert.equal((await save('更新当前作品')).status, 200);
 assert.equal(db.prepare('SELECT COUNT(*) FROM papers').pluck().get(), 1);
+db.prepare("UPDATE documents SET source_year=2025, source_exam_type='期末' WHERE id='source'").run();
+const combined = await searchApprovedQuestions('teacher', {query: '题干 2025期末'});
+assert.equal(combined.pagination.total, 3);
+assert.equal(combined.questions.find(q => q.id === 'q1').lastUsed.paperTitle, '更新当前作品');
+assert.equal((await searchApprovedQuestions('teacher', {query: '2024 期末'})).pagination.total, 0);
+assert.equal((await searchApprovedQuestions('teacher', {query: '%'})).pagination.total, 0);
+assert.deepEqual((await searchApprovedQuestions('teacher', {excludeRecentDays: 7})).questions.map(q => q.id), ['unrelated']);
 const paper = await getPaperData('paper', 'teacher');
 assert.deepEqual(paper.questions.map(q => q.id), ['q2','q1']);
 const restored = normalizePaperSettings(paper.settings, paper.questions);

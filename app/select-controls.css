@@ -132,3 +132,12 @@ select:not([multiple]):not([size]):disabled {
     transition: none;
   }
 }
+
+/* Download format next to the paper download buttons: same height as the small buttons beside it. */
+.paper-download-format {
+  height: 36px;
+  border: 1px solid var(--line);
+  padding: 0 10px;
+  background-color: #fff;
+  font-size: 13px;
+}

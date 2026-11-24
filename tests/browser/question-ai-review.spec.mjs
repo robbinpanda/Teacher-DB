@@ -23,7 +23,7 @@ test("逐题审核替代置信度，显示问题/失败/通过，修改后立即
     await expect(page.locator(".ai-review-state")).toHaveText("AI 审核：缺图、其他问题");
     await expect(page.getByText("请核查本题保存的文字和配图：缺图、其他问题。", { exact: true })).toBeVisible();
     await expect(page.locator(".confidence-score")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "重新 AI 审核", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "重新检查", exact: true })).toBeEnabled();
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 1000 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -39,7 +39,7 @@ test("逐题审核替代置信度，显示问题/失败/通过，修改后立即
     expect(missing.status()).toBe(404);
     expect((await missing.json()).error).toBe("题目不存在");
     await page.route(`**/api/questions/${qid}/ai-review`, route => route.fulfill({ json: { aiReview: { ...audit, status: "passed" }, needsHumanReview: false, status: "pending" } }));
-    await page.getByRole("button", { name: "重新 AI 审核", exact: true }).click();
+    await page.getByRole("button", { name: "重新检查", exact: true }).click();
     await expect(page.locator(".ai-review-state")).toHaveText("AI 审核：没问题");
     await page.getByRole("button", { name: "编辑题干 LaTeX", exact: true }).click();
     await page.getByRole("textbox", { name: "题干 LaTeX", exact: true }).fill("计算 $1-1$");

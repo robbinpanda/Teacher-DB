@@ -340,6 +340,7 @@ export function Workbench({ initialPage, importOpen = false }: { importOpen?: bo
       <div className="wb-header-actions">
         <AutomaticAiReviewToggle />
         <Link className="wb-button wb-quiet" href="/bank"><FileStack size={16} />打开题库</Link>
+        <Link className="wb-button" href="/papers/new">出一份周测</Link>
         {nextReview && <Link className="wb-button" href={`/review/${nextReview.id}`}><ScanText size={16} />继续审核</Link>}
         <UploadWorkbench open={importDialogOpen} onOpenChange={setImportDialogOpen} />
       </div>
@@ -348,10 +349,10 @@ export function Workbench({ initialPage, importOpen = false }: { importOpen?: bo
       <span className="wb-welcome-icon"><UploadCloud size={28} aria-hidden="true" /></span>
       <p className="wb-welcome-eyebrow">从一份试卷开始</p>
       <h2 id="welcome-title">把手里的试卷，变成自己的题库</h2>
-      <p>导入 PDF，让 AI 整理题目，再由你确认入库。备课、找题和组卷，都从这里开始。</p>
+      <p>导入 PDF、Word 或图片，让 AI 整理题目，再由你确认入库。备课、找题和组卷，都从这里开始。</p>
       <button type="button" className="wb-button wb-primary" onClick={() => setImportDialogOpen(true)}><UploadCloud size={17} />导入第一份试卷</button>
       <ol className="wb-welcome-steps">
-        <li><b>1</b><div><strong>导入试卷</strong><span>支持批量选择或拖放 PDF</span></div></li>
+        <li><b>1</b><div><strong>导入试卷</strong><span>支持 PDF、Word 和图片组卷</span></div></li>
         <li><b>2</b><div><strong>AI 识别</strong><span>自动整理题干、答案与解析</span></div></li>
         <li><b>3</b><div><strong>确认入库</strong><span>检查后保存，随时选题组卷</span></div></li>
       </ol>

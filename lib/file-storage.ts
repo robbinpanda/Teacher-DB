@@ -1,6 +1,6 @@
 import "server-only";
 
-import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { dataDirectory } from "../db";
 import { resolveFileStorageKey } from "./storage-path";
@@ -41,10 +41,18 @@ export async function deleteFile(key: string) {
   }
 }
 
+/** Word preparation keeps a second copy of the source content beside the original. */
+export async function deleteDocumentFile(key: string) {
+  await deleteFile(key);
+  const word = /^documents\/([^/\\]+)\/original\/[^/\\]+\.docx?$/i.exec(key);
+  if (word) await rm(resolveStorageKey(`documents/${word[1]}/word`), { recursive: true, force: true });
+}
+
 export function contentTypeForKey(key: string) {
   const extension = path.extname(key).toLowerCase();
   return ({
     ".pdf": "application/pdf",
+    ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".png": "image/png",
     ".jpg": "image/jpeg",

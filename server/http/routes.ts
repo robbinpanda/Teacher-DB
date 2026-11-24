@@ -35,6 +35,7 @@ export const routes = [
   { path: "/api/paper-folders/[folderId]", methods: ["PATCH", "DELETE"], load: () => import("./handlers/paper-folders/[folderId]/route") },
   { path: "/api/paper-folders", methods: ["GET", "POST"], load: () => import("./handlers/paper-folders/route") },
   { path: "/api/paper-templates", methods: ["GET", "POST"], load: () => import("./handlers/paper-templates/route") },
+  { path: "/api/papers/[paperId]/docx", methods: ["GET"], load: () => import("./handlers/papers/[paperId]/docx/route") },
   { path: "/api/papers/[paperId]/pdf", methods: ["GET"], load: () => import("./handlers/papers/[paperId]/pdf/route") },
   { path: "/api/papers/[paperId]", methods: ["PATCH", "DELETE"], load: () => import("./handlers/papers/[paperId]/route") },
   { path: "/api/papers", methods: ["POST"], load: () => import("./handlers/papers/route") },

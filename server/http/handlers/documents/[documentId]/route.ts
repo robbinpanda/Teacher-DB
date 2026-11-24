@@ -1,7 +1,7 @@
 import { documentStageSql } from "../../../../../lib/education-scope";
 import { sqliteTransaction } from "../../../../../db";
 import { ensureDatabase } from "../../../../../db/bootstrap";
-import { deleteFile } from "../../../../../lib/file-storage";
+import { deleteDocumentFile } from "../../../../../lib/file-storage";
 import { now, requestOwner } from "../../../../../lib/server";
 import { getDocumentIntegrity, integrityError } from "../../../../../lib/document-integrity";
 import { readJsonPayload } from "../../../../../lib/request-payload";
@@ -134,7 +134,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ docu
       mode: payload.mode as BulkDeleteMode,
       timestamp: now(),
     }));
-    const removedFiles = await Promise.allSettled(outcome.fileKeys.map((key) => deleteFile(key)));
+    const removedFiles = await Promise.allSettled(outcome.fileKeys.map((key) => deleteDocumentFile(key)));
     return Response.json({
       deleted: true,
       mode: payload.mode,

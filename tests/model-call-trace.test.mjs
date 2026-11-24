@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { ModelCallTrace } from "../lib/model-call-trace.ts";
 
+process.env.JIANTI_DATA_DIR = mkdtempSync(path.join(tmpdir(), "jianti-trace-budget-"));
 const context = { ownerId: "teacher", profileId: "profile", provider: "openai-chat-completions", model: "fixture", purpose: "page_extraction", documentId: "paper" };
 const options = { method: "POST", headers: { authorization: "Bearer secret-key" }, body: JSON.stringify({ model: "fixture", api_key: "secret-key", messages: [{ content: "原提示词" }, { image_url: { url: "data:image/jpeg;base64,AAAA" } }] }) };
 const endpoint = "https://provider.example/v1/chat/completions?api_key=secret-key";

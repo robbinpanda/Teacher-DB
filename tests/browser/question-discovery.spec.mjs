@@ -102,11 +102,11 @@ test('真实选题：知识点和来源筛选、独立批量选择、持久篮�
   await expect(trigger(1)).toBeVisible();
   await expect(page.getByText('已移除 1 道已删除或不可用的题目', {exact:true})).toBeVisible();
   await trigger(1).click();
-  page.once('dialog', dialog => dialog.dismiss());
   await page.getByRole('button', {name:'清空选题篮',exact:true}).click();
+  await page.getByRole('button', { name: '撤销', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('选题篮 · 1 道题');
-  page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', {name:'清空选题篮',exact:true}).click();
+  await expect(page.locator('.undo-toast')).toHaveCount(0, {timeout: 12000});
   await expect(page.getByRole('dialog')).toContainText('还没有选题');
   expect(db.prepare('SELECT COUNT(*) FROM questions WHERE id IN (?,?,?)').pluck().get(...ids)).toBe(3);
   await page.evaluate(() => {
@@ -116,8 +116,8 @@ test('真实选题：知识点和来源筛选、独立批量选择、持久篮�
   await page.reload();
   await expect(page.locator('.bank-basket-message')).toContainText('本机选题篮数据无法读取');
   await trigger(0).click();
-  page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', {name:'清空选题篮',exact:true}).click();
+  await expect(page.locator('.undo-toast')).toHaveCount(0, {timeout: 12000});
   await expect(page.getByRole('dialog')).toContainText('还没有选题');
   db.close();
 });

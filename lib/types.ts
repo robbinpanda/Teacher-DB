@@ -1,3 +1,5 @@
+import type { WordImportSummary } from "./word-mime";
+
 export type BoundingBox = {
   x: number;
   y: number;
@@ -150,7 +152,10 @@ export type TeacherProfile = {
 
 export type BankFacet = { value: string; count: number };
 
+export type QuestionUsage = { paperId: string; paperTitle: string; usedAt: string; className: string | null };
+
 export type QuestionWithSource = Question & {
+  lastUsed?: QuestionUsage | null;
   source: QuestionSource;
 };
 
@@ -197,4 +202,6 @@ export type ReviewDocument = {
   modelDisplayName?: string | null;
   modelName?: string | null;
   modelProvider?: string | null;
+  /** Present for papers imported from Word: how faithfully formulas and images were read. */
+  wordImport?: WordImportSummary | null;
 };

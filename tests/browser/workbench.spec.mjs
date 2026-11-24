@@ -145,7 +145,7 @@ test("导入抽屉保留配置、文件暂存校验、拖放和焦点恢复", as
   await dialog.getByLabel("同时处理试卷数").fill("3");
   await dialog.getByRole("button", { name: "应用", exact: true }).click();
   await expect(dialog.getByText("已应用：同时处理 3 份试卷")).toBeVisible();
-  const input = dialog.getByLabel("选择 PDF 文件");
+  const input = dialog.getByLabel("选择 PDF 或 Word 文件");
   await input.setInputFiles({ name: "wrong.txt", mimeType: "text/plain", buffer: Buffer.from("x") });
   await expect(dialog.getByRole("alert")).toContainText("仅支持 PDF");
   await input.setInputFiles(Array.from({ length: 1001 }, (_, i) => ({ name: `${i}.pdf`, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") })));
@@ -191,7 +191,7 @@ test("有效 PDF 保存原卷和分页后移交试卷管理，导入弹窗清空
   await page.goto("/");
   await page.getByRole("button", { name: "导入试卷", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导入试卷" });
-  await dialog.getByLabel("选择 PDF 文件").setInputFiles({ name, mimeType: "application/pdf", buffer });
+  await dialog.getByLabel("选择 PDF 或 Word 文件").setInputFiles({ name, mimeType: "application/pdf", buffer });
   expect(requests).toHaveLength(0);
   await expect(dialog.getByRole("button", { name: "开始导入" })).toBeEnabled();
   await dialog.getByRole("button", { name: "开始导入" }).click();
@@ -288,7 +288,7 @@ test("五份原卷交给后台后清空，删除试卷再打开不残留", async
     await page.goto("/");
     await page.getByRole("button", { name: "导入试卷", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "导入试卷" });
-    await dialog.getByLabel("选择 PDF 文件").setInputFiles(Array.from({ length: 5 }, (_, index) => ({ name: "后台准备-" + index + ".pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") })));
+    await dialog.getByLabel("选择 PDF 或 Word 文件").setInputFiles(Array.from({ length: 5 }, (_, index) => ({ name: "后台准备-" + index + ".pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") })));
     await dialog.getByRole("button", { name: "开始导入" }).click();
     await expect.poll(() => posts).toBe(5);
     await expect(dialog.locator(".wb-file-selection")).toHaveCount(0);
@@ -323,7 +323,7 @@ test("上传期间关闭重开保留当前任务，失败可见，新批次不�
   await page.goto("/");
   await page.getByRole("button", { name: "导入试卷", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导入试卷" });
-  await dialog.getByLabel("选择 PDF 文件").setInputFiles({ name: "第一批.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
+  await dialog.getByLabel("选择 PDF 或 Word 文件").setInputFiles({ name: "第一批.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
   await dialog.getByRole("button", { name: "开始导入" }).click();
   await expect.poll(() => received).toBe(true);
   await expect(dialog.locator(".wb-file-selection")).toHaveCount(0);
@@ -332,7 +332,7 @@ test("上传期间关闭重开保留当前任务，失败可见，新批次不�
   await expect(dialog.locator(".wb-upload-tasks")).toContainText("第一批.pdf");
   release();
   await expect(dialog.locator(".wb-upload-tasks")).toContainText("测试上传失败");
-  await dialog.getByLabel("选择 PDF 文件").setInputFiles({ name: "第二批.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
+  await dialog.getByLabel("选择 PDF 或 Word 文件").setInputFiles({ name: "第二批.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
   await dialog.getByRole("button", { name: "开始导入" }).click();
   await expect(dialog.locator(".wb-upload-tasks article")).toHaveCount(1);
   await expect(dialog.locator(".wb-upload-tasks")).toContainText("第二批.pdf");
@@ -353,7 +353,7 @@ test("同步失败保留现有数据，模型配置失败明确提示并可重�
     await page.getByRole("button", { name: "导入试卷", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "导入试卷" });
     await expect(dialog.getByRole("status")).toContainText("模型配置暂不可用");
-    await dialog.getByLabel("选择 PDF 文件").setInputFiles({ name: "待恢复.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
+    await dialog.getByLabel("选择 PDF 或 Word 文件").setInputFiles({ name: "待恢复.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
     await expect(dialog.getByRole("button", { name: "开始导入" })).toBeDisabled();
     await page.keyboard.press("Escape");
     failModels = false;

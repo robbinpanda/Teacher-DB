@@ -9,6 +9,8 @@ import "./globals.css";
 import "./resource-management.css";
 import "./workbench.css";
 import "./select-controls.css";
+import "./teacher-workflow.css";
+import { UndoDeleteProvider } from "../components/UndoDelete";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_BASE_URL || "http://localhost:3050"),
@@ -35,7 +37,7 @@ export default async function RootLayout({
   const initialMode = anonymousRemote ? "personal" : await getTeacherMode(requestHeaders.get("oai-authenticated-user-id") ?? "local-demo");
   return (
     <html lang="zh-CN">
-      <body><RuntimeDiagnostics /><AppShell initialMode={initialMode} initialScope={scopeFromCookieHeader(requestHeaders.get("cookie"))}>{children}</AppShell></body>
+      <body><RuntimeDiagnostics /><UndoDeleteProvider><AppShell initialMode={initialMode} initialScope={scopeFromCookieHeader(requestHeaders.get("cookie"))}>{children}</AppShell></UndoDeleteProvider></body>
     </html>
   );
 }

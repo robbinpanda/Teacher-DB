@@ -71,7 +71,6 @@ export async function callVisionModel(input: VisionCall) {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const controller = new AbortController();
   const timeoutMs = Math.min(profile.timeoutMs, input.timeoutMs ?? profile.timeoutMs);
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let trace: ModelCallTrace | undefined;
   let failure: unknown;
   try {
@@ -94,7 +93,7 @@ export async function callVisionModel(input: VisionCall) {
       jsonMode: input.jsonMode,
       maxOutputTokens: input.maxOutputTokens,
     });
-    trace = new ModelCallTrace(dataDirectory(), { ownerId: input.ownerId, profileId: profile.id,
+    trace = new ModelCallTrace(dataDirectory(), { timeoutMs, ownerId: input.ownerId, profileId: profile.id,
       provider: profile.provider, model: profile.model, purpose: input.purpose ?? "other", documentId: input.documentId });
     input.onTrace?.(trace);
     let response = await trace.fetch(request.endpoint, {
@@ -154,7 +153,7 @@ export async function callVisionModel(input: VisionCall) {
     return { content, profile, usage, traceId: trace.id };
   } catch (error) {
     failure = error;
-    if (error instanceof DOMException && error.name === "AbortError") {
+    if (error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError")) {
       throw new ModelCallError(`模型调用超过 ${Math.round(timeoutMs / 1000)} 秒，已安全中止`, "timeout", true);
     }
     if (error instanceof TypeError) {
@@ -167,7 +166,6 @@ export async function callVisionModel(input: VisionCall) {
     }
     throw error;
   } finally {
-    clearTimeout(timeout);
     controller.abort();
     trace?.finish(failure === undefined ? "complete" : "failed", failure);
   }
@@ -206,7 +204,12 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
     }, VISION_STREAM_IDLE_TIMEOUT_MS);
     idleTimer.unref?.();
   };
-  resetIdleTimer();
+  const fetchWithIdleTimer: typeof fetch = async (url, options) => {
+    resetIdleTimer();
+    const response = await fetch(url, options);
+    if (response.status === 429) clearTimeout(idleTimer);
+    return response;
+  };
   let trace: ModelCallTrace | undefined;
   let failure: unknown;
   let usagePayload: unknown;
@@ -239,7 +242,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
       headers: request.headers,
       body: JSON.stringify(request.body),
       signal: controller.signal,
-    });
+    }, fetchWithIdleTimer);
     if (response.status === 400) {
       const firstDetail = await response.text();
       if (isThinkingSettingError(firstDetail)) {
@@ -250,7 +253,7 @@ export async function callVisionModelStream(input: VisionCall, handlers: VisionS
         headers: request.headers,
         body: JSON.stringify(compatibilityBody(request.body as Record<string, unknown>)),
         signal: controller.signal,
-      });
+      }, fetchWithIdleTimer);
     }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1200);

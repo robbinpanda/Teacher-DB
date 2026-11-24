@@ -9,7 +9,7 @@ import {
   normalizeDocumentIds,
   type BulkDeleteMode,
 } from "../../../../../lib/document-bulk-actions";
-import { deleteFile } from "../../../../../lib/file-storage";
+import { deleteDocumentFile } from "../../../../../lib/file-storage";
 import { getDocumentIntegrity, integrityError } from "../../../../../lib/document-integrity";
 import { now, requestOwner } from "../../../../../lib/server";
 import { automaticAiReviewEnabled } from "../../../../../lib/ai-review-settings";
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         mode: payload.mode as BulkDeleteMode,
         timestamp,
       }));
-      const removedFiles = await Promise.allSettled(outcome.fileKeys.map((key) => deleteFile(key)));
+      const removedFiles = await Promise.allSettled(outcome.fileKeys.map((key) => deleteDocumentFile(key)));
       return Response.json({
         action: payload.action,
         mode: payload.mode,

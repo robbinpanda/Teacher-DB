@@ -78,7 +78,7 @@ test('import request retains the displayed destination when another tab changes 
   await expect(dialog.getByRole('region',{name:'目标题库'})).toContainText('小学 · 英语');
   await expect(dialog.getByLabel('年级',{exact:true}).locator('option')).toHaveText(['一年级','二年级','三年级','四年级','五年级','六年级']);
   await dialog.getByLabel('年级',{exact:true}).selectOption('三年级');
-  await dialog.getByLabel('选择 PDF 文件').setInputFiles({name:'scope-target.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nfixture')});
+  await dialog.getByLabel('选择 PDF 或 Word 文件').setInputFiles({name:'scope-target.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nfixture')});
   await context.addCookies([{name:'teacher-db-scope',value:encodeURIComponent(JSON.stringify({subject:'数学',stage:'high'})),url:'http://127.0.0.1:3189'}]);
   let destination;
   await page.route(/\/api\/documents(?:\?.*)?$/,async route => {

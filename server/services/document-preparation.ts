@@ -7,9 +7,11 @@ import { now } from "../../lib/server";
 import { readProcessorEvents } from "../contracts/processor";
 import { result } from "../core/result";
 import { uploadDocumentPage } from "./document-pages";
+import { isWordDocument } from "../../lib/word-mime";
+import { prepareWordDocument, WordImportError } from "../../lib/word-import";
 
 const leaseMs = Math.max(3000, Number(process.env.JIANTI_PREPARATION_LEASE_MS) || 90000);
-type Preparation = { document_id: string; owner_id: string; profile_id: string | null; attempt: number; lease_owner: string; original_key: string };
+type Preparation = { document_id: string; owner_id: string; profile_id: string | null; attempt: number; lease_owner: string; original_key: string; mime_type: string | null };
 let running = false;
 class PreparationFailure extends Error {
   constructor(message: string, readonly retryable: boolean) { super(message); }
@@ -71,7 +73,14 @@ async function processPreparation(job: Preparation) {
     if (!["http:", "https:"].includes(endpoint.protocol)) throw new Error("PDF 处理服务地址必须是 HTTP(S)");
     const token = process.env.JIANTI_PROCESSOR_TOKEN ?? "";
     if (token.length < 32) throw new Error("PDF 处理服务密钥至少需要 32 个字符");
-    const bytes = await getFile(job.original_key);
+    let bytes: Uint8Array<ArrayBuffer> = new Uint8Array(await getFile(job.original_key));
+    if (isWordDocument(job.mime_type)) {
+      // Word papers are read structurally, then typeset to a PDF that the
+      // existing page pipeline and review screens use as the source pages.
+      try { bytes = await prepareWordDocument(job.document_id, bytes, job.mime_type ?? "", controller.signal); }
+      catch (error) { if (error instanceof WordImportError) throw new PreparationFailure(error.message, error.retryable); throw error; }
+      if (!owned(job)) throw new Error("PDF 分页任务租约已失效");
+    }
     const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/pdf", "x-processor-token": token },
       body: bytes, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10 * 60 * 1000)]) });
     if (!response.ok || !response.body) {
@@ -147,7 +156,7 @@ export async function kickDocumentPreparation() {
       const timestamp = now();
       sqlite.prepare(`UPDATE document_preparations SET status='retry_wait', next_attempt_at=?, lease_owner=NULL,
         lease_expires_at=NULL, last_error='工作进程中断，等待恢复' WHERE status='processing' AND lease_expires_at<=?`).run(timestamp, timestamp);
-      const candidate = sqlite.prepare(`SELECT p.*, d.original_key FROM document_preparations p JOIN documents d ON d.id=p.document_id
+      const candidate = sqlite.prepare(`SELECT p.*, d.original_key, d.mime_type FROM document_preparations p JOIN documents d ON d.id=p.document_id
         WHERE p.status IN ('queued','retry_wait') AND (p.next_attempt_at IS NULL OR p.next_attempt_at<=?)
         AND d.source_removed_at IS NULL ORDER BY p.updated_at LIMIT 1`).get(timestamp) as Preparation | undefined;
       if (!candidate) return;

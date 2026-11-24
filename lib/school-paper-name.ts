@@ -23,7 +23,7 @@ function number(text: string): string {
 }
 
 export function schoolPaperDetails(original: string) {
-  const source = original.normalize("NFKC").replace(/\.pdf$/i, "");
+  const source = original.normalize("NFKC").replace(/\.(?:pdf|docx?)$/i, "");
   const gradeMatch = source.match(/([高初])(?:中)?([一二三123])(?:年级)?/) ?? source.match(/([一二三四五六七八九1-9])年级/);
   const grade = !gradeMatch ? "" : gradeMatch.length === 3
     ? gradeMatch[1] + ({ "1": "一", "2": "二", "3": "三" }[gradeMatch[2]] ?? gradeMatch[2])

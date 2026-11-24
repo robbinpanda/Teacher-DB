@@ -1,3 +1,5 @@
+import { isWordDocument } from "../../lib/word-mime";
+import { loadWordParse, restoreWordFormulas, wordModelText, wordStorageKeys } from "../../lib/word-import";
 import { result } from "../core/result";
 import { extractionInputSchema } from "../../lib/api-contracts";
 import { snapshotTeachingSkill } from "../../lib/teaching-skills";
@@ -328,8 +330,12 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput,
         .run(phase, message, timestamp, documentId);
     };
     setPhase("preparing", "等待本地图像预处理");
+    const wordDocument = isWordDocument(ownedDocument.mimeType);
+    const wordParse = wordDocument ? await loadWordParse(documentId) : null;
+    if (wordDocument && !wordParse) throw new ModelCallError("Word 解析结果缺失，请重新导入该 Word 文件", "word_parse_missing", false, 409);
     const prepared = await prepareExtractionInput({
-      originalPath: ownedDocument.mimeType === "application/pdf" && ownedDocument.originalKey ? resolveStorageKey(ownedDocument.originalKey) : undefined,
+      originalPath: wordDocument ? resolveStorageKey(wordStorageKeys(documentId).rendered)
+        : ownedDocument.mimeType === "application/pdf" && ownedDocument.originalKey ? resolveStorageKey(ownedDocument.originalKey) : undefined,
       pages: sourcePages.map(page => ({ pageNumber: page.pageNumber, path: resolveStorageKey(page.storageKey) })),
     }, progress => {
       const timestamp = Date.now();
@@ -342,6 +348,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput,
       throw error;
     });
     const { sourceInventory, inventoryError, modelImages, candidates } = prepared;
+    const wordText = wordParse ? wordModelText(wordParse) : null;
     const pageBytes = new Map(prepared.pageBytes.map(page => [page.page, Buffer.from(page.bytes.buffer, page.bytes.byteOffset, page.bytes.byteLength)]));
     const preprocessingTimings = { ...prepared.timings, queueWaitMs: Math.max(0, Date.now() - preparationStarted - prepared.timings.totalMs) };
     runtimeLog("extraction_prepared", { documentId, ...preprocessingTimings });
@@ -455,6 +462,14 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput,
       if (receivedDone) issues.push({ code: "after_done", message: "本题在结束事件后返回，请核对是否重复或多出" });
       if (questionTotal !== null && Number(number) > questionTotal) issues.push({ code: "unexpected_number", message: `题号超过预期的 ${questionTotal} 题，请对照原卷确认` });
       const question = normalizeIsolatedQuestion(record.question, { candidates, pageCount: sourcePages.length, allowedTags, issues });
+      if (wordParse) {
+        const restored = restoreWordFormulas(question, wordParse);
+        if (restored.issues.length) {
+          question.needsHumanReview = true;
+          question.status = "needs_attention";
+          question.extractionIssues = [...(question.extractionIssues ?? []), ...restored.issues];
+        }
+      }
       await saveQuestion(question, record.question);
     };
 
@@ -480,6 +495,7 @@ export async function extractDocument(ownerId: string, payload: ExtractionInput,
         `页面尺寸：${sourcePages.map((page) => `第${page.pageNumber}页 ${page.width}×${page.height}`).join("；")}。`,
         `候选清单：${JSON.stringify(candidates.map((c) => ({ id: c.id, page: c.page })))}` ,
         "逐题输出前必须检查下一页顶部、下一独立题号之前是否还有本题配图；即使上一页已出现‘故答案为’，也不能漏掉跨页答案图。按几何对象、图中文字和解析引用确认图片归属，答案解析配图用 role=answer。裁剪必须完整包含坐标轴箭头、点名和图例，留少量空白，不包含邻题文字。若无法确认是否漏图或边界是否完整，needsHumanReview 必须为 true。",
+        wordText ? `\n${wordText}` : "",
       ].join(" "),
       images: modelImages,
     }, {

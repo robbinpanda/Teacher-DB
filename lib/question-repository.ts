@@ -1,3 +1,7 @@
+import { isWordDocument } from "./word-mime";
+import { loadWordSummary } from "./word-report";
+import { questionUsage, recentUseClause } from "./question-usage";
+import { searchGroups, type SearchVocabularyEntry } from "./search-terms";
 import { documentScopeSql, documentStageSql, type EducationScope } from "./education-scope";
 import "server-only";
 import { selectDocumentWindow, type DocumentListOptions, type DocumentListResult } from "./document-list";
@@ -87,10 +91,11 @@ function placeholders(count: number) {
   return Array.from({ length: count }, () => "?").join(",");
 }
 
-async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource[]> {
+async function hydrateQuestions(rows: QuestionRow[], ownerId?: string): Promise<QuestionWithSource[]> {
   if (!rows.length) return [];
   const sqlite = getSqlite();
   const ids = rows.map((row) => row.id);
+  const usage = ownerId ? questionUsage(sqlite, ownerId, ids) : undefined;
   const assets = sqlite.prepare(
     `SELECT a.id, a.question_id AS questionId, a.kind, a.role, a.label, a.source_key AS sourceKey,
             a.crop_key AS cropKey, a.bbox_json AS bboxJson, p.page_number AS pageNumber,
@@ -147,6 +152,7 @@ async function hydrateQuestions(rows: QuestionRow[]): Promise<QuestionWithSource
       bbox: legacyBox,
       regions: questionRegions,
       assets: questionAssets,
+      lastUsed: usage?.get(row.id) ?? null,
       tags: tagRows.filter((tag) => tag.questionId === row.id).map((tag) => tag.name),
       folderId: row.folderId,
       parentQuestionId: row.parentQuestionId,
@@ -204,7 +210,7 @@ export async function getReviewData(documentId: string, ownerId: string) {
   const documentRow = sqlite.prepare(
     `SELECT d.id, d.name, d.subject, d.grade, d.source_year AS year,
             d.source_exam_type AS examType, d.source_region AS region, d.source_textbook AS textbook, d.source_school AS school,
-            d.status, d.error, d.page_count AS pageCount,
+            d.status, d.error, d.page_count AS pageCount, d.mime_type AS mimeType,
             j.status AS jobStatus, j.next_attempt_at AS nextAttemptAt,
             j.question_total AS recognitionQuestionTotal,
             j.completed_question_numbers_json AS recognizedQuestionNumbersJson,
@@ -220,8 +226,10 @@ export async function getReviewData(documentId: string, ownerId: string) {
        LEFT JOIN document_jobs j ON j.document_id = d.id
        LEFT JOIN model_profiles mp ON mp.id = j.profile_id AND mp.owner_id = d.owner_id
       WHERE d.id = ? AND d.owner_id = ? AND d.source_removed_at IS NULL GROUP BY d.id`,
-  ).get(documentId, ownerId) as (Omit<ReviewDocument, "subject" | "grade"> & { subject: string | null; grade: string | null }) | undefined;
+  ).get(documentId, ownerId) as (Omit<ReviewDocument, "subject" | "grade"> & { subject: string | null; grade: string | null; mimeType: string }) | undefined;
   if (!documentRow) return null;
+  const { mimeType, ...documentFields } = documentRow;
+  const wordImport = isWordDocument(mimeType) ? await loadWordSummary(documentId) : null;
   const pages = sqlite.prepare(
     `SELECT p.id, p.page_number AS pageNumber, p.storage_key AS storageKey, p.width, p.height,
             COALESCE(r.status, 'queued') AS extractionStatus, COALESCE(r.attempt, 0) AS extractionAttempt,
@@ -261,7 +269,8 @@ export async function getReviewData(documentId: string, ownerId: string) {
     }));
   return {
     document: {
-      ...documentRow,
+      ...documentFields,
+      wordImport,
       subject: documentRow.subject ?? "未设置学科",
       grade: documentRow.grade ?? "未设置年级",
       completedPageCount: reviewPages.filter((page) => page.extractionStatus === "complete").length,
@@ -290,6 +299,7 @@ export async function getApprovedQuestions(ownerId: string, ids?: string[], scop
 }
 
 export type QuestionSearchOptions = {
+  excludeRecentDays?: number;
   sourceKind?: string;
   query?: string;
   type?: string;
@@ -336,18 +346,33 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
     clauses.push("EXISTS (SELECT 1 FROM question_tags sqt JOIN tags st ON st.id = sqt.tag_id WHERE sqt.question_id = q.id AND st.name = ?)");
     params.push(options.tag);
   }
+  const recent = recentUseClause(options.excludeRecentDays, ownerId);
+  if (recent.sql) { clauses.push(recent.sql); params.push(...recent.params); }
   const query = options.query?.trim();
   if (query) {
-    const pattern = likePattern(query);
-    clauses.push(`(
-      q.stem LIKE ? ESCAPE '\\' OR q.answer LIKE ? ESCAPE '\\' OR q.analysis LIKE ? ESCAPE '\\'
-      OR d.name LIKE ? ESCAPE '\\' OR COALESCE(d.subject, '') LIKE ? ESCAPE '\\'
-      OR COALESCE(d.grade, '') LIKE ? ESCAPE '\\' OR COALESCE(d.source_exam_type, '') LIKE ? ESCAPE '\\'
-      OR COALESCE(d.source_region, '') LIKE ? ESCAPE '\\' OR COALESCE(d.source_school, '') LIKE ? ESCAPE '\\'
-      OR COALESCE(d.source_textbook, '') LIKE ? ESCAPE '\\'
-      OR EXISTS (SELECT 1 FROM question_tags qqt JOIN tags tt ON tt.id = qqt.tag_id WHERE qqt.question_id = q.id AND tt.name LIKE ? ESCAPE '\\')
-    )`);
-    params.push(...Array.from({ length: 11 }, () => pattern));
+    const vocabulary = sqlite.prepare(`SELECT DISTINCT 'school' AS kind, source_school AS name FROM documents WHERE owner_id=? AND source_school IS NOT NULL
+      UNION SELECT DISTINCT 'exam', source_exam_type FROM documents WHERE owner_id=? AND source_exam_type IS NOT NULL`).all(ownerId, ownerId) as Pick<SearchVocabularyEntry, "name" | "kind">[];
+    const groups = searchGroups(query, vocabulary.map(entry => ({ ...entry, aliases: [] })));
+    const pattern = "spelling.value ->> 'pattern'";
+    const matches = (fields: string[]) => fields.map(field => `${field} LIKE ${pattern} ESCAPE '\\'`).join(" OR ");
+    const documentFields = matches(["d.name", "d.source_school", "d.source_exam_type"]);
+    const questionFields = matches(["q.stem", "q.answer", "q.analysis", "d.subject", "d.grade", "d.source_region", "d.source_textbook", "CAST(d.source_year AS TEXT)"]);
+    const tagMatches = matches(["t.name"]);
+    // The whole input is one alternative search. Each group in the split search
+    // must match, but any spelling in that group is enough. Binding one JSON
+    // value also handles a fragment shared by many schools without large SQL trees.
+    const searches = [[[{ text: query, scope: "all" }]]];
+    if (groups.length && (groups.length > 1 || groups[0].some(item => item.text !== query))) searches.push(groups);
+    const terms = searches.map(search => search.map(group => group.map(item => ({ pattern: likePattern(item.text), scope: item.scope }))));
+    clauses.push(`EXISTS (SELECT 1 FROM json_each(?) AS search WHERE NOT EXISTS (
+      SELECT 1 FROM json_each(search.value) AS term WHERE NOT EXISTS (
+        SELECT 1 FROM json_each(term.value) AS spelling WHERE ${documentFields}
+        OR ((spelling.value ->> 'scope') = 'all' AND (${questionFields} OR EXISTS (
+          SELECT 1 FROM question_tags qt JOIN tags t ON t.id=qt.tag_id WHERE qt.question_id=q.id AND ${tagMatches}
+        )))
+      )
+    ))`);
+    params.push(JSON.stringify(terms));
   }
   const where = clauses.join(" AND ");
   const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize ?? 30)));
@@ -361,7 +386,7 @@ export async function searchApprovedQuestions(ownerId: string, options: Question
       LIMIT ? OFFSET ?`,
   ).all(...params, pageSize, (page - 1) * pageSize) as QuestionRow[];
   return {
-    questions: await hydrateQuestions(rows),
+    questions: await hydrateQuestions(rows, ownerId),
     pagination: { page, pageSize, total, pageCount: Math.max(1, Math.ceil(total / pageSize)) },
   };
 }

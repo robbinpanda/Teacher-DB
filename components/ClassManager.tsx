@@ -1,4 +1,5 @@
 "use client";
+import { useUndoDelete } from "./UndoDelete";
 
 import { useMemo, useRef, useState } from "react";
 import { Download, GraduationCap, Plus, Search, Trash2, Upload, Users } from "lucide-react";
@@ -14,6 +15,7 @@ function defaultSchoolYear() {
 }
 
 export function ClassManager({ initialClasses, initialDetail }: { initialClasses: TeachingClassRecord[]; initialDetail: ClassDetail | null }) {
+  const requestDelete = useUndoDelete();
   const [classes, setClasses] = useState(initialClasses);
   const [selectedId, setSelectedId] = useState(initialClasses.find((item) => !item.archived)?.id ?? null);
   const [detail, setDetail] = useState<ClassDetail | null>(initialDetail);
@@ -93,7 +95,7 @@ export function ClassManager({ initialClasses, initialDetail }: { initialClasses
   }
 
   async function removeStudent(student: Student) {
-    if (!selectedId || !window.confirm(`从本班移除“${student.name}”？历史作业不会被删除。`)) return;
+    if (!selectedId || !await requestDelete(`从本班移除“${student.name}”？历史作业不会被删除。`)) return;
     const classId = selectedId;
     await mutate(async () => {
       await requestJson(`/api/classes/${classId}/students/${student.id}`, { method: "DELETE" });

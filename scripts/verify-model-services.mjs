@@ -14,12 +14,13 @@ const { callVisionModel, callVisionModelStream } = await import('../lib/vision-m
 const { getSqlite } = await import('../db/index.ts');
 const http = (body, method = 'POST', owner = 'fixture-owner') => new Request('http://localhost/api/model-profiles', {
   method, headers: { 'content-type': 'application/json', 'oai-authenticated-user-id': owner }, body: JSON.stringify(body) });
-const requests = []; let rejectNext = false;
+const requests = []; let rejectNext = false, limitNext = false;
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = async (endpoint, init) => {
   const body = JSON.parse(init.body); const headers = new Headers(init.headers);
   requests.push({ endpoint, body, headers });
   assert.ok(/^https:\/\/(opencode.ai|openrouter.ai|custom.example)\//.test(endpoint), 'unexpected network target');
+  if (limitNext) { limitNext = false; return new Response("rate limited", { status: 429, headers: { "Retry-After": "1" } }); }
   if (rejectNext) { rejectNext = false; return new Response('unsupported formatting', { status: 400 }); }
   const text = '{"ok":true,"text":"TEST 42"}';
   const google = endpoint.includes('/models/'); const anthropic = endpoint.endsWith('/messages'); const responses = endpoint.endsWith('/responses');
@@ -56,8 +57,12 @@ try {
     await callVisionModel({ ...input, purpose: 'question_review' });
     assert.notEqual(requests.at(-1).headers.get('x-opencode-session'), textSession);
     let streamed = ''; rejectNext = true;
+    const streamStart = requests.length;
+    const testBackoff = service === 'opencode-go' && model === 'deepseek-v4.1-flash';
+    limitNext = testBackoff;
     await callVisionModelStream({ ...input, purpose: 'page_extraction', extractionRunId: 'fixture-run' }, { onTextDelta: delta => { streamed += delta; } });
     assert.equal(JSON.parse(streamed).ok, true);
+    if (testBackoff) assert.equal(requests.length - streamStart, 3, '429 retry and 400 compatibility retry both reach the wire');
     assert.equal(requests.at(-1).headers.get('x-opencode-session'), 'fixture-run');
     assert.equal(requests.at(-2).headers.get('x-opencode-session'), 'fixture-run');
     const test = await testConnection(http({ profileId: profile.id })); assert.equal(test.status, 200, await test.clone().text());
@@ -118,22 +123,22 @@ try {
   assert.ok(!logged.includes('x-opencode-session'));
   // Reconstruct a populated v7 fixture. Preserve all profile fields while widening the CHECK constraint.
   const db = getSqlite();
-  db.exec("UPDATE model_profiles SET service='custom' WHERE service='opencode-go'; ALTER TABLE model_profiles ADD COLUMN service_old TEXT CHECK(service_old IN ('opencode','openrouter','custom')); UPDATE model_profiles SET service_old=service; ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE model_profiles RENAME COLUMN service_old TO service; ALTER TABLE app_settings DROP COLUMN automatic_ai_review_enabled; ALTER TABLE document_jobs DROP COLUMN ai_review_enabled; DELETE FROM schema_migrations WHERE version>=8;");
+  db.exec("UPDATE model_profiles SET service='custom' WHERE service='opencode-go'; ALTER TABLE model_profiles ADD COLUMN service_old TEXT CHECK(service_old IN ('opencode','openrouter','custom')); UPDATE model_profiles SET service_old=service; ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE model_profiles RENAME COLUMN service_old TO service; ALTER TABLE app_settings DROP COLUMN automatic_ai_review_enabled; ALTER TABLE document_jobs DROP COLUMN ai_review_enabled; DELETE FROM schema_migrations WHERE version BETWEEN 8 AND 10;");
   const beforeV8 = db.prepare('SELECT * FROM model_profiles ORDER BY id').all();
   execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
     "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
-  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 10);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations WHERE version BETWEEN 7 AND 10').get().n, 4);
   assert.deepEqual(db.prepare('SELECT * FROM model_profiles ORDER BY id').all(), beforeV8);
   db.prepare("UPDATE model_profiles SET service='opencode-go' WHERE id=?").run(profile.id);
   assert.throws(() => db.prepare("UPDATE model_profiles SET service='invalid' WHERE id=?").run(profile.id), /CHECK/);
   // A v6 database must also migrate through both versions.
 
   const beforeMigration = db.prepare('SELECT id,api_key_ciphertext,base_url,provider FROM model_profiles ORDER BY id').all();
-  db.exec('ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE app_settings DROP COLUMN automatic_ai_review_enabled; ALTER TABLE document_jobs DROP COLUMN ai_review_enabled; DELETE FROM schema_migrations WHERE version>=7;');
+  db.exec('ALTER TABLE model_profiles DROP COLUMN service; ALTER TABLE app_settings DROP COLUMN automatic_ai_review_enabled; ALTER TABLE document_jobs DROP COLUMN ai_review_enabled; DELETE FROM schema_migrations WHERE version BETWEEN 7 AND 10;');
   execFileSync(process.execPath, ['--import', './server/register.mjs', '--import', 'tsx', '--input-type=module', '--eval',
     "const {ensureDatabase}=await import('./db/bootstrap.ts'); await ensureDatabase();"], { env: process.env, stdio: 'pipe' });
   assert.ok(db.prepare('PRAGMA table_info(model_profiles)').all().some(c => c.name === 'service'));
-  assert.equal(db.prepare('SELECT max(version) AS v FROM schema_migrations').get().v, 10);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations WHERE version BETWEEN 7 AND 10').get().n, 4);
   assert.deepEqual(db.prepare('SELECT id,api_key_ciphertext,base_url,provider FROM model_profiles ORDER BY id').all(), beforeMigration);
   console.log(JSON.stringify({ passed: true, mockRequests: requests.length, dataDirectory: process.env.JIANTI_DATA_DIR }));
 } finally { globalThis.fetch = nativeFetch; }

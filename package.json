@@ -1,6 +1,6 @@
 {
   "name": "jianti-teacher-question-bank",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0 <23"
@@ -15,6 +15,8 @@
     "worker": "node --import ./server/register.mjs --import tsx server/worker.ts",
     "backend:verify": "node scripts/verify-backend.mjs",
     "processor:verify": "node scripts/verify-processor.mjs",
+    "word:verify": "node --experimental-strip-types scripts/verify-word-export.mjs",
+    "word:import:verify": "node scripts/verify-word-import.mjs",
     "remote:verify": "node scripts/verify-remote.mjs",
     "local:verify": "node scripts/verify-local.mjs",
     "test:browser": "playwright test",
@@ -37,6 +39,7 @@
     "@nestjs/platform-express": "^11.2.7",
     "@types/better-sqlite3": "^9.6.0",
     "better-sqlite3": "^12.6.2",
+    "docx": "^9.15.3",
     "drizzle-orm": "0.45.2",
     "katex": "^0.18.1",
     "lucide-react": "^1.28.0",

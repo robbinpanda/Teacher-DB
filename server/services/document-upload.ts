@@ -10,11 +10,12 @@ import { findReusableDocument, resolveUploadDestination } from "../../lib/docume
 import { stageFromGrade } from "../../lib/education-taxonomy";
 import { enqueueDocumentPreparation, processorConfigured } from "./document-preparation";
 import { uploadMetadataSchema } from "../../lib/api-contracts";
+import { DOC_MIME, DOCX_MIME, MAX_WORD_BYTES } from "../../lib/word-mime";
 import { nameImportedDocument } from "./document-naming";
 
 
 const maxOriginalBytes = 100 * 1024 * 1024;
-const acceptedExtensions = [".pdf"];
+const acceptedExtensions = [".pdf", ".docx", ".doc"];
 
 function hex(bytes: ArrayBuffer) {
   return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
@@ -26,7 +27,10 @@ export async function uploadDocument(ownerId: string, form: FormData, targetScop
   const file = form.get("file");
   if (!(file instanceof File)) return result({ error: "缺少文件" }, { status: 400 });
   const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  if (!acceptedExtensions.includes(extension)) return result({ error: "当前产品仅支持 PDF 试卷" }, { status: 415 });
+  if (!acceptedExtensions.includes(extension)) return result({ error: "请选择 PDF 或 Word（.docx / .doc）试卷" }, { status: 415 });
+  const isLegacyWord = extension === ".doc";
+  const isWord = extension === ".docx" || isLegacyWord;
+  if (isWord && file.size > MAX_WORD_BYTES) return result({ error: "单份 Word 文件不能超过 60 MB" }, { status: 413 });
   if (file.size > maxOriginalBytes) return result({ error: "原卷不能超过 100 MB" }, { status: 413 });
   if (file.name.length > 180) return result({ error: "文件名不能超过 180 字符" }, { status: 400 });
   const metadata: Record<string, unknown> = {};
@@ -47,6 +51,9 @@ export async function uploadDocument(ownerId: string, form: FormData, targetScop
   const createdAt = now();
   const originalKey = "documents/" + id + "/original/" + file.name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
   const pageCount = Number(form.get("pageCount") ?? 0);
+  // Word papers are always read and typeset on the server.
+  if (isWord && pageCount !== 0) return result({ error: "Word 试卷由服务器读取，不能附带浏览器分页" }, { status: 400 });
+  if (isWord && !processorConfigured()) return result({ error: "导入 Word 需要后台文档处理服务，请使用 npm run local:python 启动", code: "processor_unavailable" }, { status: 503 });
   const prepare = processorConfigured() && pageCount === 0;
   const profileId = form.get("profileId");
   if (profileId !== null && (typeof profileId !== "string" || profileId.length > 100)) return result({ error: "模型编号格式无效" }, { status: 400 });
@@ -56,8 +63,11 @@ export async function uploadDocument(ownerId: string, form: FormData, targetScop
     return result({ error: "页数必须在 0 到 250 之间" }, { status: 400 });
   }
   const bytes = await file.arrayBuffer();
-  if (new TextDecoder("ascii").decode(bytes.slice(0, 5)) !== "%PDF-") {
-    return result({ error: "文件扩展名是 PDF，但内容不是有效的 PDF 文件" }, { status: 415 });
+  const magic = new TextDecoder("latin1").decode(bytes.slice(0, 8));
+  const validMagic = isLegacyWord ? magic === "\u00d0\u00cf\u0011\u00e0\u00a1\u00b1\u001a\u00e1"
+    : isWord ? magic.startsWith("PK\u0003\u0004") : magic.startsWith("%PDF-");
+  if (!validMagic) {
+    return result({ error: isWord ? `文件扩展名是 ${extension}，但内容不是有效的 Word 文件` : "文件扩展名是 PDF，但内容不是有效的 PDF 文件" }, { status: 415 });
   }
   const checksum = hex(await crypto.subtle.digest("SHA-256", bytes));
   const scope = { subject: String(form.get("subject") ?? "") || "数学", stage: stageFromGrade(String(form.get("grade") ?? "")) };
@@ -98,7 +108,7 @@ export async function uploadDocument(ownerId: string, form: FormData, targetScop
            source_year, source_exam_type, source_region, source_textbook, source_school, checksum, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
-        id, ownerId, file.name, file.type || "application/octet-stream", originalKey,
+        id, ownerId, file.name, isLegacyWord ? DOC_MIME : isWord ? DOCX_MIME : "application/pdf", originalKey,
         pageCount > 0 ? "extracting" : "uploading", pageCount,
         String(form.get("subject") ?? "") || null,
         String(form.get("grade") ?? "") || null,

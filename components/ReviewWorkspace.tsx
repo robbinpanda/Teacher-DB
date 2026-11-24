@@ -1,4 +1,5 @@
 "use client";
+import { useUndoDelete } from "./UndoDelete";
 
 import Link from "next/link";
 import "./review/review-workspace.css";
@@ -42,6 +43,7 @@ import { ReviewPending } from "./review/ReviewPending";
 import { DocumentModelLogsButton } from "./review/DocumentModelLogsButton";
 import { persistDirtyQuestionDrafts } from "../lib/review-draft-persistence";
 import { aiReviewLabel, questionReviewContentKey } from "../lib/question-ai-review";
+import { describeWordSummary } from "../lib/word-mime";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -78,6 +80,7 @@ export function ReviewWorkspace({
   initialQuestions: QuestionWithSource[];
   initialActiveId?: string;
 }) {
+  const requestDelete = useUndoDelete();
   const [questions, setQuestions] = useState(initialQuestions);
   const { sourceDocument, pageStates, setPageStates, job, setJob, recognition, setRecognition, newResultsAvailable, processorAvailable } = useReviewProgress(initialDocument, pages);
   const initialActive = initialQuestions.find((question) => question.id === initialActiveId) ?? initialQuestions[0];
@@ -125,7 +128,6 @@ export function ReviewWorkspace({
   const activeAssetPageInfo = activeAsset
     ? pageStates.find((page) => page.pageNumber === activeAsset.page)
     : undefined;
-  const currentModelLabel = currentPageInfo?.modelDisplayName ?? sourceDocument.modelDisplayName ?? currentPageInfo?.modelName ?? sourceDocument.modelName ?? "模型记录缺失";
   const approvedCount = questions.filter((question) => question.status === "approved").length;
   const unapprovedQuestions = questions.filter((question) => question.status !== "approved");
   const progress = questions.length ? Math.round(approvedCount / questions.length * 100) : 0;
@@ -253,7 +255,7 @@ export function ReviewWorkspace({
         percent: 0,
         phase: "queued",
         lastEventAt: null,
-        message: "等待整卷模型调用",
+        message: "等待识别",
       });
       setPageStates((items) => items.map((page) => page.extractionStatus === "complete" ? page : { ...page, extractionStatus: "queued", extractionError: null, nextAttemptAt: null }));
       setRetrying(false);
@@ -267,7 +269,7 @@ export function ReviewWorkspace({
   const recognitionPhaseLabel = recognition.phase === "preparing"
     ? "正在本地准备图像"
     : recognition.phase === "thinking"
-    ? "模型正在通读与思考"
+    ? "正在识别试卷"
     : recognition.phase === "receiving"
       ? "正在逐题接收并保存"
       : recognition.phase === "finalizing"
@@ -278,7 +280,7 @@ export function ReviewWorkspace({
             ? "识别失败"
             : recognition.phase === "paused"
               ? "识别已暂停"
-              : "正在连接模型";
+              : "正在准备识别";
 
   if (!active || !currentPageInfo || recognitionInProgress) {
     return <ReviewPending sourceDocument={sourceDocument} currentPageInfo={currentPageInfo} recognition={recognition} job={job} recognitionPhaseLabel={recognitionPhaseLabel} retrying={retrying} retryExtraction={retryExtraction} addManualQuestion={addManualQuestion} saveError={saveError} processorAvailable={processorAvailable} preparePages={preparePages} />;
@@ -493,10 +495,10 @@ export function ReviewWorkspace({
       }
       const response = await fetch(`/api/questions/${encodeURIComponent(active.id)}/ai-review`, { method: "POST" });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "AI 审核失败");
+      if (!response.ok) throw new Error(result.error ?? "自动检查失败");
       setQuestions(items => items.map(item => item.id === active.id ? { ...savedQuestion, ...result } : item));
       clearPersistedDraftFlags([active.id]);
-    } catch (error) { setSaveError(error instanceof Error ? error.message : "AI 审核失败"); }
+    } catch (error) { setSaveError(error instanceof Error ? error.message : "自动检查失败"); }
     finally { setSaving(false); }
   }
 
@@ -529,7 +531,7 @@ export function ReviewWorkspace({
   async function runBulkAction(action: "approve_without_review" | "remove_all_from_bank") {
     if (reviewBusy) return;
     if (action === "approve_without_review" && !documentReadyForReview) { setSaveError(integrityMessage); return; }
-    if (action === "remove_all_from_bank" && !window.confirm("将本试卷所有已入库题目移出题库？题目内容、页面框选和审核记录都会保留，可以之后重新入库。")) return;
+    if (action === "remove_all_from_bank" && !await requestDelete("将本试卷所有已入库题目移出题库？题目内容、页面框选和审核记录都会保留，可以之后重新入库。")) return;
     setBulkAction(action === "approve_without_review" ? "approve" : "remove");
     setSaveError("");
     setBulkNotice("");
@@ -549,9 +551,7 @@ export function ReviewWorkspace({
         body: JSON.stringify({ action }),
       });
       const result = await response.json().catch(() => ({})) as { error?: string; changed?: number; reviewRequired?: number; approvedIds?: string[] };
-      if (!response.ok) throw new Error(result.error ?? (response.status === 404
-        ? "批量操作接口未找到（HTTP 404），请重启题库服务后重试"
-        : `批量操作失败（HTTP ${response.status}），请稍后重试或查看服务日志`));
+      if (!response.ok) throw new Error(result.error ?? `批量操作失败（HTTP ${response.status}）`);
       if (action === "approve_without_review") {
         const approvedIds = new Set(result.approvedIds ?? []);
         setQuestions((items) => items.map((item) => approvedIds.has(item.id) ? { ...item, status: "approved", needsHumanReview: false } : item));
@@ -609,7 +609,7 @@ export function ReviewWorkspace({
           totalMatches += result.matches?.length ?? 0;
           lastMissing = result.missingNumbers ?? lastMissing;
           if (result.unknownNumbers?.length) warningParts.push(`未找到题号 ${result.unknownNumbers.join("、")}`);
-          if (result.lowConfidenceNumbers?.length) warningParts.push(`题号 ${result.lowConfidenceNumbers.join("、")} 匹配置信度较低，请人工复核`);
+          if (result.lowConfidenceNumbers?.length) warningParts.push(`题号 ${result.lowConfidenceNumbers.join("、")} 尚未匹配，请核对`);
           if (result.unmatchedNotes?.length) warningParts.push(...result.unmatchedNotes);
           if (result.matches?.length) setQuestions((items) => items.map((question) => {
             const update = result.matches?.find((match) => match.id === question.id);
@@ -637,7 +637,7 @@ export function ReviewWorkspace({
           <input ref={answerInputRef} hidden type="file" multiple accept="application/pdf,image/*" onChange={(event) => void importAnswers(event.target.files)} />
           {newResultsAvailable && <button className="btn btn-small" type="button" title="加载刚完成的识别结果" onClick={() => window.location.reload()}><RefreshCw size={14} /> 刷新结果</button>}
           {incompletePages.length > 0 && <button className="btn btn-small" type="button" disabled={retrying} onClick={() => void retryExtraction()}><RefreshCw size={14} /> {retrying ? "识别中…" : failedPages.length ? "重试整卷" : "继续整卷识别"}</button>}
-          <button className="btn btn-small" type="button" title={documentReadyForReview ? "仅入库模型明确判定无需人工核查的题目" : integrityMessage} disabled={saving || Boolean(bulkAction) || !documentReadyForReview} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "入库中…" : "自动入库"}</button>
+          <button className="btn btn-small" type="button" title={documentReadyForReview ? "入库已通过检查的题目" : integrityMessage} disabled={saving || Boolean(bulkAction) || !documentReadyForReview} onClick={() => void runBulkAction("approve_without_review")}><Check size={14} /> {bulkAction === "approve" ? "入库中…" : "自动入库"}</button>
           <details className="review-more-menu">
             <summary className="btn btn-small"><MoreHorizontal size={15} /> 更多</summary>
             <div>
@@ -655,6 +655,7 @@ export function ReviewWorkspace({
         {bulkNotice && <p className="form-note">{bulkNotice}</p>}
       </div>}
       {!documentReadyForReview && <div className="review-integrity-alert no-print"><AlertTriangle size={16} /><div><strong>完整性检查未通过，审核已暂停</strong><p>{integrityMessage}</p></div>{missingSourcePageCount > 0 && <Link href="/" className="btn btn-small">重新上传补齐</Link>}</div>}
+      {initialDocument.wordImport && <div className="review-word-import no-print" role="note"><Info size={15} /><div><strong>Word 导入</strong><p>{describeWordSummary(initialDocument.wordImport)}</p>{initialDocument.wordImport.warnings.length > 0 && <ul>{initialDocument.wordImport.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}</div></div>}
 
       <div className="review-body">
         <aside className="question-rail no-print">
@@ -669,7 +670,7 @@ export function ReviewWorkspace({
                       type="button"
                       key={question.id}
                       className={question.status === "needs_attention" ? "warning" : ""}
-                      title={question.status === "needs_attention" ? `第 ${question.number} 题被模型标记为需要人工核查` : `第 ${question.number} 题尚未入库`}
+                      title={question.status === "needs_attention" ? `第 ${question.number} 题需要核查` : `第 ${question.number} 题尚未入库`}
                       onClick={() => selectQuestion(question)}
                     >{question.number}</button>
                   ))}
@@ -691,7 +692,7 @@ export function ReviewWorkspace({
         <section className="source-panel">
           <div className="source-toolbar no-print">
             <div className="source-location"><span>原卷 · {currentPage} / {pageStates.length} 页</span><button type="button" className="source-locate" onClick={() => showPage(active.page)}>定位本题</button></div>
-            <div className="source-actions"><span className="source-model" title={`识别模型：${currentModelLabel}`}>{currentModelLabel}</span><div className="zoom-control" aria-label="原卷缩放"><button type="button" aria-label="缩小原卷" disabled={zoom <= 55} onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span aria-live="polite">{zoom}%</span><button type="button" aria-label="放大原卷" disabled={zoom >= 120} onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div></div>
+            <div className="source-actions"><div className="zoom-control" aria-label="原卷缩放"><button type="button" aria-label="缩小原卷" disabled={zoom <= 55} onClick={() => setZoom(clamp(zoom - 8, 55, 120))}><ZoomOut size={15} /></button><span aria-live="polite">{zoom}%</span><button type="button" aria-label="放大原卷" disabled={zoom >= 120} onClick={() => setZoom(clamp(zoom + 8, 55, 120))}><ZoomIn size={15} /></button></div></div>
           </div>
           <div ref={sourceStageRef} className="page-stage page-stage-continuous" style={{ display: "block" }} onScroll={syncCurrentPageFromScroll}>
             {pageStates.map((pageInfo, pageIndex) => {
@@ -731,15 +732,15 @@ export function ReviewWorkspace({
           <fieldset className="editor-fields" disabled={saving || Boolean(bulkAction)}>
           <div className="editor-head">
             <div className="editor-title"><h2>审核第 {active.number} 题</h2></div>
-            <div className="model-assessment" title="AI 独立核查只判断是否发现问题，入库仍由教师确认">
+            <div className="model-assessment" title="请核对题目后入库">
               <span className={active.needsHumanReview ? "needs-review" : "clear"}>{active.needsHumanReview ? <AlertTriangle size={12} /> : <Check size={12} />}{active.status === "approved" ? "已入库" : active.needsHumanReview ? "需人工核查" : "待审核 · 无需核查"}</span>
               <span className={`ai-review-state ${active.aiReview?.status === "passed" ? "clear" : "needs-review"}`}>{aiReviewLabel(active.aiReview)}</span>
             </div>
           </div>
 
-          {active.aiReview && active.aiReview.status !== "passed" && <section className="review-editor-section" aria-label="AI 逐题审核">
-            <p>{active.aiReview.status === "issues" ? `请核查本题保存的文字和配图${active.aiReview.categories?.length ? `：${active.aiReview.categories.join("、")}` : "，AI 发现可能存在问题"}。` : active.aiReview.error ?? aiReviewLabel(active.aiReview)}</p>
-            {active.status !== "approved" && <button type="button" className="btn btn-small" disabled={saving || !documentReadyForReview} onClick={() => void retryAiReview()}>重新 AI 审核</button>}
+          {active.aiReview && active.aiReview.status !== "passed" && <section className="review-editor-section" aria-label="检查结果">
+            <p>{active.aiReview.status === "issues" ? `请核查本题保存的文字和配图${active.aiReview.categories?.length ? `：${active.aiReview.categories.join("、")}` : "，发现可能存在问题"}。` : active.aiReview.error ?? aiReviewLabel(active.aiReview)}</p>
+            {active.status !== "approved" && <button type="button" className="btn btn-small" disabled={saving || !documentReadyForReview} onClick={() => void retryAiReview()}>重新检查</button>}
           </section>}
 
           <div className="two-fields">
@@ -753,8 +754,8 @@ export function ReviewWorkspace({
             }}>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           </div>
 
-          <section className="review-extraction" aria-label="AI 提取结果">
-            <h3><Sparkles size={14} /> AI 提取结果</h3>
+          <section className="review-extraction" aria-label="题目内容">
+            <h3><Sparkles size={14} /> 题目内容</h3>
           <ReviewContentField disabled={reviewBusy} label="题干" editing={editingContent === "stem"} onEdit={() => setEditingContent("stem")} onDone={() => setEditingContent(null)} preview={<MathText text={active.stem || "暂无题干，点击补充"} />}>
             <textarea aria-label="题干 LaTeX" rows={6} value={active.stem} onChange={(event) => patchActive({ stem: event.target.value })} />
           </ReviewContentField>

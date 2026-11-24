@@ -38,7 +38,7 @@ test('repeated PDF batches release workers, including parse and upload failures'
     const files=Array.from({length:10},(_,i)=>({name:`batch-${batch}-${i}.pdf`,mimeType:'application/pdf',buffer}));
     files.push({name:`bad-${batch}.pdf`,mimeType:'application/pdf',buffer:Buffer.from('%PDF-broken')});
     files.push({name:`fail-upload-${batch}.pdf`,mimeType:'application/pdf',buffer});
-    await dialog.getByLabel('选择 PDF 文件').setInputFiles(files);
+    await dialog.getByLabel('选择 PDF 或 Word 文件').setInputFiles(files);
     await dialog.getByRole('button',{name:'开始导入'}).click();
     await expect.poll(()=>events.filter(e=>e.event==='pdf_end').length,{timeout:45000}).toBe((batch+1)*12);
     await expect.poll(()=>page.evaluate(()=>window.__pdfWorkers.active)).toBe(0);

@@ -12,3 +12,6 @@ pydantic_core==2.50.0
 starlette==1.7.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
+olefile==0.47
+defusedxml==0.7.1
+pillow==13.0.0

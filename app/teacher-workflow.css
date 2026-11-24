@@ -1,0 +1,20 @@
+.question-usage { color: #65746b; font-size: 12px; margin: 0 0 12px; }
+.question-usage a { color: #357254; text-decoration: underline; }
+.teaching-draft { padding: 16px; display: grid; gap: 12px; margin-bottom: 18px; }
+.teaching-draft h2 { margin: 0; font-size: 18px; }
+.teaching-draft label { display: grid; gap: 6px; font-size: 13px; }
+.teaching-draft input,.teaching-draft select { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid #dce5df; border-radius: 6px; background: white; }
+.teaching-draft p { font-size: 13px; line-height: 1.6; }
+.paper-distribution { margin: 16px 0; padding: 14px; background: #f6f9f7; border-radius: 10px; }
+.paper-distribution h3 { font-size: 15px; margin: 0 0 12px; }
+.paper-distribution > div { margin-top: 12px; font-size: 12px; }
+.distribution-row { display: grid; grid-template-columns: minmax(65px, 1fr) 60px 32px; align-items: center; gap: 8px; margin-top: 6px; }
+.distribution-row meter { width: 100%; height: 12px; accent-color: #438567; }
+.undo-stack { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); display: grid; gap: 10px; z-index: 10000; }
+.undo-toast { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-radius: 10px; background: #213d30; color: white; box-shadow: 0 8px 30px #0003; font-size: 14px; }
+.undo-toast button { background: white; color: #213d30; padding: 6px 14px; border-radius: 6px; flex-shrink: 0; }
+.review-word-import { display: flex; align-items: flex-start; gap: 9px; border-bottom: 1px solid #dce5df; padding: 9px 18px; background: #f6f9f7; color: #365548; }.review-word-import > svg { flex: 0 0 auto; margin-top: 1px; }.review-word-import > div { min-width: 0; flex: 1; }.review-word-import strong { display: block; font-size: 12px; }.review-word-import p { margin: 3px 0 0; font-size: 11px; line-height: 1.5; }.review-word-import ul { margin: 3px 0 0; padding-left: 16px; font-size: 11px; line-height: 1.5; color: #8b4c20; }
+
+.bank-explorer-page .question-cards:not(.tiles) .question-card { padding-block: 13px; }
+.paper-order-main .paper-adjust-toggle { display: block; width: auto; margin-top: 3px; padding: 0; color: var(--green); font-size: 11px; }
+.review-workspace .question-rail > button[aria-current] { padding-block: 7px; }

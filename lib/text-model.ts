@@ -27,7 +27,6 @@ export async function callTextModel(input: {
   const profile = await resolveModelProfile(input.ownerId, input.profileId);
   const controller = new AbortController();
   const timeoutMs = textModelTimeout(profile.timeoutMs, input.timeoutMs, input.minimumTimeoutMs);
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let trace: ModelCallTrace | undefined;
   let failure: unknown;
   try {
@@ -44,7 +43,7 @@ export async function callTextModel(input: {
       maxOutputTokens: input.maxOutputTokens,
       temperature: input.temperature,
     });
-    trace = new ModelCallTrace(dataDirectory(), { ownerId: input.ownerId, profileId: profile.id,
+    trace = new ModelCallTrace(dataDirectory(), { timeoutMs, ownerId: input.ownerId, profileId: profile.id,
       provider: profile.provider, model: profile.model, purpose: input.purpose, documentId: input.documentId });
     let response = await trace.fetch(request.endpoint, {
       method: "POST",
@@ -87,13 +86,12 @@ export async function callTextModel(input: {
     return { content, profile, usage, traceId: trace.id };
   } catch (error) {
     failure = error;
-    if (error instanceof DOMException && error.name === "AbortError") {
+    if (error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError")) {
       throw new ModelCallError(`模型调用超过 ${Math.round(timeoutMs / 1000)} 秒，已安全中止`, "timeout", true, 504);
     }
     if (error instanceof TypeError && /fetch failed|terminated/i.test(error.message)) throw new ModelCallError("模型连接中断，请稍后重试", "network_error", true, 502);
     throw error;
   } finally {
-    clearTimeout(timer);
     controller.abort();
     trace?.finish(failure === undefined ? "complete" : "failed", failure);
   }

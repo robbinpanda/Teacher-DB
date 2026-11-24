@@ -1,4 +1,5 @@
 "use client";
+import { useUndoDelete } from "./UndoDelete";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -132,6 +133,7 @@ function cachedPriceText(value: number | null, fallback: "输入" | "输出") {
 }
 
 export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
+  const requestDelete = useUndoDelete();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [month, setMonth] = useState(localMonth);
@@ -267,7 +269,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
   }
 
   async function removeProfile(profileId: string) {
-    if (!window.confirm("确定删除这个模型配置吗？历史 Token 与费用记录会保留。")) return;
+    if (!await requestDelete("确定删除这个模型配置吗？历史 Token 与费用记录会保留。")) return;
     setBusy(`delete:${profileId}`);
     try {
       const response = await fetch(`/api/model-profiles/${profileId}`, { method: "DELETE" });

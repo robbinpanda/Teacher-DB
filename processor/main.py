@@ -8,8 +8,11 @@ import threading
 
 import pymupdf
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
+
+from processor.word.docx import MAX_DOCX_BYTES, DocxError, read_docx
+from processor.word.office import convert, is_legacy_doc
 
 TOKEN = os.environ.get("JIANTI_PROCESSOR_TOKEN", "")
 if len(TOKEN) < 32:
@@ -17,6 +20,9 @@ if len(TOKEN) < 32:
 
 app = FastAPI(title="Jianti PDF processor", docs_url=None, redoc_url=None)
 slots = threading.BoundedSemaphore(1)
+docx_slots = threading.BoundedSemaphore(1)
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+DOC_TYPE = "application/msword"
 MAX_BYTES = 100 * 1024 * 1024
 MAX_PIXELS = 16_000_000
 
@@ -30,6 +36,64 @@ async def http_error(_request: Request, exc: HTTPException):
 @app.get("/ready")
 def ready():
     return {"ok": True, "protocolVersion": 1, "pid": os.getpid(), "instanceId": os.environ.get("JIANTI_INSTANCE_ID")}
+
+
+async def _word_body(request: Request) -> bytes:
+    if not hmac.compare_digest(request.headers.get("x-processor-token", ""), TOKEN):
+        raise HTTPException(401, "Processor authentication failed")
+    content_type = request.headers.get("content-type", "").split(";")[0]
+    if content_type not in (DOCX_TYPE, DOC_TYPE):
+        raise HTTPException(415, "Expected a Word document")
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > MAX_DOCX_BYTES:
+            raise HTTPException(413, "Word 文件超过 60 MB")
+        content.extend(chunk)
+    data = bytes(content)
+    if (content_type == DOC_TYPE) != is_legacy_doc(data):
+        raise HTTPException(415, "文件内容与 Word 格式不符")
+    return data
+
+
+def _parse_word(data: bytes) -> dict:
+    legacy = is_legacy_doc(data)
+    result = read_docx(convert(data, ".doc", "docx") if legacy else data)
+    result["report"]["convertedFrom"] = "doc" if legacy else None
+    return result
+
+
+@app.post("/v1/docx/parse")
+async def parse_docx(request: Request):
+    """Read a .docx (or legacy .doc, converted first) into text blocks with placeholders and a report."""
+    if not docx_slots.acquire(blocking=False):
+        raise HTTPException(429, "Word processor is busy; retry later")
+    try:
+        data = await _word_body(request)
+        try:
+            return await run_in_threadpool(_parse_word, data)
+        except DocxError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:  # malformed XML, broken images
+            raise HTTPException(422, "Word 文件无法解析，请在 Word 中另存为 .docx 后重试") from exc
+    finally:
+        docx_slots.release()
+
+
+@app.post("/v1/docx/render")
+async def render_docx(request: Request):
+    """Print a Word document with its own layout (LibreOffice) for page-positioned papers."""
+    if not docx_slots.acquire(blocking=False):
+        raise HTTPException(429, "Word processor is busy; retry later")
+    try:
+        data = await _word_body(request)
+        suffix = ".doc" if is_legacy_doc(data) else ".docx"
+        try:
+            pdf = await run_in_threadpool(convert, data, suffix, "pdf")
+        except DocxError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return Response(pdf, media_type="application/pdf")
+    finally:
+        docx_slots.release()
 
 
 @app.post("/v1/pdf/pages")

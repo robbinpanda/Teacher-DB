@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_WORD_BYTES } from "../lib/word-mime";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -18,6 +19,11 @@ import { ImagePaperInput } from "./ImagePaperInput";
 import { imagePaperFile, type PreparedImagePage } from "../lib/client-image-paper";
 
 type Stage = "idle" | "rendering" | "uploading" | "error";
+const PAPER_ACCEPT = ".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,application/msword";
+function isPaperFile(file: File) {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".pdf") || name.endsWith(".docx") || name.endsWith(".doc") || file.type === "application/pdf";
+}
 type UploadTask = { id: string; fileName: string; stage: Stage; message: string; pageCount: number; completedPages: number; questionTotal?: number | null; completedQuestionCount?: number; documentId?: string; renderer?: string; modelDisplayName?: string };
 type QueueSnapshot = {
   concurrency?: number;
@@ -273,7 +279,8 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
         return;
       }
       const name = file.name.toLowerCase();
-      if (file.type !== "application/pdf" && !name.endsWith(".pdf")) throw new Error("当前产品仅支持 PDF 试卷，请先将其他格式另存为 PDF。");
+      if (name.endsWith(".docx") || name.endsWith(".doc")) throw new Error("导入 Word 需要后台文档处理服务，请使用 npm run local:python 启动。");
+      if (file.type !== "application/pdf" && !name.endsWith(".pdf")) throw new Error("当前仅支持 PDF 或 Word（.docx / .doc）试卷。");
       await renderPdf(file, async (pageCount) => {
         patchTask(taskId, { pageCount, renderer: "pdf.js", stage: "uploading", message: `共 ${pageCount} 页，正在逐页渲染并安全保存…` });
         const original = new FormData();
@@ -371,8 +378,8 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
   function chooseFiles(files: File[]) {
     if (batchActive || submitting) return;
     setFileError("");
-    if (files.some(file => !file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf")) {
-      setFileError("仅支持 PDF 试卷，请移除其他格式的文件后重新选择。");
+    if (files.some(file => !isPaperFile(file))) {
+      setFileError("仅支持 PDF 或 Word（.docx / .doc）试卷，请移除其他格式的文件后重新选择。");
       return;
     }
     const combined = [...selectedFiles];
@@ -380,7 +387,8 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
       if (!combined.some(item => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) combined.push(file);
     }
     if (combined.length > MAX_IMPORT_BATCH_SIZE) { setFileError(`每批最多导入 ${MAX_IMPORT_BATCH_SIZE} 份试卷，请分批上传。`); return; }
-    if (combined.some(file => file.size === 0)) { setFileError("文件为空，请选择有效的 PDF 试卷。"); return; }
+    if (combined.some(file => file.size === 0)) { setFileError("文件为空，请选择有效的 PDF 或 Word 试卷。"); return; }
+    if (combined.some(file => /\.docx?$/i.test(file.name) && file.size > MAX_WORD_BYTES)) { setFileError("单份 Word 文件不能超过 60 MB。"); return; }
     if (combined.some(file => file.size > 100 * 1024 * 1024)) { setFileError("单份原卷不能超过 100 MB，请压缩后上传。"); return; }
     setSelectedFiles(combined);
   }
@@ -414,7 +422,7 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
     {uploadInBrowser && <button type="button" className="wb-button wb-quiet" onClick={openDrawer}><LoaderCircle size={14} className="spin" />正在导入 · {tasks.length}</button>}
     <button type="button" className="wb-button wb-primary" onClick={openDrawer}><Plus size={16} />导入试卷</button>
     <WorkbenchDialog open={open} className="wb-import-dialog" titleId="import-title" onClose={() => setOpen(false)}>
-      <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>上传 PDF 或图片，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
+      <header className="wb-dialog-header"><div><h2 id="import-title">导入试卷</h2><p>上传 PDF、Word 或图片，识别后进入待审核列表</p></div><button type="button" className="wb-icon-button" aria-label="关闭导入" onClick={() => setOpen(false)}><X size={19} /></button></header>
       <div className="wb-dialog-body wb-import-layout">
         <section className="wb-import-settings" aria-labelledby="import-settings-title">
           <section className="wb-import-destination" aria-label="目标题库">
@@ -448,20 +456,20 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
         <section className="wb-import-files" aria-labelledby="import-files-title">
           <div className="wb-import-section-heading"><h3 id="import-files-title">试卷文件</h3><p>批量添加试卷，确认文件后开始导入</p></div>
         <div className="wb-import-kind" role="group" aria-label="导入方式">
-          <button type="button" className="wb-button" aria-pressed={importKind === "pdf"} disabled={uploadInBrowser || imageBusy} onClick={() => { setImportKind("pdf"); setFileError(""); }}>PDF 试卷</button>
+          <button type="button" className="wb-button" aria-pressed={importKind === "pdf"} disabled={uploadInBrowser || imageBusy} onClick={() => { setImportKind("pdf"); setFileError(""); }}>PDF / Word 试卷</button>
           <button type="button" className="wb-button" aria-pressed={importKind === "images"} disabled={uploadInBrowser || imageBusy} onClick={() => { setImportKind("images"); setFileError(""); }}>图片组卷</button>
         </div>
         {importKind === "images" ? <div className="wb-field wb-import-upload">
           <label htmlFor="image-paper-title">试卷名称</label><input id="image-paper-title" value={imageTitle} maxLength={160} placeholder="例如：九年级数学周练" disabled={uploadInBrowser || imageBusy} onChange={event => setImageTitle(event.target.value)} />
           <ImagePaperInput pages={imagePages} onChange={setImagePages} disabled={uploadInBrowser} onBusy={setImageBusy} onError={setFileError} />
           {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
-        </div> : <div className="wb-field wb-import-upload"><span>PDF 文件</span>
-          <input ref={inputRef} className="wb-sr-only" type="file" multiple accept=".pdf,application/pdf" aria-label="选择 PDF 文件" disabled={uploadInBrowser} onChange={event => { chooseFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
+        </div> : <div className="wb-field wb-import-upload"><span>PDF 或 Word 文件</span>
+          <input ref={inputRef} className="wb-sr-only" type="file" multiple accept={PAPER_ACCEPT} aria-label="选择 PDF 或 Word 文件" disabled={uploadInBrowser} onChange={event => { chooseFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <button type="button" className={`wb-drop-zone${dragging ? " dragging" : ""}`} disabled={uploadInBrowser} onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); if (!uploadInBrowser) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); chooseFiles(Array.from(event.dataTransfer.files)); }}>
-            <UploadCloud size={26} /><strong>点击选择或拖放 PDF</strong><span>支持多选，每批最多 {MAX_IMPORT_BATCH_SIZE} 份</span>
+            <UploadCloud size={26} /><strong>点击选择或拖放 PDF 或 Word（.docx / .doc）</strong><span>支持多选，每批最多 {MAX_IMPORT_BATCH_SIZE} 份</span>
           </button>
           {fileError && <p role="alert" className="wb-field-error">{fileError}</p>}
-          <p className="wb-field-hint">单份文件最大 100 MB。试卷名称会自动整理，识别进度可在工作台查看。</p>
+          <p className="wb-field-hint">PDF 最大 100 MB，Word 最大 60 MB。试卷名称会自动整理，识别进度可在工作台查看。</p>
           {selectedFiles.length > 0 && <div className="wb-file-selection"><div><strong>已选 {selectedFiles.length} 份</strong><button className="wb-text-button" type="button" disabled={uploadInBrowser} onClick={() => setSelectedFiles([])}>清空</button></div><ul>{selectedFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><FileText size={16} /><span title={file.name}>{file.name}<small>{file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(file.size / 1024))} KB`}</small></span><button type="button" className="wb-icon-button" aria-label={`移除 ${file.name}`} disabled={uploadInBrowser} onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}><X size={15} /></button></li>)}</ul></div>}
         </div>}
         {importNotice && <p className="wb-field-hint" role="status">{importNotice}</p>}
@@ -475,7 +483,7 @@ export function UploadWorkbench({ open, onOpenChange: setOpen }: { open: boolean
         </section>}
         </section>
       </div>
-      <footer className="wb-dialog-footer"><span>目标：{targetBank} · {selectedCount ? importKind === "images" ? `${imagePages.length} 页图片合成 1 份试卷` : `已选 ${selectedCount} 份 PDF` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "部分文件导入失败，请查看提示" : importNotice ? "后续进度请在试卷管理中查看" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length || importNotice ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedCount || uploadDisabled || submitting || imageBusy || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
+      <footer className="wb-dialog-footer"><span>目标：{targetBank} · {selectedCount ? importKind === "images" ? `${imagePages.length} 页图片合成 1 份试卷` : `已选 ${selectedCount} 份试卷` : uploadInBrowser ? "正在安全保存原卷…" : tasks.length ? "部分文件导入失败，请查看提示" : importNotice ? "后续进度请在试卷管理中查看" : "选择文件后开始导入"}</span><button type="button" className="wb-button" onClick={() => setOpen(false)}>{tasks.length || importNotice ? "关闭" : "取消"}</button><button type="button" className="wb-button wb-primary" disabled={!selectedCount || uploadDisabled || submitting || imageBusy || modelError || concurrencySaving} onClick={() => void startImport()}>{uploadInBrowser ? <LoaderCircle size={15} className="spin" /> : <UploadCloud size={15} />}{uploadInBrowser ? "导入中…" : "开始导入"}</button></footer>
     </WorkbenchDialog>
   </>;
 }
