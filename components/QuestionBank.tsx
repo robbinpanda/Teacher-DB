@@ -17,6 +17,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  History,
   House,
   ImageIcon,
   LoaderCircle,
@@ -325,7 +326,7 @@ export function QuestionBank({
     return () => {
       document.removeEventListener("keydown", handleKey);
       // The collapsed trigger is remounted when the dialog closes.
-      (document.querySelector<HTMLButtonElement>(".bank-explorer-page .question-basket-trigger") ?? (previous?.isConnected ? previous : null))?.focus();
+      (document.querySelector<HTMLButtonElement>(".bank-explorer-page .bank-open-basket") ?? (previous?.isConnected ? previous : null))?.focus();
     };
   }, [basketOpen]);
 
@@ -658,7 +659,11 @@ export function QuestionBank({
   return (
     <div className="page-shell bank-page bank-explorer-page">
       <header className="bank-page-header">
-        <div className="bank-title-row"><h1>题库 <span className="bank-scope-label">{stageLabel(stage)} · {subject}</span></h1><p className="resource-intro">按知识点找题，加入选题篮即可组卷。教学范围在导航中切换。</p></div>
+        <div className="bank-title-row">
+          <h1>{library === "personal" ? "我的题库" : "基础题库"}</h1>
+          <span className="bank-scope-label">{stageLabel(stage)} · {subject}</span>
+          {library === "personal" && <span className="bank-count-summary"><strong>{bankStats.approved}</strong> 道已入库{bankStats.withAssets > 0 && " · " + bankStats.withAssets + " 道含图"}</span>}
+        </div>
         <div className="bank-header-actions"><Link className="btn btn-primary" href="/?import=1">导入试卷题目</Link>
           <input ref={importInput} type="file" accept=".jianti" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importPackage(file); }} />
           <button type="button" className="btn" disabled={importing} onClick={() => importInput.current?.click()}>{importing ? <LoaderCircle size={15} className="spin" /> : <Upload size={15} />} 导入共享包</button>
@@ -671,7 +676,12 @@ export function QuestionBank({
         </div>
       </header>
 
-      <div className="resource-tabs" role="tablist" aria-label="题库范围"><button role="tab" aria-selected={library === "platform"} onClick={() => setLibrary("platform")}>基础题库</button><button role="tab" aria-selected={library === "personal"} onClick={() => setLibrary("personal")}>我的题库</button>{library === "personal" && <button className="resource-folder-toggle" aria-expanded={foldersOpen} onClick={() => setFoldersOpen(!foldersOpen)}><Folder size={15} /> 文件夹管理</button>}</div>
+      <div className="bank-tabbar">
+        <div className="resource-tabs" role="tablist" aria-label="题库范围"><button role="tab" aria-selected={library === "platform"} onClick={() => setLibrary("platform")}>基础题库</button><button role="tab" aria-selected={library === "personal"} onClick={() => setLibrary("personal")}>我的题库</button>{library === "personal" && <button className="resource-folder-toggle" aria-expanded={foldersOpen} onClick={() => setFoldersOpen(!foldersOpen)}><Folder size={15} /> 文件夹管理</button>}</div>
+        <button type="button" className="bank-open-basket" aria-label={"打开选题篮，" + basket.items.length + " 道题"} aria-expanded={basketOpen} onClick={() => setBasketOpen(true)}>
+          <ShoppingBasket size={16} />选题篮 <b>{basket.items.length}</b>
+        </button>
+      </div>
       {library === "platform" && <section className="resource-unavailable">
         <div className="bank-platform-categories" role="tablist" aria-label="平台资源分类"><button role="tab" aria-selected={platformCategory === "model"} onClick={() => setPlatformCategory("model")}>模卷</button><button role="tab" aria-selected={platformCategory === "school"} onClick={() => setPlatformCategory("school")}>名校试卷</button></div>
         <h2>平台精选资源尚未开放</h2><p>{platformCategory === "model" ? "模卷将按教学与考试场景组织。" : "名校试卷将按学校与试卷来源组织。"}目前还没有可供浏览的已发布资源。</p><p>个人上传、共享包和 AI 变式保存在「我的题库」，已有选题篮会继续保留。</p><button className="btn" onClick={() => setLibrary("personal")}>浏览我的题库</button>
@@ -752,20 +762,62 @@ export function QuestionBank({
                 const checked = selectedIds.has(question.id);
                 const inBasket = basketIds.has(question.id);
                 const expanded = question.id in expandedIds;
-                const sourceLabel = [question.source.year, question.source.region, question.source.textbook, question.source.school, question.source.examType].filter(Boolean).join(" · ") || question.source.documentName;
+                const sourceLabel = [question.source.year, question.source.school || question.source.region, question.source.examType].filter(Boolean).join(" · ") || question.source.documentName;
+                const used = question.lastUsed;
+                const usageLabel = used ? [used.paperTitle, used.className, new Date(used.usedAt).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })].filter(Boolean).join(" · ") : undefined;
                 return <article key={question.id} className={`question-card ${checked ? "selected " : ""}${expanded ? "expanded" : ""}`}>
                   <SelectionCheckbox label={`选择第 ${question.number} 题 · ${question.source.documentName}`} checked={checked} disabled={selectionBusy} onChange={() => toggle(question)} />
-                  <div className="question-card-main">{question.lastUsed && <p className="question-usage">上次用于 <Link href={`/papers/${encodeURIComponent(question.lastUsed.paperId)}`}>{question.lastUsed.paperTitle}</Link>{question.lastUsed.className ? ` · ${question.lastUsed.className}` : " · 已组卷"} · {new Date(question.lastUsed.usedAt).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })}</p>}<div className="question-meta"><span className="pill gray">{typeLabels[question.type]}</span><span>{question.source.grade} · {question.source.subject}</span><span className="source-question-number">· 原题号 {question.number}</span>{isVariationQuestion(question) && <span className="variation-badge"><WandSparkles size={11} /> AI 变式</span>}{question.variationReview?.mode === "multi_agent" && <span className={`variation-review-badge ${question.variationReview.status}`}><Check size={10} /> {question.variationReview.status === "revised" ? "审校后修订" : "双 Agent 审校"}</span>}{question.variationReview?.mode === "rules" && <span className="variation-review-badge rules"><Check size={10} /> 规则校验</span>}{question.source.origin === "imported" && <span className="shared-badge"><PackageOpen size={11} /> 共享包</span>}{question.assets.length > 0 && <span className="has-image"><ImageIcon size={12} /> 含图</span>}{question.tags.slice(0, 3).map((tag) => <button type="button" className="question-tag" key={tag} onClick={() => { setActiveTag(tag); setPage(1); }}>{tag}</button>)}{question.tags.length > 3 && <span className="question-tag">+{question.tags.length - 3}</span>}</div>
-                    <button type="button" className="question-stem" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}><span className="question-stem-text"><MathText text={stripLeadingQuestionNumber(question.stem, question.number)} /></span></button>
-                    <div className="question-details">{question.assets.some((asset) => asset.role === "question" && asset.url) && <div className="bank-question-assets">{question.assets.filter((asset) => asset.role === "question" && asset.url).map((asset) => <figure key={asset.id}><Image src={asset.url!} width={asset.width ?? 720} height={asset.height ?? 480} alt={asset.label || "题图"} unoptimized /><figcaption>{asset.label || "题图"}</figcaption></figure>)}</div>}{question.options?.length ? <div className="bank-options">{question.options.map((option) => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div> : null}{expanded && (question.answer || question.analysis || question.assets.some(a => a.role === "answer")) && <div className="answer-preview">{question.answer && <div><b>答案</b><MathText text={question.answer} /></div>}{(question.analysis || question.assets.some(a => a.role === "answer")) && <div><b>解析</b><AnalysisWithImages text={question.analysis} assets={question.assets} /></div>}</div>}{expanded && question.variationKind && <p className="variation-note"><WandSparkles size={12} /> 变式说明：{question.variationKind.split(":").slice(1).join(":") || "基于原题生成"}</p>}{expanded && question.variationReview && <div className="variation-review-detail"><strong>{question.variationReview.mode === "multi_agent" ? `独立审校${question.variationReview.score !== null ? ` · ${question.variationReview.score} 分` : ""}` : "已通过结构与安全规则校验"}</strong>{question.variationReview.reviewer && <span>审校：{question.variationReview.reviewer}</span>}{question.variationReview.issues.length > 0 && <span>修订记录：{question.variationReview.issues.join("；")}</span>}</div>}</div>
+                  <div className="question-card-main">
+                    <div className="question-meta">
+                      <span className="pill gray">{typeLabels[question.type]}</span>
+                      <span className="question-grade">{question.source.grade} · {question.source.subject}</span>
+                      <button type="button" className="question-source-link" title={question.source.documentName} aria-label={"按来源筛选：" + question.source.documentName} onClick={() => { setSource(question.source.documentId); setPage(1); }}>{sourceLabel}</button>
+                      <span className="source-question-number">原题号 {question.number}</span>
+                      {isVariationQuestion(question) && <span className="variation-badge"><WandSparkles size={11} /> AI 变式</span>}
+                      {question.variationReview?.mode === "multi_agent" && <span className={"variation-review-badge " + question.variationReview.status}><Check size={10} /> {question.variationReview.status === "revised" ? "审校后修订" : "双 Agent 审校"}</span>}
+                      {question.variationReview?.mode === "rules" && <span className="variation-review-badge rules"><Check size={10} /> 规则校验</span>}
+                      {question.source.origin === "imported" && <span className="shared-badge"><PackageOpen size={11} /> 共享包</span>}
+                      {question.assets.length > 0 && <span className="has-image"><ImageIcon size={12} /> 含图</span>}
+                      {question.tags.slice(0, 3).map(tag => <button type="button" className="question-tag" key={tag} onClick={() => { setActiveTag(tag); setPage(1); }}>{tag}</button>)}
+                      {question.tags.length > 3 && <span className="question-tag" title={question.tags.slice(3).join("、")}>+{question.tags.length - 3}</span>}
+                      {used && <Link className="question-usage" href={"/papers/" + encodeURIComponent(used.paperId)} title={usageLabel} aria-label={"上次用于 " + usageLabel}><History size={12} />已用</Link>}
+                    </div>
+                    <button type="button" className="question-stem" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}>
+                      <span className="question-stem-text"><MathText text={stripLeadingQuestionNumber(question.stem, question.number)} /></span>
+                    </button>
                   </div>
-                  <div className="question-source-line" title={`${question.source.documentName} · ${sourceLabel}`}><span>来源</span><button type="button" onClick={() => { setSource(question.source.documentId); setPage(1); }}>{question.source.documentName}</button>{question.source.year && <small>{question.source.year}</small>}{question.source.region && <small>{question.source.region}</small>}</div>
-                  <div className="question-actions">
-                    <button type="button" className="row-action expand-action" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded}>{expanded ? "收起答案解析" : "查看答案解析"}<ChevronDown size={13} /></button>
-                    {question.source.origin === "original" && !question.source.sourceRemoved && <Link className="row-action" href={`/review/${question.source.documentId}?question=${encodeURIComponent(question.id)}`}><Pencil size={13} /> 编辑</Link>}
-                    {!isVariationQuestion(question) && !question.needsHumanReview ? <button type="button" className="row-action" onClick={() => openVariation(question)}><WandSparkles size={13} /> 生成变式</button> : question.needsHumanReview ? <span className="source-removed">复核后可生成</span> : null}
-                    <button type="button" className={`btn question-add-to-basket${inBasket ? " in-basket" : " btn-primary"}`} disabled={!basket.ready} aria-pressed={inBasket} onClick={() => inBasket ? basket.replace(basket.items.filter(item => item.id !== question.id)) : addToBasket([question])}>{inBasket ? <Check size={15} /> : <Plus size={15} />}{inBasket ? "移出选题篮" : "加入选题篮"}</button>
+                  <div className="question-actions" role="group" aria-label="题目操作">
+                    {!isVariationQuestion(question) && !question.needsHumanReview
+                      ? <button type="button" className="row-action" title="生成变式" aria-label="生成变式" onClick={() => openVariation(question)}><WandSparkles size={15} /><span>变式</span></button>
+                      : question.needsHumanReview && <span className="source-removed">待复核</span>}
+                    <button type="button" className="row-action expand-action" onClick={() => toggleExpanded(question.id)} aria-expanded={expanded} aria-label={expanded ? "收起答案解析" : "查看答案解析"} title={expanded ? "收起答案解析" : "查看选项、答案与解析"}>
+                      <ChevronDown size={15} /><span>{expanded ? "收起" : "展开"}</span>
+                    </button>
+                    {question.source.origin === "original" && !question.source.sourceRemoved && <Link className="row-action" title="编辑" aria-label="编辑" href={"/review/" + question.source.documentId + "?question=" + encodeURIComponent(question.id)}><Pencil size={14} /><span>编辑</span></Link>}
+                    <button type="button" className={"row-action question-add-to-basket" + (inBasket ? " in-basket" : "")} disabled={!basket.ready} aria-label={inBasket ? "移出选题篮" : "加入选题篮"} title={inBasket ? "移出选题篮" : "加入选题篮"} aria-pressed={inBasket} onClick={() => inBasket ? basket.replace(basket.items.filter(item => item.id !== question.id)) : addToBasket([question])}>
+                      {inBasket ? <Check size={15} /> : <Plus size={15} />}<span>{inBasket ? "已选" : "选题"}</span>
+                    </button>
                   </div>
+                  {(expanded || viewMode === "tiles") && <div className="question-details">
+                    {question.assets.some(asset => asset.role === "question" && asset.url) && <div className="bank-question-assets">
+                      {question.assets.filter(asset => asset.role === "question" && asset.url).map(asset => <figure key={asset.id}>
+                        <Image src={asset.url!} width={asset.width ?? 720} height={asset.height ?? 480} alt={asset.label || "题图"} unoptimized />
+                        <figcaption>{asset.label || "题图"}</figcaption>
+                      </figure>)}
+                    </div>}
+                    {!!question.options?.length && <div className="bank-options">{question.options.map(option => <span key={option.key}><b>{option.key}</b><MathText text={option.content} /></span>)}</div>}
+                    {expanded && (question.answer || question.analysis || question.assets.some(asset => asset.role === "answer")) && <div className="answer-preview">
+                      {question.answer && <div><b>答案</b><MathText text={question.answer} /></div>}
+                      {(question.analysis || question.assets.some(asset => asset.role === "answer")) && <div><b>解析</b><AnalysisWithImages text={question.analysis} assets={question.assets} /></div>}
+                    </div>}
+                    {expanded && question.variationKind && <p className="variation-note"><WandSparkles size={12} /> 变式说明：{question.variationKind.split(":").slice(1).join(":") || "基于原题生成"}</p>}
+                    {expanded && question.variationReview && <div className="variation-review-detail">
+                      <strong>{question.variationReview.mode === "multi_agent" ? "独立审校" + (question.variationReview.score !== null ? " · " + question.variationReview.score + " 分" : "") : "已通过结构与安全规则校验"}</strong>
+                      {question.variationReview.reviewer && <span>审校：{question.variationReview.reviewer}</span>}
+                      {question.variationReview.issues.length > 0 && <span>修订记录：{question.variationReview.issues.join("；")}</span>}
+                    </div>}
+                    {expanded && used && <p className="expanded-usage">上次用于 <Link href={"/papers/" + encodeURIComponent(used.paperId)}>{usageLabel}</Link></p>}
+                  </div>}
                 </article>;
               })}
             </div>
@@ -778,15 +830,15 @@ export function QuestionBank({
       </>}
       {(basket.error || basket.message) && <p className="bank-basket-message" role={basket.error ? "alert" : "status"}>{basket.error || basket.message}</p>}
       {basketOpen && <button type="button" className="question-basket-backdrop" aria-label="收起选题篮" onClick={() => setBasketOpen(false)} />}
-      {basketOpen ? <aside ref={basketPanel} className="question-basket persistent-basket" role="dialog" aria-modal="true" aria-labelledby="basket-title">
+      {basketOpen && <aside ref={basketPanel} className="question-basket persistent-basket" role="dialog" aria-modal="true" aria-labelledby="basket-title">
         <header><div><span><ShoppingBasket size={18} /></span><div><strong id="basket-title">选题篮 · {basket.items.length} 道题</strong><small>{stageLabel(stage)}{subject} · 本机保存，跨页保留</small></div></div><button type="button" aria-label="收起选题篮" onClick={() => setBasketOpen(false)}><X size={16} /></button></header>
         <p className="basket-save-explainer">选题篮用于积累题目。进入编辑器后点击“保存试卷”，才会保存为组卷作品。</p>
         {basket.error && <p className="form-error" role="alert">{basket.error}</p>}
         {!basket.ready && !basket.error && <p className="basket-empty" role="status">正在校验选题篮…</p>}
-        {basket.ready && !basket.items.length && <p className="basket-empty">还没有选题。点击题目右下方“加入选题篮”，或勾选后批量加入。</p>}
+        {basket.ready && !basket.items.length && <p className="basket-empty">还没有选题。点击每题的加号，或勾选后批量加入。</p>}
         <ol>{basket.items.map((question, index) => <li key={question.id}><b>{index + 1}</b><div><span>{typeLabels[question.type]} · {question.source.grade}</span><p><MathText text={question.stem} /></p><small>{question.source.documentName}</small></div><div className="basket-item-actions"><button type="button" aria-label={`上移第 ${index + 1} 题`} disabled={!basket.ready || index === 0} onClick={() => basket.replace(moveOrderedItem(basket.items, index, -1))}><ArrowUp size={13} /></button><button type="button" aria-label={`下移第 ${index + 1} 题`} disabled={!basket.ready || index === basket.items.length - 1} onClick={() => basket.replace(moveOrderedItem(basket.items, index, 1))}><ArrowDown size={13} /></button><button type="button" aria-label={`移出选题篮第 ${index + 1} 题`} disabled={!basket.ready} onClick={() => basket.replace(basket.items.filter(item => item.id !== question.id))}><X size={13} /></button></div></li>)}</ol>
         <footer><button type="button" className="btn" disabled={!basket.items.length && !basket.error} onClick={async () => { if (await requestDelete("选题篮中的选题")) basket.replace([]); }}>清空选题篮</button><div>{basket.ready && basket.items.length > 0 && <><a href={`/api/exports/questions${basketExportIds}format=package`}><PackageOpen size={13} />导出选题</a><Link href={basketHref} className="btn btn-primary"><FilePlus2 size={15} />进入组卷</Link></>}</div></footer>
-      </aside> : <button type="button" className="question-basket-trigger" aria-label={`打开选题篮，${basket.items.length} 道题`} aria-expanded="false" onClick={() => setBasketOpen(true)}><span><ShoppingBasket size={20} /><b>{basket.items.length}</b></span><i><strong>选题篮</strong><small>{basket.ready ? "本机保存 · 跨页保留" : basket.error ? "需要检查" : "正在恢复…"}</small></i><ChevronRight size={16} /></button>}
+      </aside>}
 
 
       {variationTarget && <div className="variation-dialog-backdrop" role="presentation" onMouseDown={(event) => {

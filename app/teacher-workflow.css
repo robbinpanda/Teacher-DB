@@ -1,5 +1,3 @@
-.question-usage { color: #65746b; font-size: 12px; margin: 0 0 12px; }
-.question-usage a { color: #357254; text-decoration: underline; }
 .teaching-draft { padding: 16px; display: grid; gap: 12px; margin-bottom: 18px; }
 .teaching-draft h2 { margin: 0; font-size: 18px; }
 .teaching-draft label { display: grid; gap: 6px; font-size: 13px; }
@@ -15,6 +13,152 @@
 .undo-toast button { background: white; color: #213d30; padding: 6px 14px; border-radius: 6px; flex-shrink: 0; }
 .review-word-import { display: flex; align-items: flex-start; gap: 9px; border-bottom: 1px solid #dce5df; padding: 9px 18px; background: #f6f9f7; color: #365548; }.review-word-import > svg { flex: 0 0 auto; margin-top: 1px; }.review-word-import > div { min-width: 0; flex: 1; }.review-word-import strong { display: block; font-size: 12px; }.review-word-import p { margin: 3px 0 0; font-size: 11px; line-height: 1.5; }.review-word-import ul { margin: 3px 0 0; padding-left: 16px; font-size: 11px; line-height: 1.5; color: #8b4c20; }
 
-.bank-explorer-page .question-cards:not(.tiles) .question-card { padding-block: 13px; }
 .paper-order-main .paper-adjust-toggle { display: block; width: auto; margin-top: 3px; padding: 0; color: var(--green); font-size: 11px; }
 .review-workspace .question-rail > button[aria-current] { padding-block: 7px; }
+
+.bank-explorer-page .bank-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+.bank-explorer-page .bank-title-row .bank-scope-label { margin: 0; align-self: center; }
+.bank-count-summary { color: var(--muted); font-size: 13px; }
+.bank-count-summary strong { color: var(--ink); }
+.bank-explorer-page .bank-list-head { min-height: 40px; padding-block: 6px; }
+
+.bank-explorer-page .question-cards.list {
+  container-type: inline-size;
+  border: 1px solid var(--resource-border);
+  border-radius: 10px;
+}
+.bank-explorer-page .question-cards.list .question-card {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 0 12px;
+  align-items: start;
+  padding: 11px 12px;
+}
+.bank-explorer-page .question-card .question-meta {
+  gap: 3px 7px;
+  min-height: 18px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.bank-explorer-page .question-card .question-meta .pill { padding: 2px 6px; }
+.bank-explorer-page .question-meta .question-source-link {
+  max-width: min(100%, 22em);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.bank-explorer-page .question-meta .question-source-link:hover { text-decoration: underline; color: var(--green); }
+.bank-explorer-page .question-meta .question-tag { background: transparent; color: var(--green); padding: 1px 0; }
+.bank-explorer-page .question-meta button.question-tag::before { content: "#"; }
+.bank-explorer-page .question-meta .question-usage { display: inline-flex; align-items: center; gap: 3px; color: var(--green); }
+.bank-explorer-page .question-cards.list .question-stem { margin-top: 3px; }
+.bank-explorer-page .question-cards.list .question-stem,
+.bank-explorer-page .question-cards.list .question-stem p { font-size: 15px; line-height: 1.55; }
+.bank-explorer-page .question-cards.list .question-actions {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  width: auto;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+}
+.bank-explorer-page .question-card .question-actions .row-action {
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 1;
+}
+.bank-explorer-page .question-card .question-actions .question-add-to-basket {
+  margin: 0 0 0 3px;
+  color: var(--green);
+  background: #edf5ef;
+}
+.bank-explorer-page .question-card .question-actions .in-basket { background: var(--green); color: white; }
+.bank-explorer-page .question-cards.list .question-actions .row-action:hover { color: var(--green-dark); background: #dfede3; }
+.bank-explorer-page .question-card .question-details {
+  grid-column: 2 / -1;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.bank-explorer-page .question-card .expanded-usage { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.bank-explorer-page .expanded-usage a { color: var(--green); text-decoration: underline; }
+
+@container (max-width: 750px) {
+  .question-cards.list .question-actions .row-action > span { display: none; }
+  .bank-explorer-page .question-cards.list .question-actions .row-action { width: 30px; padding: 0; }
+}
+@container (max-width: 440px) {
+  .bank-explorer-page .question-cards.list .question-card { padding: 10px 7px; grid-template-columns: 18px minmax(0,1fr) auto; gap: 0 6px; }
+  .bank-explorer-page .question-cards.list .question-actions { display: grid; grid-template-columns: repeat(2, 30px); gap: 2px; }
+  .bank-explorer-page .question-cards.list .question-add-to-basket { margin: 0; }
+  .question-cards.list .question-grade { display: none; }
+}
+.bank-tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--resource-border);
+  background: var(--bg, #f7f9f8);
+}
+.bank-tabbar .resource-tabs { flex: 1; margin: 0; border: 0; }
+.bank-open-basket {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid #c6d8cd;
+  border-radius: 6px;
+  background: #f7fbf8;
+  color: var(--green-dark);
+  cursor: pointer;
+  font-size: 13px;
+}
+.bank-open-basket b { font-variant-numeric: tabular-nums; }
+.knowledge-mobile-toggle { display: none; }
+@media (max-width: 600px) {
+  .bank-explorer-page .bank-page-header { margin-bottom: 10px; }
+  .bank-tabbar { gap: 4px; margin-bottom: 10px; }
+  .bank-tabbar .resource-tabs { gap: 10px; }
+  .bank-tabbar .resource-tabs button { font-size: 12px; }
+  .bank-tabbar .resource-folder-toggle { padding-inline: 0; }
+  .bank-open-basket { font-size: 12px; padding-inline: 6px; }
+  .bank-explorer-page .knowledge-navigator { padding: 0 12px; }
+  .bank-explorer-page .knowledge-navigator header,
+  .knowledge-navigator[data-open="false"] .knowledge-controls { display: none; }
+  .knowledge-mobile-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    min-height: 40px;
+    font-size: 13px;
+    color: var(--green-dark);
+    cursor: pointer;
+  }
+  .knowledge-mobile-toggle span { margin-left: auto; color: var(--muted); }
+  .knowledge-mobile-toggle[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+  .bank-explorer-page .knowledge-navigator nav { flex-wrap: wrap; overflow-y: auto; }
+  .bank-explorer-page .knowledge-navigator nav > button { width: auto; }
+  .bank-explorer-page .bank-toolbar.explorer-toolbar { padding: 10px 12px; }
+  .bank-explorer-page .bank-type-options { flex-wrap: nowrap; gap: 1px; }
+  .bank-explorer-page .bank-type-options button { padding-inline: 6px; font-size: 12px; }
+  .bank-explorer-page .bank-list-tools > span { display: none; }
+  .bank-explorer-page .explorer-content { padding-inline: 8px; }
+}

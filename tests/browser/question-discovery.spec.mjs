@@ -45,6 +45,11 @@ test('真实选题：知识点和来源筛选、独立批量选择、持久篮�
   for (const width of [1440,1920,390]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => window.scrollTo(0,0));
+    const row = card(1);
+    const stem = await row.locator('.question-card-main').boundingBox();
+    const actions = await row.getByRole('group', { name: '题目操作' }).boundingBox();
+    expect(actions.x).toBeGreaterThanOrEqual(stem.x + stem.width - 1);
+    expect(actions.y).toBeLessThan(stem.y + stem.height);
     await page.screenshot({path:`tmp/discovery-filter-selection-${width}.png`,animations:'disabled'});
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await trigger(2).click();

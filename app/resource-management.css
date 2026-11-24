@@ -327,10 +327,6 @@
 .bank-explorer-page .question-card-main { min-width:0; }
 .bank-explorer-page .question-meta .question-tag { border:0; background:#f0f5f2; color:#537564; padding:3px 6px; border-radius:4px; font-size:11px; cursor:pointer; }
 .bank-explorer-page .question-stem { font-size:15px; line-height:1.85; }
-.bank-explorer-page .question-source-line { grid-column:2; display:flex; align-items:center; gap:8px; min-width:0; padding:4px 0; color:#566b60; font-size:12px; }
-.bank-explorer-page .question-source-line button { max-width:80%; text-align:left; color:inherit; font-size:inherit; border:0; background:none; padding:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; }
-.bank-explorer-page .question-source-line button:hover { color:var(--green); text-decoration:underline; }
-.bank-explorer-page .question-source-line small { white-space:nowrap; }
 .bank-explorer-page .question-actions { flex-wrap:wrap; width:100%; max-width:none; gap:8px; padding-top:4px; }
 .bank-explorer-page .question-actions .row-action { border:0; background:transparent; color:var(--muted); padding:0 6px; }
 .bank-explorer-page .question-actions .expand-action { color:var(--green); padding-left:0; }
