@@ -95,7 +95,7 @@ export function ClassManager({ initialClasses, initialDetail }: { initialClasses
   }
 
   async function removeStudent(student: Student) {
-    if (!selectedId || !await requestDelete(`从本班移除“${student.name}”？历史作业不会被删除。`)) return;
+    if (!selectedId || !await requestDelete(`本班学生“${student.name}”（保留历史作业）`)) return;
     const classId = selectedId;
     await mutate(async () => {
       await requestJson(`/api/classes/${classId}/students/${student.id}`, { method: "DELETE" });

@@ -1,319 +1,271 @@
 <div align="center">
 
-# 拣题 · 教师题库助手 v0.2
+# 拣题 · Teacher-DB
 
-**把散落在 PDF、Word 试卷和照片里的题目，变成可检索、可复用、可组卷的个人题库。**
+### 本地优先的 AI 教师题库与智能组卷工作台
 
-本地优先 · AI 识题 · 人工复核 · 智能组卷 · 数据可控
+**把散落在 PDF、Word 试卷和照片里的题目，变成可检索、可复用、可导出原生公式 Word 试卷的个人题库。**
+
+[![Release](https://img.shields.io/badge/version-v0.2-2d6a4f?style=flat-square)](docs/features.md)
+[![Node](https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=node.js&logoColor=white)](#环境要求)
+[![Local-First](https://img.shields.io/badge/Local--First-SQLite-1d4e3b?style=flat-square)](#数据与安全)
+[![Online](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-teacherdb.cn-0f766e?style=flat-square)](https://teacherdb.cn)
 
 <!-- Pin public image URLs to a commit. GitHub renders these through Camo, avoiding direct raw.githubusercontent.com requests. Keep the repository links for the originals. -->
 
 [![拣题：教师题库助手](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/public/og-cover.png)](public/og-cover.png)
 
-[快速开始](#快速开始) · [真实使用场景](#真实使用场景) · [功能亮点](#功能亮点) · [数据与安全](#数据与安全) · [交流反馈](#交流反馈) · [完整功能清单](docs/features.md)
+[快速开始](#快速开始) · [v0.2 重磅更新](#v02-重磅更新) · [实卷演示](#真实使用场景) · [在线体验 teacherdb.cn](#在线体验最新功能与交流群) · [完整功能清单](docs/features.md)
 
 </div>
+
+> **想免部署直接体验最新功能？**
+> 访问在线版 **[teacherdb.cn](https://teacherdb.cn)**，抢先体验公共基础题库、知识点 × 方法双轴检索、0–5 小数难度评分、相似题并排推荐、AI 讲义等持续更新的特性。[**扫码加入微信交流群**](#在线体验最新功能与交流群)即可免费领取邀请码注册账号！
 
 ---
 
 ## 为什么做「拣题」
 
-老师手里通常有很多试卷，但“有资料”不等于“有题库”：题目散落在 PDF 中，搜索困难，重复使用时还要截图、抄题、重新排版。
+老师手里往往攒了几百套试卷，但“有资料”不等于“有题库”：题目散落在 PDF 和 Word 里，找题靠翻文件夹，组卷靠截图、抄题和反复调排版。
 
-拣题把这条流程串成一个本地工作台：
+**拣题**把整条备课链路串成一个开箱即用的本地工作台：
 
 ```text
-导入 PDF、Word 或图片 → AI 识别整卷 → 对照原卷审核 → 题目入库 → 检索/生成变式 → 组卷 → 导出 Word / PDF
+导入 PDF / Word / 照片  →  AI 整卷识题  →  对照原卷审校  →  沉淀个人题库  →  检索 / 变式 / 出周测  →  导出可编辑 Word / PDF
 ```
 
-原卷、页面图、题图、题库和模型配置都保存在本机。AI 负责减少机械劳动，最终入库仍由老师确认。
+原卷、页面图、题图、题库和模型密钥全部保存在本机；**AI 负责扛下机械录入，最终入库与排版仍由老师掌控**。
 
-## 功能亮点
+---
 
-| 能力 | 说明 |
+## v0.2 重磅更新
+
+| 更新项 | 解决什么问题 |
 | --- | --- |
-| 📚 批量导入 | 一次导入多份 PDF，逐页高清渲染，支持暂停、恢复、并发处理和失败重试 |
-| 🧩 识题规则（Skills） | 比较 12 个年级、10 个学科的默认规则；上传试卷图片生成个人 Skill，经试识别、模型和人工复核后启用 |
-| ✨ 整卷识题 | 在全卷上下文中提取题干、LaTeX 公式、选项、答案、解析、标签与题图信息 |
-| ✅ 对照审核 | 在原卷旁修改题目内容、题型、分值和标签，手工框选跨页题目及题图范围 |
-| 🗂️ 题库管理 | 全文搜索、知识点/题型/年级/来源组合筛选、个人文件夹与批量移动 |
-| 🗃️ 试卷资产 | 统一管理上传原卷与组卷作品，按类型搜索筛选、文件夹整理、恢复编辑与导出 |
-| 🪄 变式生成 | 基于已复核原题生成可追溯候选题，经规则与独立审校后再由老师决定是否入库 |
-| 📝 智能组卷 | 从题库选题或补齐到目标分值，调整板块、顺序、分值和版式，实时预览 A4 试卷 |
-| 📦 分享迁移 | 用单个 `.jianti` 文件导入/导出题目、目录、标签、来源和题图 |
-| 📊 成本可见 | 按月份和模型统计 Token、处理页数与估算费用，模型价格变化后可重新计算 |
-| 🔒 本地优先 | SQLite 与文件资源均在本机；API Key 加密保存，接口不会回传明文 |
+| 📝 **Word 原生可编辑公式导出** | 保存组卷后选择 `Word`，分别下载学生卷与解析答案（`.docx`）。分式、根式、矩阵、分段函数全部输出为 **Word 原生 OMML 公式**（非图片），双击即可继续编辑。[详细说明](docs/word-export.md) |
+| 📄 **Word 试卷直接导入** | 使用 `npm run local:python` 启动后可直接上传 `.docx` / `.doc`。精准读取 **OMML 与 MathType 公式**转 LaTeX，绕开截图 OCR 误识；审核页自动列出待核对公式。[详细说明](docs/word-import.md) |
+| 🔎 **组合词搜题 & 近期用题排除** | 支持输入「`2025 期末 二次函数`」等多条件组合检索；题卡直接标注上次用题试卷与日期，一键排除近 7 / 30 / 90 天用过的题。 |
+| ⚡ **一键出周测草稿** | 工作台点击「出一份周测」，按知识点、题量与近期使用情况自动成稿，左侧实时查看题型与知识点分布柱状图。 |
+| ↩️ **8 秒防误删撤销** | 批量删题、清理试卷资源或清空选题篮时，底部弹出 8 秒撤销条，避免手滑丢数据。 |
+| 🚦 **全局 RPM 限流与 429 自动退避** | API 与后台 Worker 共享每分钟请求预算（默认 `50 RPM`，可通过 `.env` 的 `JIANTI_MODEL_RPM` 调整），触发上游 429 时自动遵循 `Retry-After` 或指数退避。 |
 
-## v0.2 新增功能
+> 预览、审核与 Word/PDF 导出共享同一套 LaTeX 规范化管线，保留换行附近的命令与各类填空下划线。
 
-| 教学任务 | 用法 |
+---
+
+## 核心能力一览
+
+| 模块 | 能力说明 |
 | --- | --- |
-| 导出可编辑的 Word 试卷 | 保存组卷后，把「下载格式」设为 Word，分别下载学生卷和解析答案。分式、根式、矩阵等以 Word 原生公式保存，可在文档中继续修改。 |
-| 从 Word 原卷入库 | 用 `npm run local:python` 启动后上传 `.docx`。系统直接读取 OMML 和 MathType 公式，审核页列出转换结果与待核对项。旧版 `.doc` 和固定版式试卷需要本机安装 LibreOffice。 |
-| 按多个条件找题 | 可输入「2025 期末 二次函数」一类组合词，分别匹配题目、标签与来源。题卡显示上次使用的试卷和日期，可排除近 7、30 或 90 天用过的题。 |
-| 快速出周测 | 在工作台点「出一份周测」，按章节、知识点、题量和近期使用情况生成草稿，可查看题型和知识点分布，再调整、保存和导出。 |
-| 撤销误删 | 在题库删除所选题目、在试卷库删除资源或清空选题篮时，有 8 秒可点「撤销」。 |
-| 批量识题限流 | API 与后台任务合计默认每分钟最多发出 50 次模型请求。在本地 `.env` 设置 `JIANTI_MODEL_RPM` 并重启即可调整。上游返回 429 时按 `Retry-After` 或指数退避等待。 |
+| 📚 **多格式批量导入** | 支持 **PDF、Word（`.docx`/`.doc`）与多图拍照组卷**；支持长图自动分页、暂停/恢复、动态并发（1–100 份）与断点续跑 |
+| 🧩 **识题规则（Skills）** | 内置 12 个年级、10 个学科默认规则；支持上传样卷生成个人 Skill，经试识别、模型与人工复核后启用 |
+| ✨ **整卷上下文识题** | 全卷一起读题，一次性提取题干、LaTeX 公式、选项、答案、解析、知识点与题图/答案图 |
+| ✅ **对照原卷审校** | 原卷与题目并排编辑，支持跨页题切换来源页、手工框选题图/答案图并生成高清裁剪图，答案图绝不漏入学生卷 |
+| 🗂️ **紧凑题库管理** | 按「学段 × 学科」隔离空间；支持多词搜索、知识点/题型/年级/来源筛选、多层个人文件夹与紧凑单行列表操作 |
+| 🪄 **可控变式生成** | 基于已复核原题生成可追溯变式，支持「命题 → 规则校验 → 独立审校评分（≥75 分）→ 人工采用」完整闭环 |
+| 📋 **智能组卷与双导出** | 内置中高考/日常作业/周测模板，支持目标分值补齐、实时 A4 预览、解答题自动预留半页作答空间，导出 **Word / PDF** |
+| 📦 **分享与迁移** | 导出 JSON、Markdown 或包含题图与目录结构的 `.jianti` 单文件共享包 |
+| 📊 **成本透明可控** | 按月份与模型统计输入/缓存/输出 Token、识别页数与估算费用 |
+| 🔒 **本地优先 & 加密** | SQLite 与文件全留本机；模型 API Key 经 AES-GCM 加密落盘，接口永不回传明文 |
 
-公式预览、复核和导出沿用同一套 LaTeX 规范，保留换行附近的命令以及填空横线。[Word 导入说明](docs/word-import.md) · [Word 导出说明](docs/word-export.md)
+---
 
 ## 真实使用场景
 
-本次演示从上海高三数学试卷中选取 5 套区级模考和 5 套校级练习或考试，通过 OpenCode Go 的 `deepseek-v4.1-flash` 识别了 99 页、210 道题。对照原卷抽查后，22 道题已入库，188 道保留待审核。下面四张截图均来自这次运行。[试卷来源](https://github.com/robbinpanda/Math-Papers-For-GaoKao)
+以下截图均来自实测运行：选取上海高三数学 5 套区级模考 + 5 套校级练习（[试卷来源](https://github.com/robbinpanda/Math-Papers-For-GaoKao)），通过 OpenCode Go 的 `deepseek-v4.1-flash` 一次性识别 **99 页、210 道题**。
 
-### 1. 批量导入试卷，统一查看处理进度
-
-工作台集中展示待处理、处理中和已入库试卷。选择学段、学科与识别模型后，可批量拖入 PDF 或 Word，并按设备和模型限额调整并发数。
+### 1. 批量导入试卷，统一掌控识别与审核进度
+选择学段、学科与模型后批量拖入 PDF / Word / 照片，实时查看处理进度、审核进度与一键出周测入口。
 
 [![工作台：批量导入试卷并查看识别与审核进度](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/workspace.png)](docs/images/workspace.png)
 
-### 2. 把审核后的题目沉淀为可检索题库
-
-每行显示题型、来源、原题号、知识点和题干。右侧可展开选项与解析、编辑、生成变式或加入选题篮。带「已用」的题可以点开上次使用它的试卷；也可筛掉近 7、30 或 90 天用过的题。
+### 2. 紧凑题库列表，高效筛题、辨重与选题
+每行集中展示题型、来源、原题号、知识点、用题记录与题干，右侧一键变式、展开解析、编辑或加入选题篮。
 
 [![我的题库：紧凑列表展示实卷题干、来源及右侧选题操作](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/question-bank.png)](docs/images/question-bank.png)
 
-### 3. 从题库选题并实时预览成卷效果
-
-这份「高三数学基础周测」选了 6 道填空题和 2 道选择题，共 40 分。左侧可调整分值和顺序，右侧预览 A4 排版；选 Word 即可分别下载学生卷和解析答案。
+### 3. 实时预览 A4 成卷，一键导出可编辑 Word / PDF
+左侧调整模板、题序与分值并查看题型/知识点分布，右侧所见即所得预览，顶部切换 `Word` / `PDF` 分别下载学生卷与解析答案。
 
 [![组卷：调整模板、题目顺序并实时预览 A4 试卷](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/paper-builder.png)](docs/images/paper-builder.png)
 
-### 4. 追踪模型 Token 与估算成本
-
-用量页记录了本次识别的 99 页，可按模型查看输入、缓存输入和输出 Token。此演示使用 Go 套餐，页面保留「未配置价格」；设置单价后即可查看估算费用。
+### 4. 模型 Token 与成本一目了然
+按月追踪各模型输入、缓存命中、输出 Token 与处理页次，配置单价后自动估算每页成本。
 
 [![模型用量：按月份和模型统计 Token 与估算费用](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/model-usage.png)](docs/images/model-usage.png)
 
-## 交流反馈
+---
 
-欢迎扫码加入 **Teacher-DB 使用反馈交流群**，和其他老师交流试卷导入、公式校对和组卷经验，也欢迎带着遇到的问题来反馈。
+## 在线体验最新功能与交流群
 
-<a href="docs/images/wechat-group.jpg"><img src="https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/wechat-group.jpg" alt="Teacher-DB 使用反馈交流群微信二维码" width="300"></a>
+除了在本地部署本开源项目，你也可以直接访问托管在线版 **[https://teacherdb.cn](https://teacherdb.cn)** 抢先体验更多正在演进的新特性：
 
-本期群二维码有效至 2026 年 12 月 1 日前。过期后可在 [GitHub Issues](https://github.com/robbinpanda/Teacher-DB/issues) 留言索取新码。
+| 对比项 | 开源本地版（本仓库 `Teacher-DB`） | 在线体验版（[teacherdb.cn](https://teacherdb.cn)） |
+| --- | --- | --- |
+| 部署方式 | 本机一键启动，数据 100% 留在本机 | 浏览器打开即用，免配环境与服务器 |
+| 核心能力 | PDF / Word / 图片导入、审校、题库、周测、Word/PDF 导出 | 包含开源版全部稳定能力 |
+| 抢先新功能 | 随成熟稳定后分批同步开放 | **公共基础题库、知识点 × 方法双轴标签、0–5 小数难度自动评分、相似题并排推荐、共享模型、AI 讲义工作台（内测）** |
+
+### 扫码加群：领取 `teacherdb.cn` 注册邀请码 & 反馈交流
+
+目前 **[teacherdb.cn](https://teacherdb.cn)** 开放邀请码注册。欢迎扫码加入 **Teacher-DB 使用反馈交流群**——**进群即可领取邀请码开通在线账号**，也欢迎和其他老师交流试卷导入、公式校对与组卷技巧，或直接提 Bug 和新需求：
+
+<div align="center">
+
+<a href="docs/images/wechat-group.jpg"><img src="https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/wechat-group.jpg" alt="Teacher-DB 使用反馈交流群微信二维码" width="280"></a>
+
+<sub>本期群二维码有效至 <b>2026 年 12 月 1 日</b>前；如已过期，欢迎在 <a href="https://github.com/robbinpanda/Teacher-DB/issues">GitHub Issues</a> 留言获取新码。</sub>
+
+</div>
+
+---
 
 ## 快速开始
 
 ### 环境要求
 
-- Node.js `22.13+`（项目要求 Node.js 22）
-- npm
-- Chrome、Edge 或 Chromium（用于服务端生成 PDF；常见安装位置会自动检测）
-- 一个支持图片输入的模型 API（可在启动后配置）
+- **Node.js `22.13+`**（项目要求 Node.js 22）与 `npm`
+- **Chrome、Edge 或 Chromium**（用于服务端生成 PDF；常见安装路径自动检测）
+- 一个支持图片输入的视觉模型 API（启动后在界面内配置）
+- *可选*：**Python 3.11+**（启用 Word 导入与后台 PDF 分页）；**LibreOffice**（导入旧版 `.doc` 与固定版式 Word 试卷）
 
-### Windows 一键启动
+### 方式一：Windows 一键启动
 
-双击项目根目录的 `启动题库.cmd`。首次运行会自动安装依赖和生产构建，NestJS、Worker、网页全部就绪后打开浏览器。后续源码未变会复用构建。
+双击项目根目录的 `启动题库.cmd`。首次运行会自动安装依赖并完成构建，NestJS、Worker、网页全部就绪后自动打开浏览器；后续源码未变会直接复用构建。停止服务双击 `关闭题库.cmd`。
 
-停止服务可双击 `关闭题库.cmd`。
-
-运行日志自动保存在 `.runtime/logs/local-3050/`（自定义网页端口使用对应目录）：`supervisor.ndjson` 记录子进程输出、退出、重启和健康检查，`api.ndjson` 记录接口异常及浏览器诊断，`worker.ndjson` 记录识别队列，`web.ndjson` 记录网页服务内存。每 15 秒记录进程内存、CPU 和事件循环延迟；每个日志文件达到 5 MB 后轮转，最多保留当前文件及 3 个历史文件。日志不记录请求正文、试卷内容或 API Key；`JIANTI_RUNTIME_LOG_DIR` 可指定保存位置。
-
-浏览器导入和 PDF 分页最多同时处理 2 份，后台识别仍使用界面设置的并发数。PDF 成功或失败后都会销毁 Worker 并释放画布。浏览器诊断记录活动 PDF 数和可用的 JS 堆指标；浏览器整页内存耗尽通常无法执行最后的错误回调，需要结合崩溃前的采样判断，JS 堆数值也不包含全部画布/GPU 内存。
-
-### 命令行启动
+### 方式二：命令行启动（Windows / macOS / Linux）
 
 ```bash
+# 1. 安装依赖并启动（纯 Node 模式：支持 PDF / 图片导入与 Word / PDF 导出）
 npm install
 npm run local
 ```
 
-打开 <http://localhost:3050>。
+启动后访问 **<http://localhost:3050>**（默认网页端口 `3050`、API `3051`，可通过 `--web-port=... --api-port=...` 修改；开发热更新使用 `npm run dev`，生产构建使用 `npm run build && npm start`）。
 
-生产模式：
-
-```bash
-npm run build
-npm start
-```
-
-默认网页端口 `3050`、NestJS `3051`；可通过环境变量或 `--web-port=... --api-port=...` 修改。开发热更新使用 `npm run dev`。
-
-启用 Word 导入和后台 PDF 分页（首次需要 Python 3.11+ 与网络）：
+如需启用 **Word 试卷导入（`.docx`/`.doc`）与后台 PDF 分页**（关闭网页也不中断渲染）：
 
 ```bash
 npm run local:python
 ```
 
-默认模式保留浏览器 PDF.js 分页，只需 Node.js。Python 模式下原卷上传后后台继续渲染，关闭网页也不会中断。安装 LibreOffice 后还可读取旧版 .doc 和按原版式排版的 Word 试卷。运行架构、错误契约、远端登录及 PostgreSQL 迁移边界见 [架构说明](docs/architecture.md)。
+### 首次使用 5 步上手
 
-## 首次使用
+1. 打开左侧「**模型配置**」，新增识题模型。
+2. 选择 OpenCode 普通付费、OpenCode Go 套餐、OpenRouter 或自定义模型，填写 API Key（自定义模型需填协议与 Base URL）并执行连接测试。
+3. 回到「**工作台**」，选择学段、学科、模型和并发数。
+4. 点击「**导入试卷**」批量上传 PDF / Word（Python 模式），或通过「图片组卷」添加 JPG / PNG / WebP 照片；未配模型也可先上传分页，配好后直接重试。
+5. 对照原卷审校入库，随后在题库检索、生成变式或组卷导出 Word / PDF。
 
-1. 打开左侧「模型配置」，新增识题模型。
-2. 选择 OpenCode 普通付费、OpenCode Go 套餐、OpenRouter 或自定义模型：OpenCode 两个入口选择模型并填写对应 API Key，OpenRouter 填写模型名称和 API Key；自定义模型还需填写协议、API Base URL。保存后执行连接测试。
-3. 回到「工作台」，选择学段、学科、模型和并发数。
-4. 在“导入试卷”中批量上传 PDF 或 Word（Python 模式），或选择“图片组卷”添加 JPG、PNG、WebP；多张照片按预览顺序合成一份试卷，长图可自动分页，导入前可调整顺序、移除页面。识别完成后进入审核页逐题确认。
-5. 完成审核，题目进入题库，即可检索、生成变式或用于组卷。
+> **支持的模型协议**：OpenAI Chat Completions · OpenAI Responses · Anthropic Messages · Gemini GenerateContent（含流式）。自定义 Base URL 须使用 HTTPS（本机 `localhost` / `127.0.0.1` / `::1` 允许 HTTP）。详见 [模型服务适配](docs/model-services.md) 与 [架构说明](docs/architecture.md)。
 
-未配置模型时也可以上传原卷并生成分页图，任务会停在“等待模型配置”；配置完成后可直接重试，不需要重新上传。
+---
 
-### 支持的模型协议
+## 更多工作流细节
 
-- OpenAI Chat Completions
-- OpenAI Responses
-- Anthropic Messages
-- Gemini GenerateContent（含流式）
-
-OpenCode 普通付费、OpenCode Go 套餐与 OpenRouter 提供独立的官方地址预设，不提供公共凭据。普通付费使用 Console 服务账号 Key，Go 使用套餐 Key 和独立的 `/inference/go/v1` 地址；两个入口均提供 GPT 6 Luna、Claude Haiku 5.5、DeepSeek 4.1 Flash、GLM 5.3 Flash，Go 额外提供 MiMo 2.6 Flash；不提供 Free 模型预设；分别按模型 ID 匹配协议并发送真实应用标识和会话标识；未知模型可选择自定义模型。可连接符合上述协议并支持图片输入的服务。自定义 Base URL 必须使用 HTTPS，仅 `localhost`、`127.0.0.1` 和 `::1` 允许 HTTP。具体配置和文档依据见 [模型服务适配](docs/model-services.md)。
-
-## 核心工作流
+<details>
+<summary><b>展开查看：导入识别、审核入库、变式审校、个人 Skills 与组卷规则详解</b></summary>
 
 ### 导入与识别
-
-- 支持 PDF 和图片组卷。图片在浏览器中按预览顺序生成 PDF，复用原卷保存、分页、断点恢复和识题流程；每张图片最大 20 MB、4000 万像素，每份最多 100 页，合成文件最大 100 MB。Word 原卷可在 Python 模式下直接上传，单份最大 60 MB。
-- 导出按题目实际占高分页，每道解答题在题干和图片下方独立保留至少半页作答空间，题干、图片和图片右侧留白均不抵扣；空间不足时续页；紧凑排版也保留该规则。导出前等待字体、配图与分页就绪，预览和 PDF 使用同一布局。
-- 默认浏览器使用 PDF.js 逐页高清渲染；可选 FastAPI 后台分页。原卷和页面图会立即保存。
-- 每份试卷在整卷上下文中识别，题目、答案和解析一次关联并以事务写入数据库。
-- 任务状态、重试次数和处理模型都会持久化，服务重启后可以续跑。
+- 图片组卷在浏览器中按预览顺序生成 PDF，单张最大 20 MB / 4000 万像素，每份最多 100 页，合成文件最大 100 MB；Word 原卷（Python 模式）单份最大 60 MB。
+- 默认模式使用浏览器 PDF.js 逐页渲染（最多同时 2 份，成功或失败即释放 Worker 与画布）；Python 模式由 FastAPI 在后台分页。
+- 每份试卷在整卷上下文中识别，题目、答案与解析以事务一次性落库；任务状态持久化，服务重启后可断点续跑。
 
 ### 审核与入库
-
-- 对照原卷修改题号、题型、题干、选项、答案、解析、分值和标签。
-- 对跨页题目切换来源页，并手工框选题目范围、题图或答案图。
-- 调整范围后生成真实 JPEG 裁剪图；答案图不会进入学生试卷。
-- 只有确认完成的题目才进入正式题库。
+- 对照原卷修改题号、题型、题干、选项、答案、解析、分值和标签；支持跨页题切换来源页并手工框选题目范围、题图或答案图（生成真实 JPEG 裁剪图）。
+- 审核页提供「AI 复核本题图片」：从原页像素提取候选框后交由模型判断题号归属与用途，预览确认后写入。
+- 只有确认通过的题目才会进入正式题库。
 
 ### 检索、变式与共享
-
-- 支持题干、答案、标签和来源全文检索，以及题型、来源、知识点筛选。
-- 自定义多层个人文件夹；年级、地区、教材版本通过独立筛选组合查询。
-- 区分上传识别、共享包导入副本和 AI 变式来源；平台基础题库尚未开放。
-- 生成变式时可分别选择本次生成模型和审校模型，不改变全局默认模型；缺少密钥或停用的模型不可选择。
-- 独立审校模式先修订题目，再由最终复核独立评分；每题须达到 75 分且可解性、答案、目标、难度检查全部通过，展示最终分数与修订记录，老师采用后才正式入库。快速模式仍只做规则校验。
-- 候选生成单次超时下限为 180 秒，模型配置更长时遵循配置（最多 300 秒）；超时、连接中断或临时服务错误最多自动重试一次，质量不通过不自动重试。失败会标明阶段，可保留设置重新生成；网络中断导致状态不明时保留原请求重试获取结果，防止重复生成。
-- 可导出 JSON、Markdown 或包含题图的 `.jianti` 单文件共享包。
+- 全文检索覆盖题干、答案、标签与来源，支持多层个人文件夹以及年级/地区/教材智能筛选。
+- 变式生成可独立指定命题模型与审校模型：默认「独立审校」执行修订与独立评分（须 ≥ 75 分且全部校验通过），老师挑选采用后入库；单次超时下限 180 秒（最长 300 秒），网络抖动按幂等请求恢复防重复计费。
+- 支持导出 JSON、Markdown 或带裁剪题图的 `.jianti` 单文件共享包。
 
 ### 个人识题规则（Skills）
-
-在左侧「设置与用量 → 识题规则」选择具体年级与学科，首页管理识别方案，从「创建 Skill」上传样例。个人方案详情分为概览、测试与效果、高级规则；默认规则详情保留 Markdown 对照、共同输出协议和 `SKILL.md` 导出。
-
-1. 上传一张 PNG、JPEG 或 WebP 试卷图片（最多 12MB），让模型生成个人草稿。
-2. 修改规则并保存，点击「用当前版本试识别并复核」。原图、识别题目、模型疑点并排显示。
-3. 对照原图人工通过或退回；可点击「根据模型与人工意见改进 Skill」，生成新版本后重新验证。
-4. 人工通过后点击「启用已复核版本」。每位教师、每个年级学科同时只启用一个版本。
-5. 在导入工作台明确选择本批年级。整卷识题、单题重识别、答案补录、题图复核及变式生成会采用匹配规则。
-
-修改会停用个人版本；再次试识别完成后也需要重新人工确认。Skill、试识别版本、复核意见和正式识题使用快照均保存在本地数据库，样例图保存在本地文件区。试识别是图片转录实验，不会直接把测试题写入正式题库。模型调用仍使用你选择的模型服务。
+在「设置与用量 → 识题规则」按年级与学科管理方案，支持上传试卷样例（≤ 12 MB）生成草稿、试识别并排复核、根据人工意见迭代优化并启用唯一生效版本，且支持 `SKILL.md` 导出。
 
 ### 组卷与输出
+- 内置中考数学、高考数学、日常作业与课堂测试模板，支持目标分值智能补齐。
+- 导出按题目实际占高分页，解答题下方独立保留至少半页作答空间；保存后可选择 PDF 或 Word 分别下载学生卷与解析答案。
+- 作品通过 `paper_items` 实时引用题目，删除试卷不会删除题库原题。详见 [教学资源管理路线图](docs/resource-library-roadmap.md)。
 
-- 从题库选题，或在当前教学范围内智能补齐到目标分值。
-- 内置中考数学、高考数学、日常作业和课堂测试模板。
-- 可调整题目顺序、板块、分值、注意事项、考生信息栏和题图位置。
-- 保存后选择 PDF 或 Word，再分别下载学生试卷和解析答案。
-- 试卷库同时展示上传原卷与组卷作品；继续编辑恢复已有题目与版式，保存更新当前作品，不创建重复记录。
-- 作品通过 `paper_items` 实时引用题目，删除作品不会删除题库原题。数据模型、能力边界和后续演进见 [教学资源管理路线图](docs/resource-library-roadmap.md)。
+</details>
+
+---
 
 ## 数据与安全
 
-默认数据位于项目根目录的 `data/`：
+默认数据存放在项目根目录的 `data/`（可通过 `JIANTI_DATA_DIR` 迁移到其他磁盘或 NAS）：
 
 ```text
 data/
-├── teacher-question-bank.sqlite3   # 题库与业务数据
+├── teacher-question-bank.sqlite3   # 题库与业务数据（WAL + 外键 + 原子事务）
 ├── files/                          # 原卷、页面图与裁剪图
-└── .model-key-secret               # 本机生成的模型密钥加密材料
+└── .model-key-secret               # 本机自动生成的密钥加密材料
 ```
 
-- SQLite 启用 WAL、外键、忙等待和原子事务。
-- API Key 使用 AES-GCM 加密后存入 SQLite，浏览器接口只返回脱敏值。
-- 可通过 `JIANTI_DATA_DIR` 把数据目录放到其他磁盘或 NAS。
-- 生产环境建议复制 `.env.example` 并设置固定的 `MODEL_KEY_ENCRYPTION_SECRET`。
-- 整个 `data/` 目录都应备份，但不要提交到 Git。
+- 模型 API Key 使用 **AES-GCM** 加密存储，接口只返回脱敏片段；长期部署建议在 `.env` 中固定 `MODEL_KEY_ENCRYPTION_SECRET`。
+- 运行日志自动写入 `.runtime/logs/local-3050/`（单文件 5 MB 轮转），不记录试卷正文与 API Key。
+- 请定期备份整个 `data/` 目录，切勿提交到 Git。本地默认单教师模式；若自建公网多用户服务，请参考 [架构说明](docs/architecture.md) 通过可信反代提供鉴权。
 
-本地模式默认是单教师 `local-demo` 空间。如部署成公网多用户服务，必须由可信反向代理提供用户身份，不能允许客户端自行伪造身份请求头。
+---
 
-## 诊断、备份与恢复
-
-检查 Node.js、数据库、数据目录和浏览器环境：
+## 诊断、备份与常用命令
 
 ```bash
-npm run doctor
+npm run doctor                                              # 检查 Node、数据库、目录与浏览器环境
+npm run backup                                              # 创建并立即校验数据快照备份
+npm run backup -- D:\teacher-db-backups\backup-2026-11-24   # 备份到指定目录
+npm run backup:verify -- D:\teacher-db-backups\backup-2026-11-24
+npm run restore -- D:\teacher-db-backups\backup-2026-11-24 --confirm  # 恢复（自动保留旧数据副本）
 ```
-
-创建并立即校验备份：
-
-```bash
-npm run backup
-```
-
-指定备份目录或复验已有备份：
-
-```bash
-npm run backup -- D:\\teacher-db-backups\\backup-2026-08-03
-npm run backup:verify -- D:\\teacher-db-backups\\backup-2026-08-03
-```
-
-恢复前必须停止应用。恢复过程会把原数据目录保留为 `data.pre-restore-*` 安全副本：
-
-```bash
-npm run restore -- D:\\teacher-db-backups\\backup-2026-08-03 --confirm
-```
-
-## 常用命令
-
-审核页的“AI 复核本题图片”会从原页像素生成候选框，再让当前所选模型判断题号归属和题图/答案图用途。模型不再估算裁剪坐标；结果先显示预览，应用到草稿并保存后才会写入题库。无法可靠定位的图片仍需手动补框。首次整卷识别不会自动调用这项复核。
-
-图片定位的批量实测与隔离工作流验证（会调用已配置的 DeepSeek API 并产生用量）：
-
-```bash
-# 需要本地保留测试样本对应的原卷；输出位于 tmp/asset-benchmark
-node --experimental-strip-types scripts/benchmark-asset-localization.mjs
-# 先构建，再在数据副本中重新识别崇明、黄浦两卷，逐题复核并验证保存与裁剪读取
-npm run build
-node scripts/verify-asset-review-workflow.mjs
-```
-
-测试数据库、原页、API 密钥和模型响应均保留在被 Git 忽略的本地目录，不随代码上传。
 
 | 命令 | 用途 |
 | --- | --- |
-| `npm run dev` | 启动开发服务器（端口 3050） |
-| `npm run build` | 创建生产构建 |
-| `npm start` | 启动生产服务器（端口 3050） |
-| `npm test` | 运行自动化测试 |
-| `npm run lint` | 运行 ESLint |
-| `npm run doctor` | 检查本地运行环境 |
-| `npm run backup` | 创建并校验数据备份 |
-| `npm run backup:verify` | 复验已有备份 |
-| `npm run restore` | 从备份恢复数据 |
+| `npm run local` / `npm run local:python` | 一键构建并启动本地服务（后者启用 Word 导入与后台 PDF 分页） |
+| `npm run dev` | 启动开发热更新服务器（端口 `3050`） |
+| `npm run build` / `npm start` | 创建生产构建 / 启动生产服务 |
+| `npm test` / `npm run lint` | 运行自动化单元测试 / ESLint 检查 |
+| `npm run word:verify` / `npm run word:import:verify` | 端到端验证 Word 导出与 Word 导入链路 |
+| `npm run doctor` / `npm run backup` | 环境诊断 / 数据备份校验 |
 
-## 技术栈
+---
 
-- Next.js 16、React 19、TypeScript 5
-- Tailwind CSS 4、KaTeX
-- SQLite、better-sqlite3、Drizzle ORM
-- PDF.js、Sharp、Chrome / Edge / Chromium
-- Node.js 22
+## 技术栈与项目结构
 
-项目不依赖 Cloudflare Sites、D1、R2、Vinext 或 Miniflare，可运行于 Windows、Linux、macOS、NAS 或普通 VPS。
+- **前端与全栈**：Next.js 16 · React 19 · TypeScript 5 · Tailwind CSS 4 · KaTeX
+- **后端与存储**：NestJS 11 · SQLite (`better-sqlite3`) · Drizzle ORM · Node.js 22
+- **文档与媒体**：`docx`（原生 OMML 公式导出）· FastAPI + `processor/word`（MathType/OMML 解析）· PDF.js · Sharp · Chromium
 
-## 项目结构
+> 不依赖 Cloudflare、外部云存储或特定托管平台，可运行在 Windows、macOS、Linux、NAS 或普通 VPS。
+
+<details>
+<summary><b>展开查看：目录结构、当前边界与文档索引</b></summary>
 
 ```text
 app/          Next.js 页面与 API 路由
 components/   工作台、审核、题库、组卷等界面组件
 db/           Drizzle Schema 与数据库初始化
 drizzle/      版本化 SQL 迁移
-lib/          识别、队列、题库、组卷、备份等核心逻辑
-scripts/      诊断、备份、恢复与验证脚本
-tests/        Node.js 自动化测试
-docs/         功能清单、代码审查与 README 图片
+lib/          识别、队列、题库、组卷、Word 导入导出与限流逻辑
+processor/    可选 Python 文档处理服务（PDF 后台分页、Word/MathType 解析）
+scripts/      诊断、备份、恢复与端到端验证脚本
+tests/        Node.js 自动化测试与浏览器测试
+docs/         功能清单、Word 专题说明与截图
 ```
 
-## 当前边界
+### 当前边界
+- 默认纯 Node 模式支持 PDF 和图片组卷；Word 导入需要 Python 模式，旧版 `.doc` 和固定版式 Word 试卷还需本机安装 LibreOffice。
+- 自动跨页合并只检查相邻下一页；极少数跨三页以上或题号模糊的题目需人工微调。
+- 服务端 PDF 导出依赖 Chromium 系浏览器；极简 Linux 容器需自行安装并配置 `CHROMIUM_EXECUTABLE_PATH`。
+- AI 识题仍可能存在误差，正式印发前建议在审核页核对关键公式、题图与答案。
 
-- 默认模式支持 PDF 和图片组卷。Word 导入使用 Python 模式，旧版 .doc 和固定版式 Word 试卷还需安装 LibreOffice。ODT 可另存为 .docx 或 PDF 后导入。
-- 自动跨页合并只检查相邻下一页；极少数跨越三页以上或题号模糊的内容需要人工修正。
-- 服务端 PDF 依赖 Chromium 系浏览器；极简服务器镜像需额外安装并设置 `CHROMIUM_EXECUTABLE_PATH`。
-- AI 识别结果可能出错，正式使用前应在审核页核对题干、答案、解析、题图和分值。
-
-## 更多文档
-
+### 相关文档
 - [完整功能实现清单](docs/features.md)
-- [代码审查与升级方向（2026-09-08）](docs/code-review-2026-09-08.md)
+- [Word 导出技术说明](docs/word-export.md)
+- [Word 导入技术说明](docs/word-import.md)
+- [系统架构说明](docs/architecture.md)
+- [模型服务适配](docs/model-services.md)
+- [教学资源管理路线图](docs/resource-library-roadmap.md)
 
-欢迎加入 **Teacher-DB 使用反馈交流群**，扫码和大家聊聊你的使用体验。此码在 2026 年 12 月 1 日前有效。
-
-<a href="docs/images/wechat-group.jpg"><img src="https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/wechat-group.jpg" alt="微信扫码加入 Teacher-DB 使用反馈交流群" width="300"></a>
+</details>

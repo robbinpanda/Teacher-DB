@@ -531,7 +531,7 @@ export function ReviewWorkspace({
   async function runBulkAction(action: "approve_without_review" | "remove_all_from_bank") {
     if (reviewBusy) return;
     if (action === "approve_without_review" && !documentReadyForReview) { setSaveError(integrityMessage); return; }
-    if (action === "remove_all_from_bank" && !await requestDelete("将本试卷所有已入库题目移出题库？题目内容、页面框选和审核记录都会保留，可以之后重新入库。")) return;
+    if (action === "remove_all_from_bank" && !await requestDelete("将本试卷已入库题目移出题库（保留原卷、框选与审核记录）")) return;
     setBulkAction(action === "approve_without_review" ? "approve" : "remove");
     setSaveError("");
     setBulkNotice("");

@@ -221,7 +221,7 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
   }
 
   async function removeFolder(folder: PaperFolderRecord) {
-    if (!await requestDelete(`删除空文件夹“${folder.name}”？`)) return;
+    if (!await requestDelete(`空文件夹“${folder.name}”`)) return;
     const response = await fetch(`/api/paper-folders/${folder.id}`, { method: "DELETE" });
     const result = await response.json().catch(() => ({})) as { error?: string };
     if (!response.ok) { setError(result.error ?? "删除失败"); return; }
@@ -229,7 +229,7 @@ export function PaperLibrary({ initialFolders, initialPapers, requestedFolderId 
   }
 
   async function removePaper(paper: PaperLibraryRecord) {
-    if (!await requestDelete(paper.kind === "uploaded" ? `删除“${paper.title}”的原始文件？保留已入库题目及组卷引用；` : `删除组卷作品“${paper.title}”？此操作不会删除题库中的题目。`)) return;
+    if (!await requestDelete(paper.kind === "uploaded" ? `“${paper.title}”的原始文件（保留已入库题目及组卷引用）` : `组卷作品“${paper.title}”（不删除题库中的题目）`)) return;
     const response = await fetch(apiPath(paper), { method: "DELETE", headers: { "content-type": "application/json" }, body: paper.kind === "uploaded" ? JSON.stringify({ mode: "source_only" }) : JSON.stringify({}) });
     const result = await response.json().catch(() => ({})) as { error?: string };
     if (!response.ok) { setError(result.error ?? "删除失败"); return; }

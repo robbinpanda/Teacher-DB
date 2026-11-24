@@ -269,7 +269,7 @@ export function ModelSettings({ view }: { view: "configuration" | "usage" }) {
   }
 
   async function removeProfile(profileId: string) {
-    if (!await requestDelete("确定删除这个模型配置吗？历史 Token 与费用记录会保留。")) return;
+    if (!await requestDelete("该模型配置（保留历史 Token 与费用记录）")) return;
     setBusy(`delete:${profileId}`);
     try {
       const response = await fetch(`/api/model-profiles/${profileId}`, { method: "DELETE" });

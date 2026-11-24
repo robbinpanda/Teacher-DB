@@ -407,7 +407,7 @@ export function QuestionBank({
   }
 
   async function deleteFolder(folder: QuestionFolder) {
-    if (!await requestDelete(`删除空文件夹“${folder.name}”？`)) return;
+    if (!await requestDelete(`空文件夹“${folder.name}”`)) return;
     const response = await fetch(`/api/question-folders/${encodeURIComponent(folder.id)}`, { method: "DELETE" });
     const result = await response.json().catch(() => ({})) as { error?: string };
     if (!response.ok) { setOperationError(result.error ?? "删除文件夹失败"); return; }

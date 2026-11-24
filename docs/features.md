@@ -72,12 +72,12 @@
 - 试卷按选择、填空、解答等板块排版，并在板块标题旁显示分值规则。
 - 教师可修改板块、分值、注意事项和考生信息栏，并保存为个人模板。
 - 题图可在整卷预览中缩放、水平或垂直平移，并自动显示题号图注。
-- 服务端使用 Chrome、Edge 或 Chromium 生成可下载的 A4 PDF；保存组卷后可分别下载学生试卷和对应解析答案，解析版会包含答案图。
+- 服务端使用 Chrome、Edge 或 Chromium 生成可下载的 A4 PDF，也支持导出带 Word 原生可编辑公式的 `.docx`；保存组卷后均可分别下载学生试卷和对应解析答案，解析版会包含答案图。
 
 ## 模型配置与安全
 
-- 不提供任何预设模型、API 地址或公共凭据，用户必须自行配置 API Key、API Base URL 和模型名称。
-- 支持 Chat Completions、OpenAI Responses 和 Anthropic Messages 三种多模态协议。
+- 内置 OpenCode 普通付费、OpenCode Go 套餐、OpenRouter 官方地址预设（不提供公共凭据），也支持自定义模型配置 API Key、API Base URL 和模型名称。
+- 支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Gemini GenerateContent 四种多模态协议。
 - 可配置 API Base URL、模型名称、API Key 和超时时间，并使用真实图片测试连接。
 - API Key 使用 AES-GCM 加密存入 SQLite，接口只返回脱敏值。
 - Chat Completions 固定 `reasoning_effort: "none"`，Responses 固定 `reasoning.effort: "none"`，Anthropic Messages 不启用 thinking。
