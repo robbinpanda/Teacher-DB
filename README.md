@@ -1,8 +1,8 @@
 <div align="center">
 
-# 拣题 · 教师题库助手
+# 拣题 · 教师题库助手 v0.2
 
-**把散落在 PDF 试卷里的题目，变成可检索、可复用、可组卷的个人题库。**
+**把散落在 PDF、Word 试卷和照片里的题目，变成可检索、可复用、可组卷的个人题库。**
 
 本地优先 · AI 识题 · 人工复核 · 智能组卷 · 数据可控
 
@@ -10,7 +10,7 @@
 
 [![拣题：教师题库助手](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/public/og-cover.png)](public/og-cover.png)
 
-[快速开始](#快速开始) · [真实使用场景](#真实使用场景) · [功能亮点](#功能亮点) · [数据与安全](#数据与安全) · [完整功能清单](docs/features.md)
+[快速开始](#快速开始) · [真实使用场景](#真实使用场景) · [功能亮点](#功能亮点) · [数据与安全](#数据与安全) · [交流反馈](#交流反馈) · [完整功能清单](docs/features.md)
 
 </div>
 
@@ -23,7 +23,7 @@
 拣题把这条流程串成一个本地工作台：
 
 ```text
-导入 PDF → AI 识别整卷 → 对照原卷审核 → 题目入库 → 检索/生成变式 → 组卷 → 导出 PDF
+导入 PDF、Word 或图片 → AI 识别整卷 → 对照原卷审核 → 题目入库 → 检索/生成变式 → 组卷 → 导出 Word / PDF
 ```
 
 原卷、页面图、题图、题库和模型配置都保存在本机。AI 负责减少机械劳动，最终入库仍由老师确认。
@@ -44,33 +44,54 @@
 | 📊 成本可见 | 按月份和模型统计 Token、处理页数与估算费用，模型价格变化后可重新计算 |
 | 🔒 本地优先 | SQLite 与文件资源均在本机；API Key 加密保存，接口不会回传明文 |
 
+## v0.2 新增功能
+
+| 教学任务 | 用法 |
+| --- | --- |
+| 导出可编辑的 Word 试卷 | 保存组卷后，把「下载格式」设为 Word，分别下载学生卷和解析答案。分式、根式、矩阵等以 Word 原生公式保存，可在文档中继续修改。 |
+| 从 Word 原卷入库 | 用 `npm run local:python` 启动后上传 `.docx`。系统直接读取 OMML 和 MathType 公式，审核页列出转换结果与待核对项。旧版 `.doc` 和固定版式试卷需要本机安装 LibreOffice。 |
+| 按多个条件找题 | 可输入「2025 期末 二次函数」一类组合词，分别匹配题目、标签与来源。题卡显示上次使用的试卷和日期，可排除近 7、30 或 90 天用过的题。 |
+| 快速出周测 | 在工作台点「出一份周测」，按章节、知识点、题量和近期使用情况生成草稿，可查看题型和知识点分布，再调整、保存和导出。 |
+| 撤销误删 | 在题库删除所选题目、在试卷库删除资源或清空选题篮时，有 8 秒可点「撤销」。 |
+| 批量识题限流 | API 与后台任务合计默认每分钟最多发出 50 次模型请求。在本地 `.env` 设置 `JIANTI_MODEL_RPM` 并重启即可调整。上游返回 429 时按 `Retry-After` 或指数退避等待。 |
+
+公式预览、复核和导出沿用同一套 LaTeX 规范，保留换行附近的命令以及填空横线。[Word 导入说明](docs/word-import.md) · [Word 导出说明](docs/word-export.md)
+
 ## 真实使用场景
 
-以下均为项目真实运行界面。
+本次演示从上海高三数学试卷中选取 5 套区级模考和 5 套校级练习或考试，通过 OpenCode Go 的 `deepseek-v4.1-flash` 识别了 99 页、210 道题。对照原卷抽查后，22 道题已入库，188 道保留待审核。下面四张截图均来自这次运行。[试卷来源](https://github.com/robbinpanda/Math-Papers-For-GaoKao)
 
 ### 1. 批量导入试卷，统一查看处理进度
 
-工作台集中展示待处理、处理中和已入库试卷。选择学段、学科与识别模型后，可批量拖入 PDF，并按设备和模型限额调整并发数。
+工作台集中展示待处理、处理中和已入库试卷。选择学段、学科与识别模型后，可批量拖入 PDF 或 Word，并按设备和模型限额调整并发数。
 
-[![工作台：批量导入试卷并查看识别与审核进度](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/workspace.png)](docs/images/workspace.png)
+[![工作台：批量导入试卷并查看识别与审核进度](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/workspace.png)](docs/images/workspace.png)
 
 ### 2. 把审核后的题目沉淀为可检索题库
 
-题目可按文件夹、年级、地区和教材版本浏览，也可按题干、答案、知识点、题型或来源搜索。支持列表/平铺视图、批量移动和共享包导入导出。
+每行显示题型、来源、原题号、知识点和题干。右侧可展开选项与解析、编辑、生成变式或加入选题篮。带「已用」的题可以点开上次使用它的试卷；也可筛掉近 7、30 或 90 天用过的题。
 
-[![题库：按目录、题型、来源与知识点筛选题目](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/question-bank.png)](docs/images/question-bank.png)
+[![我的题库：紧凑列表展示实卷题干、来源及右侧选题操作](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/question-bank.png)](docs/images/question-bank.png)
 
 ### 3. 从题库选题并实时预览成卷效果
 
-组卷时可套用模板、调整标题与板块、拖拽题目顺序、修改分值，并在右侧实时查看 A4 排版。保存后可分别导出学生试卷和解析答案。
+这份「高三数学基础周测」选了 6 道填空题和 2 道选择题，共 40 分。左侧可调整分值和顺序，右侧预览 A4 排版；选 Word 即可分别下载学生卷和解析答案。
 
-[![组卷：调整模板、题目顺序并实时预览 A4 试卷](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/paper-builder.png)](docs/images/paper-builder.png)
+[![组卷：调整模板、题目顺序并实时预览 A4 试卷](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/paper-builder.png)](docs/images/paper-builder.png)
 
 ### 4. 追踪模型 Token 与估算成本
 
-模型用量页按月份和模型汇总输入、缓存输入、输出、处理页数及费用，方便评估不同模型的实际成本。
+用量页记录了本次识别的 99 页，可按模型查看输入、缓存输入和输出 Token。此演示使用 Go 套餐，页面保留「未配置价格」；设置单价后即可查看估算费用。
 
-[![模型用量：按月份和模型统计 Token 与估算费用](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/docs/images/model-usage.png)](docs/images/model-usage.png)
+[![模型用量：按月份和模型统计 Token 与估算费用](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/model-usage.png)](docs/images/model-usage.png)
+
+## 交流反馈
+
+欢迎扫码加入 **Teacher-DB 使用反馈交流群**，和其他老师交流试卷导入、公式校对和组卷经验，也欢迎带着遇到的问题来反馈。
+
+<a href="docs/images/wechat-group.jpg"><img src="https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/wechat-group.jpg" alt="Teacher-DB 使用反馈交流群微信二维码" width="300"></a>
+
+本期群二维码有效至 2026 年 12 月 1 日前。过期后可在 [GitHub Issues](https://github.com/robbinpanda/Teacher-DB/issues) 留言索取新码。
 
 ## 快速开始
 
@@ -109,20 +130,20 @@ npm start
 
 默认网页端口 `3050`、NestJS `3051`；可通过环境变量或 `--web-port=... --api-port=...` 修改。开发热更新使用 `npm run dev`。
 
-启用 FastAPI 后台 PDF 分页（首次需要 Python 3.11+ 与网络）：
+启用 Word 导入和后台 PDF 分页（首次需要 Python 3.11+ 与网络）：
 
 ```bash
 npm run local:python
 ```
 
-默认模式保留浏览器 PDF.js 分页，只需 Node.js。Python 模式下原卷上传后后台继续渲染，关闭网页也不会中断。运行架构、错误契约、远端登录及 PostgreSQL 迁移边界见 [架构说明](docs/architecture.md)。
+默认模式保留浏览器 PDF.js 分页，只需 Node.js。Python 模式下原卷上传后后台继续渲染，关闭网页也不会中断。安装 LibreOffice 后还可读取旧版 .doc 和按原版式排版的 Word 试卷。运行架构、错误契约、远端登录及 PostgreSQL 迁移边界见 [架构说明](docs/architecture.md)。
 
 ## 首次使用
 
 1. 打开左侧「模型配置」，新增识题模型。
 2. 选择 OpenCode 普通付费、OpenCode Go 套餐、OpenRouter 或自定义模型：OpenCode 两个入口选择模型并填写对应 API Key，OpenRouter 填写模型名称和 API Key；自定义模型还需填写协议、API Base URL。保存后执行连接测试。
 3. 回到「工作台」，选择学段、学科、模型和并发数。
-4. 在“导入试卷”中批量上传 PDF，或选择“图片组卷”添加 JPG、PNG、WebP；多张照片按预览顺序合成一份试卷，长图可自动分页，导入前可调整顺序、移除页面。识别完成后进入审核页逐题确认。
+4. 在“导入试卷”中批量上传 PDF 或 Word（Python 模式），或选择“图片组卷”添加 JPG、PNG、WebP；多张照片按预览顺序合成一份试卷，长图可自动分页，导入前可调整顺序、移除页面。识别完成后进入审核页逐题确认。
 5. 完成审核，题目进入题库，即可检索、生成变式或用于组卷。
 
 未配置模型时也可以上传原卷并生成分页图，任务会停在“等待模型配置”；配置完成后可直接重试，不需要重新上传。
@@ -140,7 +161,7 @@ OpenCode 普通付费、OpenCode Go 套餐与 OpenRouter 提供独立的官方�
 
 ### 导入与识别
 
-- 支持 PDF 和图片组卷。图片在浏览器中按预览顺序生成 PDF，复用原卷保存、分页、断点恢复和识题流程；每张图片最大 20 MB、4000 万像素，每份最多 100 页，合成文件最大 100 MB。DOC/DOCX 仍需另存为 PDF。
+- 支持 PDF 和图片组卷。图片在浏览器中按预览顺序生成 PDF，复用原卷保存、分页、断点恢复和识题流程；每张图片最大 20 MB、4000 万像素，每份最多 100 页，合成文件最大 100 MB。Word 原卷可在 Python 模式下直接上传，单份最大 60 MB。
 - 导出按题目实际占高分页，每道解答题在题干和图片下方独立保留至少半页作答空间，题干、图片和图片右侧留白均不抵扣；空间不足时续页；紧凑排版也保留该规则。导出前等待字体、配图与分页就绪，预览和 PDF 使用同一布局。
 - 默认浏览器使用 PDF.js 逐页高清渲染；可选 FastAPI 后台分页。原卷和页面图会立即保存。
 - 每份试卷在整卷上下文中识别，题目、答案和解析一次关联并以事务写入数据库。
@@ -180,7 +201,7 @@ OpenCode 普通付费、OpenCode Go 套餐与 OpenRouter 提供独立的官方�
 - 从题库选题，或在当前教学范围内智能补齐到目标分值。
 - 内置中考数学、高考数学、日常作业和课堂测试模板。
 - 可调整题目顺序、板块、分值、注意事项、考生信息栏和题图位置。
-- 保存后分别下载学生试卷与解析答案 PDF。
+- 保存后选择 PDF 或 Word，再分别下载学生试卷和解析答案。
 - 试卷库同时展示上传原卷与组卷作品；继续编辑恢复已有题目与版式，保存更新当前作品，不创建重复记录。
 - 作品通过 `paper_items` 实时引用题目，删除作品不会删除题库原题。数据模型、能力边界和后续演进见 [教学资源管理路线图](docs/resource-library-roadmap.md)。
 
@@ -283,7 +304,7 @@ docs/         功能清单、代码审查与 README 图片
 
 ## 当前边界
 
-- 当前只接收 PDF；DOC、DOCX、ODT 和图片需先导出为 PDF。
+- 默认模式支持 PDF 和图片组卷。Word 导入使用 Python 模式，旧版 .doc 和固定版式 Word 试卷还需安装 LibreOffice。ODT 可另存为 .docx 或 PDF 后导入。
 - 自动跨页合并只检查相邻下一页；极少数跨越三页以上或题号模糊的内容需要人工修正。
 - 服务端 PDF 依赖 Chromium 系浏览器；极简服务器镜像需额外安装并设置 `CHROMIUM_EXECUTABLE_PATH`。
 - AI 识别结果可能出错，正式使用前应在审核页核对题干、答案、解析、题图和分值。
@@ -293,3 +314,6 @@ docs/         功能清单、代码审查与 README 图片
 - [完整功能实现清单](docs/features.md)
 - [代码审查与升级方向（2026-09-08）](docs/code-review-2026-09-08.md)
 
+欢迎加入 **Teacher-DB 使用反馈交流群**，扫码和大家聊聊你的使用体验。此码在 2026 年 12 月 1 日前有效。
+
+<a href="docs/images/wechat-group.jpg"><img src="https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/wechat-group.jpg" alt="微信扫码加入 Teacher-DB 使用反馈交流群" width="300"></a>
