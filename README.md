@@ -1,6 +1,6 @@
 <div align="center">
 
-# 拣题 · Teacher-DB
+# 拣题 · TeacherDB
 
 ### 本地优先的 AI 教师题库与智能组卷工作台
 
@@ -13,7 +13,7 @@
 
 <!-- Pin public image URLs to a commit. GitHub renders these through Camo, avoiding direct raw.githubusercontent.com requests. Keep the repository links for the originals. -->
 
-[![拣题：教师题库助手](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@3ab7a8f59b875744959f69fca3068dd9e17daf12/public/og-cover.png)](public/og-cover.png)
+[![拣题：教师题库助手](https://cdn.jsdelivr.net/gh/robbinpanda/TeacherDB@3ab7a8f59b875744959f69fca3068dd9e17daf12/public/og-cover.png)](public/og-cover.png)
 
 [快速开始](#快速开始) · [v0.2 重磅更新](#v02-重磅更新) · [实卷演示](#真实使用场景) · [在线体验 teacherdb.cn](#在线体验最新功能与交流群) · [完整功能清单](docs/features.md)
 
@@ -77,22 +77,22 @@
 ### 1. 批量导入试卷，统一掌控识别与审核进度
 选择学段、学科与模型后批量拖入 PDF / Word / 照片，实时查看处理进度、审核进度与一键出周测入口。
 
-[![工作台：批量导入试卷并查看识别与审核进度](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/workspace.png)](docs/images/workspace.png)
+[![工作台：批量导入试卷并查看识别与审核进度](https://cdn.jsdelivr.net/gh/robbinpanda/TeacherDB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/workspace.png)](docs/images/workspace.png)
 
 ### 2. 紧凑题库列表，高效筛题、辨重与选题
 每行集中展示题型、来源、原题号、知识点、用题记录与题干，右侧一键变式、展开解析、编辑或加入选题篮。
 
-[![我的题库：紧凑列表展示实卷题干、来源及右侧选题操作](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/question-bank.png)](docs/images/question-bank.png)
+[![我的题库：紧凑列表展示实卷题干、来源及右侧选题操作](https://cdn.jsdelivr.net/gh/robbinpanda/TeacherDB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/question-bank.png)](docs/images/question-bank.png)
 
 ### 3. 实时预览 A4 成卷，一键导出可编辑 Word / PDF
 左侧调整模板、题序与分值并查看题型/知识点分布，右侧所见即所得预览，顶部切换 `Word` / `PDF` 分别下载学生卷与解析答案。
 
-[![组卷：调整模板、题目顺序并实时预览 A4 试卷](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/paper-builder.png)](docs/images/paper-builder.png)
+[![组卷：调整模板、题目顺序并实时预览 A4 试卷](https://cdn.jsdelivr.net/gh/robbinpanda/TeacherDB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/paper-builder.png)](docs/images/paper-builder.png)
 
 ### 4. 模型 Token 与成本一目了然
 按月追踪各模型输入、缓存命中、输出 Token 与处理页次，配置单价后自动估算每页成本。
 
-[![模型用量：按月份和模型统计 Token 与估算费用](https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/model-usage.png)](docs/images/model-usage.png)
+[![模型用量：按月份和模型统计 Token 与估算费用](https://cdn.jsdelivr.net/gh/robbinpanda/TeacherDB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/model-usage.png)](docs/images/model-usage.png)
 
 ---
 
@@ -100,7 +100,7 @@
 
 除了在本地部署本开源项目，你也可以直接访问托管在线版 **[https://teacherdb.cn](https://teacherdb.cn)** 抢先体验更多正在演进的新特性：
 
-| 对比项 | 开源本地版（本仓库 `Teacher-DB`） | 在线体验版（[teacherdb.cn](https://teacherdb.cn)） |
+| 对比项 | 开源本地版（本仓库 `TeacherDB`） | 在线体验版（[teacherdb.cn](https://teacherdb.cn)） |
 | --- | --- | --- |
 | 部署方式 | 本机一键启动，数据 100% 留在本机 | 浏览器打开即用，免配环境与服务器 |
 | 核心能力 | PDF / Word / 图片导入、审校、题库、周测、Word/PDF 导出 | 包含开源版全部稳定能力 |
@@ -108,13 +108,13 @@
 
 ### 扫码加群：领取 `teacherdb.cn` 注册邀请码 & 反馈交流
 
-目前 **[teacherdb.cn](https://teacherdb.cn)** 开放邀请码注册。欢迎扫码加入 **Teacher-DB 使用反馈交流群**——**进群即可领取邀请码开通在线账号**，也欢迎和其他老师交流试卷导入、公式校对与组卷技巧，或直接提 Bug 和新需求：
+目前 **[teacherdb.cn](https://teacherdb.cn)** 开放邀请码注册。欢迎扫码加入 **TeacherDB 使用反馈交流群**——**进群即可领取邀请码开通在线账号**，也欢迎和其他老师交流试卷导入、公式校对与组卷技巧，或直接提 Bug 和新需求：
 
 <div align="center">
 
-<a href="docs/images/wechat-group.jpg"><img src="https://cdn.jsdelivr.net/gh/robbinpanda/Teacher-DB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/wechat-group.jpg" alt="Teacher-DB 使用反馈交流群微信二维码" width="280"></a>
+<a href="docs/images/wechat-group.jpg"><img src="https://cdn.jsdelivr.net/gh/robbinpanda/TeacherDB@6ec7e22512a540336b9bbe77fc3a5cfa063dcc54/docs/images/wechat-group.jpg" alt="TeacherDB 使用反馈交流群微信二维码" width="280"></a>
 
-<sub>本期群二维码有效至 <b>2026 年 12 月 1 日</b>前；如已过期，欢迎在 <a href="https://github.com/robbinpanda/Teacher-DB/issues">GitHub Issues</a> 留言获取新码。</sub>
+<sub>本期群二维码有效至 <b>2026 年 12 月 1 日</b>前；如已过期，欢迎在 <a href="https://github.com/robbinpanda/TeacherDB/issues">GitHub Issues</a> 留言获取新码。</sub>
 
 </div>
 
@@ -215,9 +215,9 @@ data/
 ```bash
 npm run doctor                                              # 检查 Node、数据库、目录与浏览器环境
 npm run backup                                              # 创建并立即校验数据快照备份
-npm run backup -- D:\teacher-db-backups\backup-2026-11-24   # 备份到指定目录
-npm run backup:verify -- D:\teacher-db-backups\backup-2026-11-24
-npm run restore -- D:\teacher-db-backups\backup-2026-11-24 --confirm  # 恢复（自动保留旧数据副本）
+npm run backup -- D:\teacherdb-backups\backup-2026-11-24   # 备份到指定目录
+npm run backup:verify -- D:\teacherdb-backups\backup-2026-11-24
+npm run restore -- D:\teacherdb-backups\backup-2026-11-24 --confirm  # 恢复（自动保留旧数据副本）
 ```
 
 | 命令 | 用途 |
